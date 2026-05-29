@@ -3,6 +3,7 @@ import SwiftData
 
 @Model
 final class HistoryEntry {
+    @Attribute(.unique) var id: UUID
     var rawTranscript: String
     var refinedText: String
     var appName: String
@@ -10,6 +11,7 @@ final class HistoryEntry {
     var timestamp: Date
 
     init(rawTranscript: String, refinedText: String, appName: String, category: String) {
+        self.id = UUID()
         self.rawTranscript = rawTranscript
         self.refinedText = refinedText
         self.appName = appName

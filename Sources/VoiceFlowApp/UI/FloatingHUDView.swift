@@ -4,7 +4,12 @@ struct FloatingHUDView: View {
     let status: HUDStatus
     let transcript: String
     let audioLevel: Float
+    var shortcutLabel: String = "⌥Space"
     var onTap: (() -> Void)? = nil
+
+    private var displayTranscript: String {
+        String(transcript.suffix(80))
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,7 +26,7 @@ struct FloatingHUDView: View {
 
             if status == .listening || status == .processing {
                 HStack(spacing: DS.Spacing.xs) {
-                    Text("⌥Space")
+                    Text(shortcutLabel)
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
@@ -82,8 +87,8 @@ struct FloatingHUDView: View {
                 .font(DS.Font.hudStatus)
                 .foregroundStyle(.white.opacity(0.7))
 
-            if !transcript.isEmpty {
-                Text(transcript.suffix(80))
+            if !displayTranscript.isEmpty {
+                Text(displayTranscript)
                     .font(DS.Font.hudTranscript)
                     .foregroundStyle(.white)
                     .lineLimit(2)

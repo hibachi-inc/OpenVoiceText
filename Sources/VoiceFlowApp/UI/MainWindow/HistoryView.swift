@@ -1,9 +1,9 @@
 import SwiftUI
-import AppKit
 
 struct HistoryView: View {
     @State private var entries: [HistoryEntry] = []
     @State private var selectedEntry: HistoryEntry?
+    private let injector = ClipboardInjector()
 
     var body: some View {
         Group {
@@ -14,11 +14,11 @@ struct HistoryView: View {
                     description: Text("Voice input history will appear here.")
                 )
             } else {
-                List(entries, id: \.timestamp, selection: $selectedEntry) { entry in
+                List(entries, id: \.id, selection: $selectedEntry) { entry in
                     HistoryRow(entry: entry)
                         .contextMenu {
-                            Button("Copy to Clipboard") { copyToClipboard(entry.refinedText) }
-                            Button("Copy Raw Transcript") { copyToClipboard(entry.rawTranscript) }
+                            Button("Copy to Clipboard") { injector.inject(entry.refinedText) }
+                            Button("Copy Raw Transcript") { injector.inject(entry.rawTranscript) }
                             Divider()
                             Button("Delete", role: .destructive) { delete(entry) }
                         }
@@ -47,11 +47,6 @@ struct HistoryView: View {
     private func delete(_ entry: HistoryEntry) {
         HistoryStore.shared.delete(entry)
         reload()
-    }
-
-    private func copyToClipboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 

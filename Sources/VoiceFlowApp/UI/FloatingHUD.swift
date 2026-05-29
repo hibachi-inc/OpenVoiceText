@@ -12,6 +12,11 @@ final class FloatingHUD: HUDProtocol {
     private var lastAudioLevelUpdate: ContinuousClock.Instant = .now
     var onTap: (() -> Void)?
 
+    private var shortcutLabel: String {
+        let prefs = PreferencesStore.shared
+        return "\(prefs.hotkeyModifier.symbol)\(prefs.hotkeyKey.label)"
+    }
+
     func showListening() {
         cancelAutoHide()
         status = .listening
@@ -120,10 +125,7 @@ final class FloatingHUD: HUDProtocol {
         panel.acceptsMouseMovedEvents = true
         panel.ignoresMouseEvents = false
 
-        let hosting = NSHostingView(rootView: FloatingHUDView(
-            status: status, transcript: transcript, audioLevel: audioLevel,
-            onTap: { [weak self] in self?.onTap?() }
-        ))
+        let hosting = NSHostingView(rootView: makeView())
         hosting.frame = panel.contentView!.bounds
         hosting.autoresizingMask = [.width, .height]
         panel.contentView?.addSubview(hosting)
@@ -133,16 +135,23 @@ final class FloatingHUD: HUDProtocol {
     }
 
     private func updateContent() {
-        hostingView?.rootView = FloatingHUDView(
-            status: status, transcript: transcript, audioLevel: audioLevel,
-            onTap: { [weak self] in self?.onTap?() }
-        )
+        hostingView?.rootView = makeView()
         guard let panel else { return }
         let w = calculateWidth()
         let frame = panel.frame
         panel.setFrame(
             NSRect(x: frame.midX - w / 2, y: frame.origin.y, width: w, height: DS.Panel.hudHeight),
             display: true
+        )
+    }
+
+    private func makeView() -> FloatingHUDView {
+        FloatingHUDView(
+            status: status,
+            transcript: transcript,
+            audioLevel: audioLevel,
+            shortcutLabel: shortcutLabel,
+            onTap: { [weak self] in self?.onTap?() }
         )
     }
 
@@ -159,7 +168,7 @@ final class FloatingHUD: HUDProtocol {
     private func calculateWidth() -> CGFloat {
         let charWidth: CGFloat = 10
         let maxChars = 80
-        let textWidth = CGFloat(transcript.prefix(maxChars).count) * charWidth
+        let textWidth = CGFloat(transcript.suffix(maxChars).count) * charWidth
         return min(DS.Panel.hudMaxWidth, max(DS.Panel.hudMinWidth, DS.Panel.hudMinWidth + textWidth))
     }
 }

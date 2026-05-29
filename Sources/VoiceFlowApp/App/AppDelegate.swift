@@ -89,15 +89,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let hotkeyMonitor {
             NSEvent.removeMonitor(hotkeyMonitor)
         }
+        hotkeyActive = false
+
+        // Snapshot hotkey config on main actor before passing to the event closure
+        let expectedKey = prefs.hotkeyKey.keyCode
+        let expectedMod = prefs.hotkeyModifier.eventModifier
 
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return }
-            let expectedKey = self.prefs.hotkeyKey.keyCode
-            let expectedMod = self.prefs.hotkeyModifier.eventModifier
             if event.keyCode == expectedKey && event.modifierFlags.contains(expectedMod) {
                 Task { @MainActor in
-                    self.hotkeyActive = true
-                    self.toggleRecording()
+                    self?.hotkeyActive = true
+                    self?.toggleRecording()
                 }
             }
         }

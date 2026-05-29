@@ -84,11 +84,19 @@ final class RecordingCoordinator {
     // MARK: - Private
 
     private func startRecording() {
+        if let cancelTask {
+            Task {
+                await cancelTask.value
+                self.startRecording()
+            }
+            return
+        }
         session.transition(.startRequested)
         hud.showListening()
         onStateChanged?()
 
-        let localeID = prefs.locale == "system" ? Locale.current.identifier : prefs.locale
+        let rawLocale = prefs.locale == "system" ? Locale.current.identifier : prefs.locale
+        let localeID = Locale(identifier: rawLocale).identifier
         sttClient.startRecording(locale: localeID)
         session.transition(.micReady)
     }
@@ -150,11 +158,16 @@ final class RecordingCoordinator {
         }
     }
 
+    private var cancelTask: Task<Void, Never>?
+
     private func cancelRecording() {
         session.transition(.cancel)
         stopTask?.cancel()
         stopTask = nil
-        Task { let _ = await sttClient.stopRecording() }
+        cancelTask = Task {
+            let _ = await sttClient.stopRecording()
+            cancelTask = nil
+        }
         hud.hide()
         onStateChanged?()
     }

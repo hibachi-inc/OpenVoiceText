@@ -27,7 +27,7 @@ final class PreferencesStore {
     private init() {
         hotkeyModifier = HotkeyModifier(rawValue: defaults.string(forKey: "hotkeyModifier") ?? "") ?? .option
         hotkeyKey = HotkeyKey(rawValue: defaults.string(forKey: "hotkeyKey") ?? "") ?? .space
-        locale = defaults.string(forKey: "locale") ?? Locale.current.identifier
+        locale = defaults.string(forKey: "locale") ?? "system"
         refinementMode = RefinementMode(rawValue: defaults.string(forKey: "refinementMode") ?? "") ?? .refine
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
     }
