@@ -12,12 +12,10 @@ final class STTService: NSObject, STTServiceProtocol {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
-    private var accumulatedTranscript = ""
-    private var currentSegment = ""
+    private var latestTranscript = ""
     private let lock = NSLock()
     private weak var connection: NSXPCConnection?
     private var tapInstalled = false
-    private var activeLocale: String?
 
     init(connection: NSXPCConnection) {
         self.connection = connection
@@ -28,13 +26,6 @@ final class STTService: NSObject, STTServiceProtocol {
     }
 
     func startRecording(locale localeID: String) {
-        activeLocale = localeID
-
-        lock.lock()
-        accumulatedTranscript = ""
-        currentSegment = ""
-        lock.unlock()
-
         let locale = Locale(identifier: localeID)
         guard let recognizer = SFSpeechRecognizer(locale: locale),
               recognizer.isAvailable else {
@@ -43,27 +34,10 @@ final class STTService: NSObject, STTServiceProtocol {
         }
         self.recognizer = recognizer
 
-        startRecognitionTask(with: recognizer)
-        startAudioEngine()
-    }
-
-    func stopRecording(reply: @escaping (String?) -> Void) {
-        activeLocale = nil
-        stopAudioEngine()
-        finishRecognitionTask()
-
         lock.lock()
-        let full = fullTranscript
-        accumulatedTranscript = ""
-        currentSegment = ""
+        latestTranscript = ""
         lock.unlock()
 
-        reply(full.isEmpty ? nil : full)
-    }
-
-    // MARK: - Recognition Task
-
-    private func startRecognitionTask(with recognizer: SFSpeechRecognizer) {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition {
@@ -74,49 +48,6 @@ final class STTService: NSObject, STTServiceProtocol {
         }
         self.recognitionRequest = request
 
-        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self else { return }
-
-            if let result {
-                let segment = result.bestTranscription.formattedString
-                self.lock.lock()
-                self.currentSegment = segment
-                let display = self.fullTranscript
-                self.lock.unlock()
-                self.client?.didUpdateTranscript(display)
-
-                if result.isFinal {
-                    self.lock.lock()
-                    self.accumulatedTranscript = self.fullTranscript
-                    self.currentSegment = ""
-                    self.lock.unlock()
-
-                    // Restart recognition seamlessly — create new request BEFORE finishing old task
-                    if self.activeLocale != nil, let recognizer = self.recognizer {
-                        self.finishRecognitionTask()
-                        self.startRecognitionTask(with: recognizer)
-                    }
-                }
-            }
-
-            if let error {
-                let nsError = error as NSError
-                guard nsError.code != 203 && nsError.code != 216 else { return }
-                self.client?.didEncounterError(error.localizedDescription)
-            }
-        }
-    }
-
-    private func finishRecognitionTask() {
-        recognitionRequest?.endAudio()
-        recognitionTask?.finish()
-        recognitionRequest = nil
-        recognitionTask = nil
-    }
-
-    // MARK: - Audio Engine
-
-    private func startAudioEngine() {
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
 
@@ -128,6 +59,23 @@ final class STTService: NSObject, STTServiceProtocol {
             tapInstalled = true
         }
 
+        recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self else { return }
+            if let result {
+                let text = result.bestTranscription.formattedString
+                self.lock.lock()
+                self.latestTranscript = text
+                self.lock.unlock()
+                self.client?.didUpdateTranscript(text)
+            }
+            if let error {
+                let nsError = error as NSError
+                // Ignore normal session-end errors
+                guard nsError.code != 203 && nsError.code != 216 && nsError.code != 1110 else { return }
+                self.client?.didEncounterError(error.localizedDescription)
+            }
+        }
+
         do {
             audioEngine.prepare()
             try audioEngine.start()
@@ -137,29 +85,29 @@ final class STTService: NSObject, STTServiceProtocol {
         }
     }
 
-    private func stopAudioEngine() {
+    func stopRecording(reply: @escaping (String?) -> Void) {
+        cleanup()
+
+        lock.lock()
+        let transcript = latestTranscript
+        latestTranscript = ""
+        lock.unlock()
+
+        reply(transcript.isEmpty ? nil : transcript)
+    }
+
+    private func cleanup() {
         if tapInstalled {
             audioEngine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
         }
         audioEngine.stop()
-    }
-
-    private func cleanup() {
-        finishRecognitionTask()
-        stopAudioEngine()
+        recognitionRequest?.endAudio()
+        recognitionTask?.finish()
+        recognitionRequest = nil
+        recognitionTask = nil
         recognizer = nil
     }
-
-    // MARK: - Transcript
-
-    private var fullTranscript: String {
-        if accumulatedTranscript.isEmpty { return currentSegment }
-        if currentSegment.isEmpty { return accumulatedTranscript }
-        return accumulatedTranscript + " " + currentSegment
-    }
-
-    // MARK: - Audio Level
 
     private func processAudioLevel(buffer: AVAudioPCMBuffer) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
