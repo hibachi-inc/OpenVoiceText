@@ -13,35 +13,42 @@ struct TranslationSettingsView: View {
                         .foregroundStyle(DS.Colors.secondary)
                 } else {
                     ForEach(prefs.translationLanguages) { lang in
-                        if let idx = prefs.translationLanguages.firstIndex(where: { $0.id == lang.id }) {
-                            HStack {
-                                Text(lang.label)
-                                    .font(DS.Font.bodyMedium)
-                                Text(lang.code)
-                                    .font(DS.Font.caption)
-                                    .foregroundStyle(DS.Colors.secondary)
-                                Spacer()
-                                ShortcutRecorder(
-                                    label: "",
-                                    modifier: Binding(
-                                        get: { prefs.translationLanguages[idx].modifier },
-                                        set: { prefs.translationLanguages[idx].modifier = $0 }
-                                    ),
-                                    key: Binding(
-                                        get: { prefs.translationLanguages[idx].key },
-                                        set: { prefs.translationLanguages[idx].key = $0 }
-                                    ),
-                                    onChange: reinstallHotkey
-                                )
-                                Button(role: .destructive) {
-                                    prefs.translationLanguages.removeAll { $0.id == lang.id }
-                                    reinstallHotkey()
-                                } label: {
-                                    Image(systemName: "minus.circle.fill")
-                                        .foregroundStyle(.red)
-                                }
-                                .buttonStyle(.plain)
+                        let langID = lang.id
+                        HStack {
+                            Text(lang.label)
+                                .font(DS.Font.bodyMedium)
+                            Text(lang.code)
+                                .font(DS.Font.caption)
+                                .foregroundStyle(DS.Colors.secondary)
+                            Spacer()
+                            ShortcutRecorder(
+                                label: "",
+                                modifier: Binding(
+                                    get: { prefs.translationLanguages.first { $0.id == langID }?.modifier ?? .control },
+                                    set: { val in
+                                        if let i = prefs.translationLanguages.firstIndex(where: { $0.id == langID }) {
+                                            prefs.translationLanguages[i].modifier = val
+                                        }
+                                    }
+                                ),
+                                key: Binding(
+                                    get: { prefs.translationLanguages.first { $0.id == langID }?.key ?? .space },
+                                    set: { val in
+                                        if let i = prefs.translationLanguages.firstIndex(where: { $0.id == langID }) {
+                                            prefs.translationLanguages[i].key = val
+                                        }
+                                    }
+                                ),
+                                onChange: reinstallHotkey
+                            )
+                            Button(role: .destructive) {
+                                prefs.translationLanguages.removeAll { $0.id == langID }
+                                reinstallHotkey()
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
