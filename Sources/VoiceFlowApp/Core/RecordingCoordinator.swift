@@ -10,7 +10,7 @@ final class RecordingCoordinator {
     private let prefs: PreferencesStore
     private let history: HistoryStore
 
-    enum InputMode { case normal, translate }
+    enum InputMode { case normal, translate(String) }
 
     var onStateChanged: (() -> Void)?
     private var stopTask: Task<Void, Never>?
@@ -126,11 +126,11 @@ final class RecordingCoordinator {
             var timedOut = false
 
             switch currentMode {
-            case .translate:
+            case .translate(let targetLang):
                 hud.showProcessing(transcript: rawTranscript)
                 let result = await refinerClient.translate(
                     text: rawTranscript,
-                    targetLanguage: prefs.translateTarget.rawValue
+                    targetLanguage: targetLang
                 )
                 refined = result.0
                 timedOut = result.1

@@ -19,14 +19,7 @@ struct HotkeySettingsView: View {
             }
 
             Section("Translation") {
-                ShortcutRecorder(
-                    label: "Start / Stop Translation",
-                    modifier: $prefs.translateHotkeyModifier,
-                    key: $prefs.translateHotkeyKey,
-                    onChange: reinstallHotkey
-                )
-
-                Text("Same as recording, but translates to your target language.")
+                Text("Translation shortcuts are configured per-language in the Translation tab.")
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
             }
