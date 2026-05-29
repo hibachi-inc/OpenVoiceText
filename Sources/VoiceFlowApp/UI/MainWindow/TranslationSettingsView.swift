@@ -12,34 +12,36 @@ struct TranslationSettingsView: View {
                     Text("No translation languages enabled.")
                         .foregroundStyle(DS.Colors.secondary)
                 } else {
-                    ForEach(Array(prefs.translationLanguages.enumerated()), id: \.element.id) { index, lang in
-                        HStack {
-                            Text(lang.label)
-                                .font(DS.Font.bodyMedium)
-                            Text(lang.code)
-                                .font(DS.Font.caption)
-                                .foregroundStyle(DS.Colors.secondary)
-                            Spacer()
-                            ShortcutRecorder(
-                                label: "",
-                                modifier: Binding(
-                                    get: { prefs.translationLanguages[index].modifier },
-                                    set: { prefs.translationLanguages[index].modifier = $0 }
-                                ),
-                                key: Binding(
-                                    get: { prefs.translationLanguages[index].key },
-                                    set: { prefs.translationLanguages[index].key = $0 }
-                                ),
-                                onChange: reinstallHotkey
-                            )
-                            Button(role: .destructive) {
-                                prefs.translationLanguages.remove(at: index)
-                                reinstallHotkey()
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundStyle(.red)
+                    ForEach(prefs.translationLanguages) { lang in
+                        if let idx = prefs.translationLanguages.firstIndex(where: { $0.id == lang.id }) {
+                            HStack {
+                                Text(lang.label)
+                                    .font(DS.Font.bodyMedium)
+                                Text(lang.code)
+                                    .font(DS.Font.caption)
+                                    .foregroundStyle(DS.Colors.secondary)
+                                Spacer()
+                                ShortcutRecorder(
+                                    label: "",
+                                    modifier: Binding(
+                                        get: { prefs.translationLanguages[idx].modifier },
+                                        set: { prefs.translationLanguages[idx].modifier = $0 }
+                                    ),
+                                    key: Binding(
+                                        get: { prefs.translationLanguages[idx].key },
+                                        set: { prefs.translationLanguages[idx].key = $0 }
+                                    ),
+                                    onChange: reinstallHotkey
+                                )
+                                Button(role: .destructive) {
+                                    prefs.translationLanguages.removeAll { $0.id == lang.id }
+                                    reinstallHotkey()
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }

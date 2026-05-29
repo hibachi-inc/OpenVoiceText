@@ -78,7 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         #if PROFEATURES
         translateHotkeys.forEach { $0.unregister() }
-        translateHotkeys = prefs.translationLanguages.map { lang in
+        let mainKey = (prefs.hotkeyKey.keyCode, prefs.hotkeyModifier.carbonModifier)
+        translateHotkeys = prefs.translationLanguages.compactMap { lang in
+            let langKey = (lang.key.keyCode, lang.modifier.carbonModifier)
+            // Skip if same shortcut as the main recording hotkey
+            guard langKey.0 != mainKey.0 || langKey.1 != mainKey.1 else { return nil }
             let hk = GlobalHotkey()
             let code = lang.code
             hk.register(

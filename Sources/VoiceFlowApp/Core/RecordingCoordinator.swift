@@ -67,23 +67,22 @@ final class RecordingCoordinator {
     }
 
     func toggle() {
-        switch session.state {
-        case .idle:
-            startRecording()
-        case .recording:
-            stopRecording()
-        case .starting, .processing:
-            cancelRecording()
-        default:
-            break
-        }
+        #if PROFEATURES
+        currentMode = .normal
+        #endif
+        handleToggle()
     }
 
     #if PROFEATURES
     func toggleTranslation(_ targetLanguage: String) {
+        currentMode = .translate(targetLanguage)
+        handleToggle()
+    }
+    #endif
+
+    private func handleToggle() {
         switch session.state {
         case .idle:
-            currentMode = .translate(targetLanguage)
             startRecording()
         case .recording:
             stopRecording()
@@ -93,7 +92,6 @@ final class RecordingCoordinator {
             break
         }
     }
-    #endif
 
     func disconnect() {
         sttClient.disconnect()
