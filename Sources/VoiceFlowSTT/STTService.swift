@@ -10,8 +10,10 @@ final class STTService: NSObject, STTServiceProtocol {
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
 
+    // All access to these 3 fields must be inside lock
     private var confirmedText = ""
     private var provisionalText = ""
+    private var stopped = false
     private let lock = NSLock()
 
     private weak var connection: NSXPCConnection?
@@ -37,6 +39,7 @@ final class STTService: NSObject, STTServiceProtocol {
         lock.lock()
         confirmedText = ""
         provisionalText = ""
+        stopped = false
         lock.unlock()
 
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -62,43 +65,45 @@ final class STTService: NSObject, STTServiceProtocol {
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
 
+            self.lock.lock()
+            guard !self.stopped else { self.lock.unlock(); return }
+
             if let result {
                 let text = result.bestTranscription.formattedString
 
-                lock.lock()
-                // Detect segment reset: if new text is significantly shorter,
-                // the recognizer started a new internal session.
-                // Save the previous provisional text before overwriting.
-                if !provisionalText.isEmpty && text.count < provisionalText.count / 2 {
-                    confirmedText = fullTranscript
-                    provisionalText = ""
+                // Detect segment reset: new text is much shorter than previous.
+                // Use max(provisionalText.count / 2, 1) to handle short texts too.
+                let threshold = max(self.provisionalText.count / 2, 1)
+                if !self.provisionalText.isEmpty && text.count < threshold {
+                    self.confirmedText = self.lockedFullTranscript
                 }
-                provisionalText = text
-                let display = fullTranscript
-                lock.unlock()
+                self.provisionalText = text
+                let display = self.lockedFullTranscript
+                self.lock.unlock()
 
-                client?.didUpdateTranscript(display)
+                self.client?.didUpdateTranscript(display)
 
                 if result.isFinal {
-                    lock.lock()
-                    confirmedText = fullTranscript
-                    provisionalText = ""
-                    lock.unlock()
+                    self.lock.lock()
+                    self.confirmedText = self.lockedFullTranscript
+                    self.provisionalText = ""
+                    self.lock.unlock()
                 }
+                return
             }
+            self.lock.unlock()
 
             if let error {
                 let code = (error as NSError).code
                 if code == 216 || code == 203 || code == 1110 {
-                    // Session ended — save whatever we have
-                    lock.lock()
-                    if !provisionalText.isEmpty {
-                        confirmedText = fullTranscript
-                        provisionalText = ""
+                    self.lock.lock()
+                    if !self.provisionalText.isEmpty {
+                        self.confirmedText = self.lockedFullTranscript
+                        self.provisionalText = ""
                     }
-                    lock.unlock()
+                    self.lock.unlock()
                 } else {
-                    client?.didEncounterError(error.localizedDescription)
+                    self.client?.didEncounterError(error.localizedDescription)
                 }
             }
         }
@@ -113,24 +118,20 @@ final class STTService: NSObject, STTServiceProtocol {
     }
 
     func stopRecording(reply: @escaping (String?) -> Void) {
+        // Stop accepting callbacks immediately
+        lock.lock()
+        stopped = true
+        let result = lockedFullTranscript
+        confirmedText = ""
+        provisionalText = ""
+        lock.unlock()
+
+        // Clean up audio and recognition
         recognitionRequest?.endAudio()
         recognitionTask?.finish()
+        cleanup()
 
-        // Wait briefly for final callback
-        nonisolated(unsafe) let sendableReply = reply
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self else { sendableReply(nil); return }
-
-            self.cleanup()
-
-            self.lock.lock()
-            let result = self.fullTranscript
-            self.confirmedText = ""
-            self.provisionalText = ""
-            self.lock.unlock()
-
-            sendableReply(result.isEmpty ? nil : result)
-        }
+        reply(result.isEmpty ? nil : result)
     }
 
     private func cleanup() {
@@ -144,7 +145,8 @@ final class STTService: NSObject, STTServiceProtocol {
         recognizer = nil
     }
 
-    private var fullTranscript: String {
+    /// Must be called while lock is held.
+    private var lockedFullTranscript: String {
         if confirmedText.isEmpty { return provisionalText }
         if provisionalText.isEmpty { return confirmedText }
         return confirmedText + " " + provisionalText
