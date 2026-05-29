@@ -82,26 +82,31 @@ enum HotkeyModifier: String, CaseIterable, Identifiable {
 
 enum HotkeyKey: String, CaseIterable, Identifiable {
     case space = "space"
-    case d = "d"
-    case r = "r"
-    case t = "t"
+    case a = "a", b = "b", c = "c", d = "d", e = "e", f = "f"
+    case g = "g", h = "h", i = "i", j = "j", k = "k", l = "l"
+    case m = "m", n = "n", o = "o", p = "p", q = "q", r = "r"
+    case s = "s", t = "t", u = "u", v = "v", w = "w", x = "x"
+    case y = "y", z = "z"
 
     var id: String { rawValue }
+
     var label: String {
-        switch self {
-        case .space: "Space"
-        case .d: "D"
-        case .r: "R"
-        case .t: "T"
-        }
+        self == .space ? "Space" : rawValue.uppercased()
     }
+
     var keyCode: UInt16 {
         switch self {
         case .space: 49
-        case .d: 2
-        case .r: 15
-        case .t: 17
+        case .a: 0; case .b: 11; case .c: 8; case .d: 2; case .e: 14; case .f: 3
+        case .g: 5; case .h: 4; case .i: 34; case .j: 38; case .k: 40; case .l: 37
+        case .m: 46; case .n: 45; case .o: 31; case .p: 35; case .q: 12; case .r: 15
+        case .s: 1; case .t: 17; case .u: 32; case .v: 9; case .w: 13; case .x: 7
+        case .y: 16; case .z: 6
         }
+    }
+
+    static func from(keyCode: UInt16) -> HotkeyKey? {
+        allCases.first { $0.keyCode == keyCode }
     }
 }
 

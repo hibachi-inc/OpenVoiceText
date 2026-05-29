@@ -5,33 +5,28 @@ struct HotkeySettingsView: View {
 
     var body: some View {
         Form {
-            Section("Recording Hotkey") {
-                Picker("Modifier", selection: $prefs.hotkeyModifier) {
-                    ForEach(HotkeyModifier.allCases) { mod in
-                        Text(mod.label).tag(mod)
-                    }
-                }
-                .onChange(of: prefs.hotkeyModifier) { reinstallHotkey() }
+            Section("Recording") {
+                ShortcutRecorder(
+                    label: "Start / Stop Recording",
+                    modifier: $prefs.hotkeyModifier,
+                    key: $prefs.hotkeyKey,
+                    onChange: reinstallHotkey
+                )
 
-                Picker("Key", selection: $prefs.hotkeyKey) {
-                    ForEach(HotkeyKey.allCases) { key in
-                        Text(key.label).tag(key)
-                    }
-                }
-                .onChange(of: prefs.hotkeyKey) { reinstallHotkey() }
+                Text("Press this shortcut anywhere to start/stop voice input.")
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Colors.secondary)
+            }
 
-                HStack(spacing: DS.Spacing.sm) {
-                    Text("Current shortcut:")
-                        .foregroundStyle(DS.Colors.secondary)
-                    Text("\(prefs.hotkeyModifier.symbol)\(prefs.hotkeyKey.label)")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.white.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
+            Section("Translation") {
+                ShortcutRecorder(
+                    label: "Start / Stop Translation",
+                    modifier: $prefs.translateHotkeyModifier,
+                    key: $prefs.translateHotkeyKey,
+                    onChange: reinstallHotkey
+                )
 
-                Text("Press this shortcut anywhere to start/stop recording. No special permissions required.")
+                Text("Same as recording, but translates to your target language.")
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
             }
