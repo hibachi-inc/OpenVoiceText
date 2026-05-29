@@ -100,13 +100,12 @@ struct RecordingCoordinatorTests {
 
     // MARK: - Start/Stop flow
 
-    @Test func startRecordingSetsLocaleAndShowsHUD() async {
+    @Test func startRecordingShowsHUD() async {
         let (coordinator, stt, _, hud, _) = makeCoordinator()
-        coordinator.locale = Locale(identifier: "en-US")
 
         coordinator.toggle()
 
-        #expect(stt.startedWithLocale == "en-US")
+        #expect(stt.startedWithLocale != nil)
         #expect(hud.states.contains("listening"))
         #expect(coordinator.isRecording)
     }

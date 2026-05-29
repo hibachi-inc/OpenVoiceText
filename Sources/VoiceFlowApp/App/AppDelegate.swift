@@ -82,8 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey
 
     private func setupHotkey() {
+        let prefs = PreferencesStore.shared
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == UInt16(kVK_Space) && event.modifierFlags.contains(.option) {
+            let expectedKey = prefs.hotkeyKey.keyCode
+            let expectedMod = prefs.hotkeyModifier.eventModifier
+            if event.keyCode == expectedKey && event.modifierFlags.contains(expectedMod) {
                 Task { @MainActor in
                     self?.hotkeyActive = true
                     self?.toggleRecording()

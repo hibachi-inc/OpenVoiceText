@@ -7,10 +7,11 @@ final class RecordingCoordinator {
     private var refinerClient: RefinerClientProtocol
     private var hud: HUDProtocol
     private let injector: TextInjecting
+    private let prefs: PreferencesStore
+    private let history: HistoryStore
 
     var onStateChanged: (() -> Void)?
     private var stopTask: Task<Void, Never>?
-    var locale: Locale = .current
 
     var isRecording: Bool { session.state.isActive }
 
@@ -19,12 +20,16 @@ final class RecordingCoordinator {
         sttClient: STTClientProtocol_App = STTXPCClient(),
         refinerClient: RefinerClientProtocol = RefinerXPCClient(),
         hud: HUDProtocol = FloatingHUD(),
-        injector: TextInjecting? = nil
+        injector: TextInjecting? = nil,
+        prefs: PreferencesStore = .shared,
+        history: HistoryStore = .shared
     ) {
         self.session = session
         self.sttClient = sttClient
         self.refinerClient = refinerClient
         self.hud = hud
+        self.prefs = prefs
+        self.history = history
         #if DIRECT
         self.injector = injector ?? AccessibilityInjector()
         #else
@@ -83,7 +88,8 @@ final class RecordingCoordinator {
         hud.showListening()
         onStateChanged?()
 
-        sttClient.startRecording(locale: locale.identifier)
+        let localeID = prefs.locale == "system" ? Locale.current.identifier : prefs.locale
+        sttClient.startRecording(locale: localeID)
         session.transition(.micReady)
     }
 
@@ -104,17 +110,32 @@ final class RecordingCoordinator {
             }
 
             let context = AppContext.current
-            hud.showProcessing(transcript: rawTranscript)
+            let refined: String
+            var timedOut = false
 
-            let (refined, timedOut) = await refinerClient.refine(
-                text: rawTranscript,
-                category: context?.category.rawValue ?? "generic"
-            )
+            if prefs.refinementMode == .refine {
+                hud.showProcessing(transcript: rawTranscript)
+                let result = await refinerClient.refine(
+                    text: rawTranscript,
+                    category: context?.category.rawValue ?? "generic"
+                )
+                refined = result.0
+                timedOut = result.1
+            } else {
+                refined = rawTranscript
+            }
 
             guard !Task.isCancelled else { return }
 
             injector.inject(refined)
             session.transition(.refinementDone)
+
+            history.add(
+                rawTranscript: rawTranscript,
+                refinedText: refined,
+                appName: context?.appName ?? "Unknown",
+                category: context?.category.rawValue ?? "generic"
+            )
 
             if timedOut {
                 hud.showError("Refinement skipped (timeout)")
