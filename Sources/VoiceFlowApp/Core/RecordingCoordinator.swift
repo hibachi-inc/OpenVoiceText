@@ -5,7 +5,7 @@ final class RecordingCoordinator {
     let session: RecordingStateMachine
     private var sttClient: STTClientProtocol_App
     private var refinerClient: RefinerClientProtocol
-    private let hud: HUDProtocol
+    private var hud: HUDProtocol
     private let injector: TextInjecting
 
     var onStateChanged: (() -> Void)?
@@ -33,6 +33,7 @@ final class RecordingCoordinator {
     }
 
     func setup() {
+        hud.onTap = { [weak self] in self?.toggle() }
         sttClient.onTranscript = { [weak self] text in
             guard let self, case .recording = self.session.state else { return }
             self.hud.updateTranscript(text)

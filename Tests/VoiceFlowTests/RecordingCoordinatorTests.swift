@@ -53,6 +53,7 @@ final class MockRefinerClient: RefinerClientProtocol {
 
 @MainActor
 final class MockHUD: HUDProtocol {
+    var onTap: (() -> Void)?
     var states: [String] = []
 
     func showListening() { states.append("listening") }

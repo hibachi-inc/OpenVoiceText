@@ -22,6 +22,7 @@ protocol RefinerClientProtocol {
 
 @MainActor
 protocol HUDProtocol {
+    var onTap: (() -> Void)? { get set }
     func showListening()
     func showProcessing(transcript: String)
     func showCopied()

@@ -10,6 +10,7 @@ final class FloatingHUD: HUDProtocol {
     private var audioLevel: Float = 0
     private var autoHideTask: Task<Void, Never>?
     private var lastAudioLevelUpdate: ContinuousClock.Instant = .now
+    var onTap: (() -> Void)?
 
     func showListening() {
         cancelAutoHide()
@@ -116,9 +117,12 @@ final class FloatingHUD: HUDProtocol {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = false
+        panel.acceptsMouseMovedEvents = true
+        panel.ignoresMouseEvents = false
 
         let hosting = NSHostingView(rootView: FloatingHUDView(
-            status: status, transcript: transcript, audioLevel: audioLevel
+            status: status, transcript: transcript, audioLevel: audioLevel,
+            onTap: { [weak self] in self?.onTap?() }
         ))
         hosting.frame = panel.contentView!.bounds
         hosting.autoresizingMask = [.width, .height]
@@ -130,7 +134,8 @@ final class FloatingHUD: HUDProtocol {
 
     private func updateContent() {
         hostingView?.rootView = FloatingHUDView(
-            status: status, transcript: transcript, audioLevel: audioLevel
+            status: status, transcript: transcript, audioLevel: audioLevel,
+            onTap: { [weak self] in self?.onTap?() }
         )
         guard let panel else { return }
         let w = calculateWidth()
