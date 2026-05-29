@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = RecordingCoordinator()
     private let mainWindow = MainWindowController()
     private let hotkey = GlobalHotkey()
+    #if PROFEATURES
+    private var translateHotkeys: [GlobalHotkey] = []
+    #endif
     private let prefs = PreferencesStore.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -72,6 +75,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] in
             self?.toggleRecording()
         }
+
+        #if PROFEATURES
+        translateHotkeys.forEach { $0.unregister() }
+        translateHotkeys = prefs.translationLanguages.map { lang in
+            let hk = GlobalHotkey()
+            let code = lang.code
+            hk.register(
+                keyCode: UInt32(lang.key.keyCode),
+                modifiers: lang.modifier.carbonModifier
+            ) { [weak self] in
+                self?.coordinator.toggleTranslation(code)
+            }
+            return hk
+        }
+        #endif
     }
 
     @objc private func toggleRecording() {
@@ -115,6 +133,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func terminateApp() {
         hotkey.unregister()
+        #if PROFEATURES
+        translateHotkeys.forEach { $0.unregister() }
+        #endif
         coordinator.disconnect()
         NSApplication.shared.terminate(nil)
     }

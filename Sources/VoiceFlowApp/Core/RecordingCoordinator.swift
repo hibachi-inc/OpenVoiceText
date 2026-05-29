@@ -10,6 +10,11 @@ final class RecordingCoordinator {
     private let prefs: PreferencesStore
     private let history: HistoryStore
 
+    #if PROFEATURES
+    enum InputMode { case normal, translate(String) }
+    private var currentMode: InputMode = .normal
+    #endif
+
     var onStateChanged: (() -> Void)?
     private var stopTask: Task<Void, Never>?
     private var cancelTask: Task<Void, Never>?
@@ -74,6 +79,22 @@ final class RecordingCoordinator {
         }
     }
 
+    #if PROFEATURES
+    func toggleTranslation(_ targetLanguage: String) {
+        switch session.state {
+        case .idle:
+            currentMode = .translate(targetLanguage)
+            startRecording()
+        case .recording:
+            stopRecording()
+        case .starting, .processing:
+            cancelRecording()
+        default:
+            break
+        }
+    }
+    #endif
+
     func disconnect() {
         sttClient.disconnect()
         refinerClient.disconnect()
@@ -121,6 +142,28 @@ final class RecordingCoordinator {
             let refined: String
             var timedOut = false
 
+            #if PROFEATURES
+            switch currentMode {
+            case .translate(let targetLang):
+                hud.showProcessing(transcript: rawTranscript)
+                let result = await refinerClient.translate(
+                    text: rawTranscript, targetLanguage: targetLang
+                )
+                refined = result.0
+                timedOut = result.1
+            case .normal where prefs.refinementMode == .refine:
+                hud.showProcessing(transcript: rawTranscript)
+                let result = await refinerClient.refine(
+                    text: rawTranscript,
+                    category: context?.category.rawValue ?? "generic"
+                )
+                refined = result.0
+                timedOut = result.1
+            default:
+                refined = rawTranscript
+            }
+            currentMode = .normal
+            #else
             if prefs.refinementMode == .refine {
                 hud.showProcessing(transcript: rawTranscript)
                 let result = await refinerClient.refine(
@@ -132,6 +175,7 @@ final class RecordingCoordinator {
             } else {
                 refined = rawTranscript
             }
+            #endif
 
             guard !Task.isCancelled else { return }
 

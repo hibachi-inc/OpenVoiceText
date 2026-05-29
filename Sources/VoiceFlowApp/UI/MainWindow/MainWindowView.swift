@@ -3,6 +3,9 @@ import SwiftUI
 enum SidebarSection: String, CaseIterable, Identifiable {
     case general = "General"
     case hotkey = "Hotkey"
+    #if PROFEATURES
+    case translation = "Translation"
+    #endif
     case history = "History"
     case about = "About"
 
@@ -12,6 +15,9 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .hotkey: "keyboard"
+        #if PROFEATURES
+        case .translation: "globe"
+        #endif
         case .history: "clock.arrow.circlepath"
         case .about: "info.circle"
         }
@@ -34,6 +40,9 @@ struct MainWindowView: View {
                 switch selection {
                 case .general: GeneralSettingsView()
                 case .hotkey: HotkeySettingsView()
+                #if PROFEATURES
+                case .translation: TranslationSettingsView()
+                #endif
                 case .history: HistoryView()
                 case .about: AboutView()
                 }

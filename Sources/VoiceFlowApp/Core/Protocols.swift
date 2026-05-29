@@ -17,6 +17,9 @@ protocol RefinerClientProtocol {
     var onError: ((String) -> Void)? { get set }
 
     func refine(text: String, category: String) async -> (String, Bool)
+    #if PROFEATURES
+    func translate(text: String, targetLanguage: String) async -> (String, Bool)
+    #endif
     func disconnect()
 }
 
