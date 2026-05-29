@@ -31,27 +31,9 @@ struct HotkeySettingsView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
 
-                Text("Press this shortcut anywhere to start/stop recording.")
+                Text("Press this shortcut anywhere to start/stop recording. No special permissions required.")
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
-            }
-
-            Section("Permissions") {
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("Input Monitoring")
-                            .font(DS.Font.bodyMedium)
-                        Text("Required for global hotkey to work")
-                            .font(DS.Font.caption)
-                            .foregroundStyle(DS.Colors.secondary)
-                    }
-                    Spacer()
-                    Button("Open Settings") {
-                        NSWorkspace.shared.open(
-                            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
-                        )
-                    }
-                }
             }
         }
         .formStyle(.grouped)
@@ -60,6 +42,6 @@ struct HotkeySettingsView: View {
 
     private func reinstallHotkey() {
         guard let delegate = NSApp.delegate as? AppDelegate else { return }
-        delegate.installHotkeyMonitor()
+        delegate.installHotkey()
     }
 }

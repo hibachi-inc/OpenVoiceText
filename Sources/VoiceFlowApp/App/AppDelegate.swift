@@ -1,7 +1,6 @@
 import AppKit
 import Speech
 import AVFoundation
-import Carbon.HIToolbox
 import ServiceManagement
 
 @MainActor
@@ -9,15 +8,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let coordinator = RecordingCoordinator()
     private let mainWindow = MainWindowController()
-    private var hotkeyMonitor: Any?
-    private var hotkeyActive = false
+    private let hotkey = GlobalHotkey()
     private let prefs = PreferencesStore.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator.setup()
         coordinator.onStateChanged = { [weak self] in self?.updateStatusIcon() }
         setupStatusItem()
-        installHotkeyMonitor()
+        installHotkey()
         syncLaunchAtLogin()
         Task { await requestPermissions() }
     }
@@ -46,27 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item)
 
         menu.addItem(.separator())
-
-        if !hotkeyActive {
-            let warning = NSMenuItem(
-                title: "⚠ Hotkey requires Input Monitoring permission",
-                action: nil, keyEquivalent: ""
-            )
-            warning.isEnabled = false
-            menu.addItem(warning)
-
-            let fix = NSMenuItem(
-                title: "Open Input Monitoring Settings...",
-                action: #selector(openInputMonitoringSettings),
-                keyEquivalent: ""
-            )
-            fix.target = self
-            menu.addItem(fix)
-        } else {
-            let info = NSMenuItem(title: "\(shortcutLabel) to toggle recording", action: nil, keyEquivalent: "")
-            info.isEnabled = false
-            menu.addItem(info)
-        }
+        let info = NSMenuItem(title: "\(shortcutLabel) to toggle recording", action: nil, keyEquivalent: "")
+        info.isEnabled = false
+        menu.addItem(info)
 
         menu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
@@ -85,41 +65,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Hotkey
 
-    func installHotkeyMonitor() {
-        if let hotkeyMonitor {
-            NSEvent.removeMonitor(hotkeyMonitor)
-        }
-        hotkeyActive = false
-
-        // Snapshot hotkey config on main actor before passing to the event closure
-        let expectedKey = prefs.hotkeyKey.keyCode
-        let expectedMod = prefs.hotkeyModifier.eventModifier
-
-        hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == expectedKey && event.modifierFlags.contains(expectedMod) {
-                Task { @MainActor in
-                    self?.hotkeyActive = true
-                    self?.toggleRecording()
-                }
-            }
-        }
-
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            if !hotkeyActive {
-                coordinator.showPermissionError("Grant Input Monitoring to enable hotkey")
-            }
+    func installHotkey() {
+        hotkey.register(
+            keyCode: UInt32(prefs.hotkeyKey.keyCode),
+            modifiers: prefs.hotkeyModifier.carbonModifier
+        ) { [weak self] in
+            self?.toggleRecording()
         }
     }
 
     @objc private func toggleRecording() {
         coordinator.toggle()
-    }
-
-    @objc private func openInputMonitoringSettings() {
-        NSWorkspace.shared.open(
-            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
-        )
     }
 
     private func updateStatusIcon() {
@@ -160,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func terminateApp() {
+        hotkey.unregister()
         coordinator.disconnect()
         NSApplication.shared.terminate(nil)
     }
