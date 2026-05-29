@@ -28,22 +28,29 @@ final class STTService: NSObject, STTServiceProtocol {
     }
 
     func startRecording(locale localeID: String) {
-        logger.info("Starting recording with locale: \(localeID)")
         activeLocale = localeID
+
         lock.lock()
         accumulatedTranscript = ""
         currentSegment = ""
         lock.unlock()
 
-        startAudioEngineIfNeeded()
-        startRecognitionTask(locale: localeID)
+        let locale = Locale(identifier: localeID)
+        guard let recognizer = SFSpeechRecognizer(locale: locale),
+              recognizer.isAvailable else {
+            client?.didEncounterError("Speech recognizer is not available for \(localeID).")
+            return
+        }
+        self.recognizer = recognizer
+
+        startRecognitionTask(with: recognizer)
+        startAudioEngine()
     }
 
     func stopRecording(reply: @escaping (String?) -> Void) {
-        logger.info("Stopping recording")
         activeLocale = nil
-        cleanupRecognition()
         stopAudioEngine()
+        finishRecognitionTask()
 
         lock.lock()
         let full = fullTranscript
@@ -54,52 +61,9 @@ final class STTService: NSObject, STTServiceProtocol {
         reply(full.isEmpty ? nil : full)
     }
 
-    // MARK: - Audio Engine
-
-    private func startAudioEngineIfNeeded() {
-        guard !audioEngine.isRunning else { return }
-
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-
-        if !tapInstalled {
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-                self?.recognitionRequest?.append(buffer)
-                self?.processAudioLevel(buffer: buffer)
-            }
-            tapInstalled = true
-        }
-
-        do {
-            audioEngine.prepare()
-            try audioEngine.start()
-        } catch {
-            logger.error("Audio engine failed to start: \(error.localizedDescription)")
-            cleanup()
-            client?.didEncounterError(error.localizedDescription)
-        }
-    }
-
-    private func stopAudioEngine() {
-        if tapInstalled {
-            audioEngine.inputNode.removeTap(onBus: 0)
-            tapInstalled = false
-        }
-        audioEngine.stop()
-    }
-
     // MARK: - Recognition Task
 
-    private func startRecognitionTask(locale localeID: String) {
-        let locale = Locale(identifier: localeID)
-        guard let recognizer = SFSpeechRecognizer(locale: locale),
-              recognizer.isAvailable else {
-            logger.error("Speech recognizer unavailable for locale: \(localeID)")
-            client?.didEncounterError("Speech recognizer is not available for \(localeID).")
-            return
-        }
-        self.recognizer = recognizer
-
+    private func startRecognitionTask(with recognizer: SFSpeechRecognizer) {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         if recognizer.supportsOnDeviceRecognition {
@@ -122,49 +86,76 @@ final class STTService: NSObject, STTServiceProtocol {
                 self.client?.didUpdateTranscript(display)
 
                 if result.isFinal {
-                    logger.info("Recognition segment finalized, restarting task")
                     self.lock.lock()
                     self.accumulatedTranscript = self.fullTranscript
                     self.currentSegment = ""
                     self.lock.unlock()
 
-                    self.cleanupRecognition()
-                    if let locale = self.activeLocale {
-                        self.startRecognitionTask(locale: locale)
+                    // Restart recognition seamlessly — create new request BEFORE finishing old task
+                    if self.activeLocale != nil, let recognizer = self.recognizer {
+                        self.finishRecognitionTask()
+                        self.startRecognitionTask(with: recognizer)
                     }
                 }
             }
 
             if let error {
                 let nsError = error as NSError
-                // Ignore cancellation/session-end errors during normal operation
                 guard nsError.code != 203 && nsError.code != 216 else { return }
-                logger.error("Recognition error: \(nsError.code) \(error.localizedDescription)")
                 self.client?.didEncounterError(error.localizedDescription)
             }
         }
     }
 
-    private func cleanupRecognition() {
+    private func finishRecognitionTask() {
         recognitionRequest?.endAudio()
         recognitionTask?.finish()
         recognitionRequest = nil
         recognitionTask = nil
-        recognizer = nil
+    }
+
+    // MARK: - Audio Engine
+
+    private func startAudioEngine() {
+        let inputNode = audioEngine.inputNode
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+
+        if !tapInstalled {
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+                self?.recognitionRequest?.append(buffer)
+                self?.processAudioLevel(buffer: buffer)
+            }
+            tapInstalled = true
+        }
+
+        do {
+            audioEngine.prepare()
+            try audioEngine.start()
+        } catch {
+            cleanup()
+            client?.didEncounterError(error.localizedDescription)
+        }
+    }
+
+    private func stopAudioEngine() {
+        if tapInstalled {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
+        audioEngine.stop()
     }
 
     private func cleanup() {
-        cleanupRecognition()
+        finishRecognitionTask()
         stopAudioEngine()
+        recognizer = nil
     }
 
+    // MARK: - Transcript
+
     private var fullTranscript: String {
-        if accumulatedTranscript.isEmpty {
-            return currentSegment
-        }
-        if currentSegment.isEmpty {
-            return accumulatedTranscript
-        }
+        if accumulatedTranscript.isEmpty { return currentSegment }
+        if currentSegment.isEmpty { return accumulatedTranscript }
         return accumulatedTranscript + " " + currentSegment
     }
 
