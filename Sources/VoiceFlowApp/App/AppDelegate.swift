@@ -9,7 +9,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = RecordingCoordinator()
     private let mainWindow = MainWindowController()
     private let hotkey = GlobalHotkey()
-    private var translateHotkeys: [GlobalHotkey] = []
     private let prefs = PreferencesStore.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -67,31 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey
 
     func installHotkey() {
-        // Normal recording
         hotkey.register(
             keyCode: UInt32(prefs.hotkeyKey.keyCode),
             modifiers: prefs.hotkeyModifier.carbonModifier
         ) { [weak self] in
-            self?.coordinator.toggle(mode: .normal)
-        }
-
-        // Translation hotkeys — one per enabled language
-        translateHotkeys.forEach { $0.unregister() }
-        translateHotkeys = prefs.translationLanguages.map { lang in
-            let hk = GlobalHotkey()
-            let targetCode = lang.code
-            hk.register(
-                keyCode: UInt32(lang.key.keyCode),
-                modifiers: lang.modifier.carbonModifier
-            ) { [weak self] in
-                self?.coordinator.toggle(mode: .translate(targetCode))
-            }
-            return hk
+            self?.toggleRecording()
         }
     }
 
     @objc private func toggleRecording() {
-        coordinator.toggle(mode: .normal)
+        coordinator.toggle()
     }
 
     private func updateStatusIcon() {
@@ -111,9 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 try SMAppService.mainApp.unregister()
             }
-        } catch {
-            // Not critical — ad-hoc signed builds can't register
-        }
+        } catch {}
     }
 
     // MARK: - Permissions
@@ -133,7 +115,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func terminateApp() {
         hotkey.unregister()
-        translateHotkeys.forEach { $0.unregister() }
         coordinator.disconnect()
         NSApplication.shared.terminate(nil)
     }

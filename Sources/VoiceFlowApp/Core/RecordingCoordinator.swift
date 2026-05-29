@@ -10,11 +10,8 @@ final class RecordingCoordinator {
     private let prefs: PreferencesStore
     private let history: HistoryStore
 
-    enum InputMode { case normal, translate(String) }
-
     var onStateChanged: (() -> Void)?
     private var stopTask: Task<Void, Never>?
-    private var currentMode: InputMode = .normal
 
     var isRecording: Bool { session.state.isActive }
 
@@ -62,10 +59,9 @@ final class RecordingCoordinator {
         }
     }
 
-    func toggle(mode: InputMode = .normal) {
+    func toggle() {
         switch session.state {
         case .idle:
-            currentMode = mode
             startRecording()
         case .recording:
             stopRecording()
@@ -125,16 +121,7 @@ final class RecordingCoordinator {
             let refined: String
             var timedOut = false
 
-            switch currentMode {
-            case .translate(let targetLang):
-                hud.showProcessing(transcript: rawTranscript)
-                let result = await refinerClient.translate(
-                    text: rawTranscript,
-                    targetLanguage: targetLang
-                )
-                refined = result.0
-                timedOut = result.1
-            case .normal where prefs.refinementMode == .refine:
+            if prefs.refinementMode == .refine {
                 hud.showProcessing(transcript: rawTranscript)
                 let result = await refinerClient.refine(
                     text: rawTranscript,
@@ -142,7 +129,7 @@ final class RecordingCoordinator {
                 )
                 refined = result.0
                 timedOut = result.1
-            default:
+            } else {
                 refined = rawTranscript
             }
 

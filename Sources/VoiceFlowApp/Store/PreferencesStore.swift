@@ -6,14 +6,12 @@ import SwiftUI
 final class PreferencesStore {
     static let shared = PreferencesStore()
 
-    // Recording hotkey
     var hotkeyModifier: HotkeyModifier {
         didSet { defaults.set(hotkeyModifier.rawValue, forKey: "hotkeyModifier") }
     }
     var hotkeyKey: HotkeyKey {
         didSet { defaults.set(hotkeyKey.rawValue, forKey: "hotkeyKey") }
     }
-
     var locale: String {
         didSet { defaults.set(locale, forKey: "locale") }
     }
@@ -24,11 +22,6 @@ final class PreferencesStore {
         didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") }
     }
 
-    // Translation languages
-    var translationLanguages: [TranslationLanguage] {
-        didSet { saveTranslationLanguages() }
-    }
-
     private let defaults = UserDefaults.standard
 
     private init() {
@@ -37,100 +30,10 @@ final class PreferencesStore {
         locale = defaults.string(forKey: "locale") ?? "system"
         refinementMode = RefinementMode(rawValue: defaults.string(forKey: "refinementMode") ?? "") ?? .refine
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
-        translationLanguages = Self.loadTranslationLanguages(from: defaults)
-    }
-
-    private func saveTranslationLanguages() {
-        let data = translationLanguages.map { [
-            "code": $0.code,
-            "label": $0.label,
-            "modifier": $0.modifier.rawValue,
-            "key": $0.key.rawValue
-        ] }
-        defaults.set(data, forKey: "translationLanguages")
-    }
-
-    private static func loadTranslationLanguages(from defaults: UserDefaults) -> [TranslationLanguage] {
-        guard let data = defaults.array(forKey: "translationLanguages") as? [[String: String]] else {
-            return defaultTranslationLanguages
-        }
-        return data.compactMap { dict in
-            guard let code = dict["code"],
-                  let label = dict["label"],
-                  let modStr = dict["modifier"],
-                  let keyStr = dict["key"],
-                  let mod = HotkeyModifier(rawValue: modStr),
-                  let key = HotkeyKey(rawValue: keyStr) else { return nil }
-            return TranslationLanguage(code: code, label: label, modifier: mod, key: key)
-        }
-    }
-
-    private static let defaultTranslationLanguages: [TranslationLanguage] = [
-        TranslationLanguage(code: "en", label: "English", modifier: .control, key: .e),
-        TranslationLanguage(code: "ja", label: "Japanese", modifier: .control, key: .j),
-    ]
-}
-
-// MARK: - Translation Language
-
-struct TranslationLanguage: Identifiable, Equatable {
-    let id = UUID()
-    var code: String
-    var label: String
-    var modifier: HotkeyModifier
-    var key: HotkeyKey
-
-    static func == (lhs: TranslationLanguage, rhs: TranslationLanguage) -> Bool {
-        lhs.code == rhs.code && lhs.modifier == rhs.modifier && lhs.key == rhs.key
     }
 }
 
-enum AvailableLanguage: String, CaseIterable, Identifiable {
-    case english = "en"
-    case japanese = "ja"
-    case chinese = "zh-Hans"
-    case korean = "ko"
-    case german = "de"
-    case french = "fr"
-    case spanish = "es"
-    case portuguese = "pt"
-    case italian = "it"
-    case russian = "ru"
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .english: "English"
-        case .japanese: "Japanese"
-        case .chinese: "Chinese"
-        case .korean: "Korean"
-        case .german: "German"
-        case .french: "French"
-        case .spanish: "Spanish"
-        case .portuguese: "Portuguese"
-        case .italian: "Italian"
-        case .russian: "Russian"
-        }
-    }
-
-    var defaultKey: HotkeyKey {
-        switch self {
-        case .english: .e
-        case .japanese: .j
-        case .chinese: .c
-        case .korean: .k
-        case .german: .g
-        case .french: .f
-        case .spanish: .s
-        case .portuguese: .p
-        case .italian: .i
-        case .russian: .r
-        }
-    }
-}
-
-// MARK: - Hotkey enums
+// MARK: - Hotkey
 
 enum HotkeyModifier: String, CaseIterable, Identifiable {
     case option = "option"
@@ -201,13 +104,13 @@ enum RefinementMode: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .off: "Off (raw transcript)"
-        case .refine: "AI Refinement"
+        case .refine: "Basic cleanup (filler removal)"
         }
     }
     var description: String {
         switch self {
         case .off: "Insert speech-to-text output as-is"
-        case .refine: "Clean up with Apple Intelligence based on active app"
+        case .refine: "Remove filler words and normalize whitespace"
         }
     }
 }
