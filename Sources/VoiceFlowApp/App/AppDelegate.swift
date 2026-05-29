@@ -1,0 +1,100 @@
+import AppKit
+import Speech
+import AVFoundation
+import Carbon.HIToolbox
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private let coordinator = RecordingCoordinator()
+    private var hotkeyMonitor: Any?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        coordinator.setup()
+        coordinator.onStateChanged = { [weak self] in self?.updateStatusIcon() }
+        setupStatusItem()
+        setupHotkey()
+        Task { await requestPermissions() }
+    }
+
+    // MARK: - Status Bar
+
+    private func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.image = NSImage(
+            systemSymbolName: "mic.fill", accessibilityDescription: "VoiceFlow"
+        )
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
+        rebuildMenu()
+    }
+
+    private func rebuildMenu() {
+        guard let menu = statusItem.menu else { return }
+        menu.removeAllItems()
+
+        let title = coordinator.isRecording ? "Stop Recording" : "Start Recording (⌥Space)"
+        let item = NSMenuItem(title: title, action: #selector(toggleRecording), keyEquivalent: "")
+        item.target = self
+        menu.addItem(item)
+
+        menu.addItem(.separator())
+        let info = NSMenuItem(title: "⌥Space to toggle recording", action: nil, keyEquivalent: "")
+        info.isEnabled = false
+        menu.addItem(info)
+
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "Quit VoiceFlow", action: #selector(terminateApp), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+    }
+
+    // MARK: - Hotkey
+
+    private func setupHotkey() {
+        hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == UInt16(kVK_Space) && event.modifierFlags.contains(.option) {
+                Task { @MainActor in self?.toggleRecording() }
+            }
+        }
+    }
+
+    @objc private func toggleRecording() {
+        coordinator.toggle()
+    }
+
+    private func updateStatusIcon() {
+        let name = coordinator.isRecording ? "mic.fill.badge.plus" : "mic.fill"
+        statusItem.button?.image = NSImage(
+            systemSymbolName: name, accessibilityDescription: "VoiceFlow"
+        )
+        rebuildMenu()
+    }
+
+    // MARK: - Permissions
+
+    private nonisolated func requestPermissions() async {
+        let speech = await withCheckedContinuation { cont in
+            SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
+        }
+        if speech != .authorized {
+            await MainActor.run { coordinator.showPermissionError("Speech recognition permission required.") }
+        }
+        let mic = await AVCaptureDevice.requestAccess(for: .audio)
+        if !mic {
+            await MainActor.run { coordinator.showPermissionError("Microphone permission required.") }
+        }
+    }
+
+    @objc private func terminateApp() {
+        coordinator.disconnect()
+        NSApplication.shared.terminate(nil)
+    }
+}
+
+extension AppDelegate: NSMenuDelegate {
+    nonisolated func menuWillOpen(_ menu: NSMenu) {
+        Task { @MainActor in self.rebuildMenu() }
+    }
+}
