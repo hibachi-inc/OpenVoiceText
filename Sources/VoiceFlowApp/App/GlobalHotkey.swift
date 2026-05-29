@@ -1,49 +1,66 @@
 import Carbon.HIToolbox
 import AppKit
 
+@MainActor private var globalHotkeyRegistry: [UInt32: () -> Void] = [:]
+@MainActor private var globalHandlerInstalled = false
+@MainActor private var globalHandlerRef: EventHandlerRef?
+@MainActor private var globalNextID: UInt32 = 1
+
+@MainActor private func installGlobalHandlerIfNeeded() {
+    guard !globalHandlerInstalled else { return }
+
+    var eventType = EventTypeSpec(
+        eventClass: OSType(kEventClassKeyboard),
+        eventKind: UInt32(kEventHotKeyPressed)
+    )
+
+    let handler: EventHandlerUPP = { _, event, _ -> OSStatus in
+        var hotKeyID = EventHotKeyID()
+        let status = GetEventParameter(
+            event,
+            UInt32(kEventParamDirectObject),
+            UInt32(typeEventHotKeyID),
+            nil,
+            MemoryLayout<EventHotKeyID>.size,
+            nil,
+            &hotKeyID
+        )
+        guard status == noErr else { return OSStatus(eventNotHandledErr) }
+
+        let id = hotKeyID.id
+        Task { @MainActor in
+            globalHotkeyRegistry[id]?()
+        }
+        return noErr
+    }
+
+    InstallEventHandler(
+        GetApplicationEventTarget(),
+        handler,
+        1,
+        &eventType,
+        nil,
+        &globalHandlerRef
+    )
+    globalHandlerInstalled = true
+}
+
 @MainActor
 final class GlobalHotkey {
     private var hotkeyRef: EventHotKeyRef?
-    private var handlerRef: EventHandlerRef?
-    private var callback: (() -> Void)?
-    private let hotkeyID: EventHotKeyID
-
-    private static var nextID: UInt32 = 1
+    private let hotkeyID: UInt32
 
     init() {
-        hotkeyID = EventHotKeyID(
-            signature: OSType(0x4F565478), // "OVTx"
-            id: Self.nextID
-        )
-        Self.nextID += 1
+        hotkeyID = globalNextID
+        globalNextID += 1
     }
 
     func register(keyCode: UInt32, modifiers: UInt32, callback: @escaping () -> Void) {
         unregister()
-        self.callback = callback
+        globalHotkeyRegistry[hotkeyID] = callback
+        installGlobalHandlerIfNeeded()
 
-        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-
-        let handler: EventHandlerUPP = { _, event, userData -> OSStatus in
-            guard let userData else { return OSStatus(eventNotHandledErr) }
-            let instance = Unmanaged<GlobalHotkey>.fromOpaque(userData).takeUnretainedValue()
-            Task { @MainActor in
-                instance.callback?()
-            }
-            return noErr
-        }
-
-        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(
-            GetApplicationEventTarget(),
-            handler,
-            1,
-            &eventType,
-            selfPtr,
-            &handlerRef
-        )
-
-        var id = hotkeyID // RegisterEventHotKey requires inout
+        var id = EventHotKeyID(signature: OSType(0x4F565478), id: hotkeyID)
         RegisterEventHotKey(
             keyCode,
             modifiers,
@@ -59,15 +76,10 @@ final class GlobalHotkey {
             UnregisterEventHotKey(hotkeyRef)
             self.hotkeyRef = nil
         }
-        if let handlerRef {
-            RemoveEventHandler(handlerRef)
-            self.handlerRef = nil
-        }
-        callback = nil
+        globalHotkeyRegistry.removeValue(forKey: hotkeyID)
     }
 }
 
-// Carbon modifier flag conversion
 extension HotkeyModifier {
     var carbonModifier: UInt32 {
         switch self {
