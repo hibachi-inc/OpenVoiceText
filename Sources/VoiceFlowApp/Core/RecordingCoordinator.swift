@@ -162,9 +162,9 @@ final class RecordingCoordinator {
                 hud.showError("Refinement skipped (timeout)")
             } else {
                 #if DIRECT
-                hud.showInserted()
+                hud.showInserted(text: refined)
                 #else
-                hud.showCopied()
+                hud.showCopied(text: refined)
                 #endif
             }
             onStateChanged?()

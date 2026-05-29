@@ -26,8 +26,8 @@ protocol HUDProtocol {
     var onTap: (() -> Void)? { get set }
     func showListening()
     func showProcessing(transcript: String)
-    func showCopied()
-    func showInserted()
+    func showCopied(text: String)
+    func showInserted(text: String)
     func showError(_ message: String)
     func updateTranscript(_ text: String)
     func updateAudioLevel(_ level: Float)

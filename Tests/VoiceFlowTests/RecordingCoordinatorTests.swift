@@ -67,8 +67,8 @@ final class MockHUD: HUDProtocol {
 
     func showListening() { states.append("listening") }
     func showProcessing(transcript: String) { states.append("processing:\(transcript)") }
-    func showCopied() { states.append("copied") }
-    func showInserted() { states.append("inserted") }
+    func showCopied(text: String) { states.append("copied:\(text)") }
+    func showInserted(text: String) { states.append("inserted:\(text)") }
     func showError(_ message: String) { states.append("error:\(message)") }
     func updateTranscript(_ text: String) { states.append("transcript:\(text)") }
     func updateAudioLevel(_ level: Float) { states.append("level") }
