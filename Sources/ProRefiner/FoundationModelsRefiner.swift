@@ -61,7 +61,7 @@ enum FoundationModelsRefiner {
         } else {
             rules = enRules(for: category)
         }
-        return "\(rules)\n\n[INPUT] \(text)\n\n[OUTPUT]"
+        return "\(rules)\n\n[INPUT] \"\(text)\"\n\n[OUTPUT]"
     }
 
     private static func jaRules(for category: String) -> String {
@@ -107,7 +107,7 @@ enum FoundationModelsRefiner {
         Remove filler words before translating. Produce natural, fluent \(langName).
         Return ONLY the translated text. No explanations.
 
-        [INPUT] \(text)
+        [INPUT] "\(text)"
 
         [OUTPUT]
         """
