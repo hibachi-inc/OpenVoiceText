@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let coordinator = RecordingCoordinator()
     private var hotkeyMonitor: Any?
+    private var hotkeyActive = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator.setup()
@@ -22,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(
-            systemSymbolName: "mic.fill", accessibilityDescription: "VoiceFlow"
+            systemSymbolName: "mic.fill", accessibilityDescription: "OpenVoiceText"
         )
         let menu = NSMenu()
         menu.delegate = self
@@ -40,12 +41,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item)
 
         menu.addItem(.separator())
-        let info = NSMenuItem(title: "⌥Space to toggle recording", action: nil, keyEquivalent: "")
-        info.isEnabled = false
-        menu.addItem(info)
+
+        if !hotkeyActive {
+            let warning = NSMenuItem(
+                title: "⚠ Hotkey requires Input Monitoring permission",
+                action: nil, keyEquivalent: ""
+            )
+            warning.isEnabled = false
+            menu.addItem(warning)
+
+            let fix = NSMenuItem(
+                title: "Open Input Monitoring Settings...",
+                action: #selector(openInputMonitoringSettings),
+                keyEquivalent: ""
+            )
+            fix.target = self
+            menu.addItem(fix)
+        } else {
+            let info = NSMenuItem(title: "⌥Space to toggle recording", action: nil, keyEquivalent: "")
+            info.isEnabled = false
+            menu.addItem(info)
+        }
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit VoiceFlow", action: #selector(terminateApp), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit OpenVoiceText", action: #selector(terminateApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }
@@ -55,7 +74,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupHotkey() {
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == UInt16(kVK_Space) && event.modifierFlags.contains(.option) {
-                Task { @MainActor in self?.toggleRecording() }
+                Task { @MainActor in
+                    self?.hotkeyActive = true
+                    self?.toggleRecording()
+                }
+            }
+        }
+
+        // Check if input monitoring is likely available by testing accessibility
+        // addGlobalMonitorForEvents silently fails without the permission
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            if !hotkeyActive {
+                coordinator.showPermissionError("Grant Input Monitoring to enable ⌥Space hotkey")
             }
         }
     }
@@ -64,10 +95,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.toggle()
     }
 
+    @objc private func openInputMonitoringSettings() {
+        NSWorkspace.shared.open(
+            URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!
+        )
+    }
+
     private func updateStatusIcon() {
         let name = coordinator.isRecording ? "mic.fill.badge.plus" : "mic.fill"
         statusItem.button?.image = NSImage(
-            systemSymbolName: name, accessibilityDescription: "VoiceFlow"
+            systemSymbolName: name, accessibilityDescription: "OpenVoiceText"
         )
         rebuildMenu()
     }
