@@ -2,18 +2,18 @@ import Foundation
 import Speech
 import AVFAudio
 import Accelerate
-import os
 import VoiceFlowProtocol
-
-private let logger = Logger(subsystem: "com.hibachi.voiceflow.stt", category: "STTService")
 
 final class STTService: NSObject, STTServiceProtocol {
     private var recognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
-    private var latestTranscript = ""
+
+    private var confirmedText = ""
+    private var provisionalText = ""
     private let lock = NSLock()
+
     private weak var connection: NSXPCConnection?
     private var tapInstalled = false
 
@@ -35,7 +35,8 @@ final class STTService: NSObject, STTServiceProtocol {
         self.recognizer = recognizer
 
         lock.lock()
-        latestTranscript = ""
+        confirmedText = ""
+        provisionalText = ""
         lock.unlock()
 
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -48,11 +49,10 @@ final class STTService: NSObject, STTServiceProtocol {
         }
         self.recognitionRequest = request
 
-        let inputNode = audioEngine.inputNode
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
-
         if !tapInstalled {
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            let inputNode = audioEngine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
                 self?.recognitionRequest?.append(buffer)
                 self?.processAudioLevel(buffer: buffer)
             }
@@ -61,18 +61,45 @@ final class STTService: NSObject, STTServiceProtocol {
 
         recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
             guard let self else { return }
+
             if let result {
                 let text = result.bestTranscription.formattedString
-                self.lock.lock()
-                self.latestTranscript = text
-                self.lock.unlock()
-                self.client?.didUpdateTranscript(text)
+
+                lock.lock()
+                // Detect segment reset: if new text is significantly shorter,
+                // the recognizer started a new internal session.
+                // Save the previous provisional text before overwriting.
+                if !provisionalText.isEmpty && text.count < provisionalText.count / 2 {
+                    confirmedText = fullTranscript
+                    provisionalText = ""
+                }
+                provisionalText = text
+                let display = fullTranscript
+                lock.unlock()
+
+                client?.didUpdateTranscript(display)
+
+                if result.isFinal {
+                    lock.lock()
+                    confirmedText = fullTranscript
+                    provisionalText = ""
+                    lock.unlock()
+                }
             }
+
             if let error {
-                let nsError = error as NSError
-                // Ignore normal session-end errors
-                guard nsError.code != 203 && nsError.code != 216 && nsError.code != 1110 else { return }
-                self.client?.didEncounterError(error.localizedDescription)
+                let code = (error as NSError).code
+                if code == 216 || code == 203 || code == 1110 {
+                    // Session ended — save whatever we have
+                    lock.lock()
+                    if !provisionalText.isEmpty {
+                        confirmedText = fullTranscript
+                        provisionalText = ""
+                    }
+                    lock.unlock()
+                } else {
+                    client?.didEncounterError(error.localizedDescription)
+                }
             }
         }
 
@@ -86,14 +113,24 @@ final class STTService: NSObject, STTServiceProtocol {
     }
 
     func stopRecording(reply: @escaping (String?) -> Void) {
-        cleanup()
+        recognitionRequest?.endAudio()
+        recognitionTask?.finish()
 
-        lock.lock()
-        let transcript = latestTranscript
-        latestTranscript = ""
-        lock.unlock()
+        // Wait briefly for final callback
+        nonisolated(unsafe) let sendableReply = reply
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self else { sendableReply(nil); return }
 
-        reply(transcript.isEmpty ? nil : transcript)
+            self.cleanup()
+
+            self.lock.lock()
+            let result = self.fullTranscript
+            self.confirmedText = ""
+            self.provisionalText = ""
+            self.lock.unlock()
+
+            sendableReply(result.isEmpty ? nil : result)
+        }
     }
 
     private func cleanup() {
@@ -102,11 +139,15 @@ final class STTService: NSObject, STTServiceProtocol {
             tapInstalled = false
         }
         audioEngine.stop()
-        recognitionRequest?.endAudio()
-        recognitionTask?.finish()
         recognitionRequest = nil
         recognitionTask = nil
         recognizer = nil
+    }
+
+    private var fullTranscript: String {
+        if confirmedText.isEmpty { return provisionalText }
+        if provisionalText.isEmpty { return confirmedText }
+        return confirmedText + " " + provisionalText
     }
 
     private func processAudioLevel(buffer: AVAudioPCMBuffer) {
