@@ -48,6 +48,14 @@ enum HotkeyModifier: String, CaseIterable, Identifiable {
         }
     }
 
+    var symbol: String {
+        switch self {
+        case .option: "⌥"
+        case .control: "⌃"
+        case .command: "⌘"
+        }
+    }
+
     var eventModifier: NSEvent.ModifierFlags {
         switch self {
         case .option: .option

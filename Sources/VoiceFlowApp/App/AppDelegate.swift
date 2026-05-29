@@ -2,6 +2,7 @@ import AppKit
 import Speech
 import AVFoundation
 import Carbon.HIToolbox
+import ServiceManagement
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -10,12 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mainWindow = MainWindowController()
     private var hotkeyMonitor: Any?
     private var hotkeyActive = false
+    private let prefs = PreferencesStore.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         coordinator.setup()
         coordinator.onStateChanged = { [weak self] in self?.updateStatusIcon() }
         setupStatusItem()
-        setupHotkey()
+        installHotkeyMonitor()
+        syncLaunchAtLogin()
         Task { await requestPermissions() }
     }
 
@@ -36,7 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let menu = statusItem.menu else { return }
         menu.removeAllItems()
 
-        let title = coordinator.isRecording ? "Stop Recording" : "Start Recording (⌥Space)"
+        let shortcutLabel = "\(prefs.hotkeyModifier.symbol)\(prefs.hotkeyKey.label)"
+        let title = coordinator.isRecording ? "Stop Recording" : "Start Recording (\(shortcutLabel))"
         let item = NSMenuItem(title: title, action: #selector(toggleRecording), keyEquivalent: "")
         item.target = self
         menu.addItem(item)
@@ -59,7 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fix.target = self
             menu.addItem(fix)
         } else {
-            let info = NSMenuItem(title: "⌥Space to toggle recording", action: nil, keyEquivalent: "")
+            let info = NSMenuItem(title: "\(shortcutLabel) to toggle recording", action: nil, keyEquivalent: "")
             info.isEnabled = false
             menu.addItem(info)
         }
@@ -81,25 +85,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Hotkey
 
-    private func setupHotkey() {
-        let prefs = PreferencesStore.shared
+    func installHotkeyMonitor() {
+        if let hotkeyMonitor {
+            NSEvent.removeMonitor(hotkeyMonitor)
+        }
+
         hotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            let expectedKey = prefs.hotkeyKey.keyCode
-            let expectedMod = prefs.hotkeyModifier.eventModifier
+            guard let self else { return }
+            let expectedKey = self.prefs.hotkeyKey.keyCode
+            let expectedMod = self.prefs.hotkeyModifier.eventModifier
             if event.keyCode == expectedKey && event.modifierFlags.contains(expectedMod) {
                 Task { @MainActor in
-                    self?.hotkeyActive = true
-                    self?.toggleRecording()
+                    self.hotkeyActive = true
+                    self.toggleRecording()
                 }
             }
         }
 
-        // Check if input monitoring is likely available by testing accessibility
-        // addGlobalMonitorForEvents silently fails without the permission
         Task {
             try? await Task.sleep(for: .seconds(2))
             if !hotkeyActive {
-                coordinator.showPermissionError("Grant Input Monitoring to enable ⌥Space hotkey")
+                coordinator.showPermissionError("Grant Input Monitoring to enable hotkey")
             }
         }
     }
@@ -120,6 +126,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             systemSymbolName: name, accessibilityDescription: "OpenVoiceText"
         )
         rebuildMenu()
+    }
+
+    // MARK: - Launch at Login
+
+    func syncLaunchAtLogin() {
+        do {
+            if prefs.launchAtLogin {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            // Not critical — ad-hoc signed builds can't register
+        }
     }
 
     // MARK: - Permissions

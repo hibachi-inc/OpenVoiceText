@@ -11,17 +11,19 @@ struct HotkeySettingsView: View {
                         Text(mod.label).tag(mod)
                     }
                 }
+                .onChange(of: prefs.hotkeyModifier) { reinstallHotkey() }
 
                 Picker("Key", selection: $prefs.hotkeyKey) {
                     ForEach(HotkeyKey.allCases) { key in
                         Text(key.label).tag(key)
                     }
                 }
+                .onChange(of: prefs.hotkeyKey) { reinstallHotkey() }
 
                 HStack(spacing: DS.Spacing.sm) {
                     Text("Current shortcut:")
                         .foregroundStyle(DS.Colors.secondary)
-                    Text(shortcutDisplay)
+                    Text("\(prefs.hotkeyModifier.symbol)\(prefs.hotkeyKey.label)")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -56,13 +58,8 @@ struct HotkeySettingsView: View {
         .navigationTitle("Hotkey")
     }
 
-    private var shortcutDisplay: String {
-        let mod: String
-        switch prefs.hotkeyModifier {
-        case .option: mod = "⌥"
-        case .control: mod = "⌃"
-        case .command: mod = "⌘"
-        }
-        return "\(mod)\(prefs.hotkeyKey.label)"
+    private func reinstallHotkey() {
+        guard let delegate = NSApp.delegate as? AppDelegate else { return }
+        delegate.installHotkeyMonitor()
     }
 }

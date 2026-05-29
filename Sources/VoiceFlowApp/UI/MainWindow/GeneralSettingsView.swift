@@ -49,9 +49,15 @@ struct GeneralSettingsView: View {
 
             Section("Startup") {
                 Toggle("Launch at login", isOn: $prefs.launchAtLogin)
+                    .onChange(of: prefs.launchAtLogin) { syncLaunchAtLogin() }
             }
         }
         .formStyle(.grouped)
         .navigationTitle("General")
+    }
+
+    private func syncLaunchAtLogin() {
+        guard let delegate = NSApp.delegate as? AppDelegate else { return }
+        delegate.syncLaunchAtLogin()
     }
 }
