@@ -7,6 +7,7 @@ import Carbon.HIToolbox
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let coordinator = RecordingCoordinator()
+    private let mainWindow = MainWindowController()
     private var hotkeyMonitor: Any?
     private var hotkeyActive = false
 
@@ -64,9 +65,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        let settings = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
+
+        menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit OpenVoiceText", action: #selector(terminateApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+    }
+
+    @objc private func openSettings() {
+        mainWindow.show()
     }
 
     // MARK: - Hotkey
