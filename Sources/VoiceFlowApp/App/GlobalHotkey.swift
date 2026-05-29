@@ -6,11 +6,17 @@ final class GlobalHotkey {
     private var hotkeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
     private var callback: (() -> Void)?
+    private let hotkeyID: EventHotKeyID
 
-    private static let hotkeyID = EventHotKeyID(
-        signature: OSType(0x4F565478), // "OVTx" — OpenVoiceText
-        id: 1
-    )
+    private static var nextID: UInt32 = 1
+
+    init() {
+        hotkeyID = EventHotKeyID(
+            signature: OSType(0x4F565478), // "OVTx"
+            id: Self.nextID
+        )
+        Self.nextID += 1
+    }
 
     func register(keyCode: UInt32, modifiers: UInt32, callback: @escaping () -> Void) {
         unregister()
@@ -37,7 +43,7 @@ final class GlobalHotkey {
             &handlerRef
         )
 
-        var id = Self.hotkeyID // RegisterEventHotKey requires inout
+        var id = hotkeyID // RegisterEventHotKey requires inout
         RegisterEventHotKey(
             keyCode,
             modifiers,

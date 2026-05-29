@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let coordinator = RecordingCoordinator()
     private let mainWindow = MainWindowController()
     private let hotkey = GlobalHotkey()
+    private let translateHotkey = GlobalHotkey()
     private let prefs = PreferencesStore.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -70,12 +71,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyCode: UInt32(prefs.hotkeyKey.keyCode),
             modifiers: prefs.hotkeyModifier.carbonModifier
         ) { [weak self] in
-            self?.toggleRecording()
+            self?.coordinator.toggle(mode: .normal)
+        }
+        translateHotkey.register(
+            keyCode: UInt32(prefs.translateHotkeyKey.keyCode),
+            modifiers: prefs.translateHotkeyModifier.carbonModifier
+        ) { [weak self] in
+            self?.coordinator.toggle(mode: .translate)
         }
     }
 
     @objc private func toggleRecording() {
-        coordinator.toggle()
+        coordinator.toggle(mode: .normal)
     }
 
     private func updateStatusIcon() {
@@ -117,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func terminateApp() {
         hotkey.unregister()
+        translateHotkey.unregister()
         coordinator.disconnect()
         NSApplication.shared.terminate(nil)
     }

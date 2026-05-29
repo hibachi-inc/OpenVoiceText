@@ -40,10 +40,19 @@ final class MockRefinerClient: RefinerClientProtocol {
     var shouldTimeout = false
     var disconnected = false
 
+    var lastTranslateTarget: String?
+    var translatedToReturn: String = "Translated text"
+
     func refine(text: String, category: String) async -> (String, Bool) {
         lastText = text
         lastCategory = category
         return (shouldTimeout ? text : refinedToReturn, shouldTimeout)
+    }
+
+    func translate(text: String, targetLanguage: String) async -> (String, Bool) {
+        lastText = text
+        lastTranslateTarget = targetLanguage
+        return (shouldTimeout ? text : translatedToReturn, shouldTimeout)
     }
 
     func disconnect() {

@@ -25,6 +25,49 @@ enum FoundationModelsRefiner {
         }
     }
 
+    static func translate(text: String, targetLanguage: String) async -> String {
+        let model = SystemLanguageModel(
+            guardrails: .permissiveContentTransformations
+        )
+        guard model.availability == .available else { return text }
+
+        let instructions = translatePrompt(targetLanguage: targetLanguage)
+        let session = LanguageModelSession(model: model, instructions: instructions)
+
+        do {
+            let response = try await session.respond(to: text)
+            let translated = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            return translated.isEmpty ? text : translated
+        } catch {
+            return text
+        }
+    }
+
+    private static func translatePrompt(targetLanguage: String) -> String {
+        """
+        You are a translator. Translate the user's spoken text into \(languageName(targetLanguage)).
+
+        Rules:
+        - Remove filler words before translating
+        - Produce natural, fluent \(languageName(targetLanguage))
+        - Return ONLY the translated text — no explanations
+        - If the input is already in \(languageName(targetLanguage)), just clean it up
+        """
+    }
+
+    private static func languageName(_ code: String) -> String {
+        switch code {
+        case "en": "English"
+        case "ja": "Japanese"
+        case "zh-Hans": "Simplified Chinese"
+        case "ko": "Korean"
+        case "de": "German"
+        case "fr": "French"
+        case "es": "Spanish"
+        default: code
+        }
+    }
+
     private static func detectLanguage(_ text: String) -> String {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)

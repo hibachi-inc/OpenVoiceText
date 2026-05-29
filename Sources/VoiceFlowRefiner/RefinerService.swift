@@ -15,4 +15,18 @@ final class RefinerService: NSObject, RefinerServiceProtocol, @unchecked Sendabl
         #endif
         reply(text)
     }
+
+    func translate(text: String, targetLanguage: String, reply: @escaping (String?) -> Void) {
+        #if canImport(FoundationModels)
+        if #available(macOS 26, *) {
+            nonisolated(unsafe) let sendableReply = reply
+            Task {
+                let translated = await FoundationModelsRefiner.translate(text: text, targetLanguage: targetLanguage)
+                sendableReply(translated)
+            }
+            return
+        }
+        #endif
+        reply(text)
+    }
 }
