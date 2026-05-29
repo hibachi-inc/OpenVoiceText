@@ -136,7 +136,7 @@ final class FloatingHUD: HUDProtocol {
         let w = calculateWidth()
         let frame = panel.frame
         panel.setFrame(
-            NSRect(x: frame.midX - w / 2, y: frame.origin.y, width: w, height: Layout.height),
+            NSRect(x: frame.midX - w / 2, y: frame.origin.y, width: w, height: DS.Panel.hudHeight),
             display: true
         )
     }
@@ -146,22 +146,15 @@ final class FloatingHUD: HUDProtocol {
         let w = calculateWidth()
         let visibleFrame = screen.visibleFrame
         panel.setFrame(
-            NSRect(x: visibleFrame.midX - w / 2, y: visibleFrame.minY + Layout.bottomOffset, width: w, height: Layout.height),
+            NSRect(x: visibleFrame.midX - w / 2, y: visibleFrame.minY + DS.Panel.hudBottomOffset, width: w, height: DS.Panel.hudHeight),
             display: true
         )
     }
 
-    private enum Layout {
-        static let minWidth: CGFloat = 240
-        static let maxWidth: CGFloat = 620
-        static let charWidth: CGFloat = 10
-        static let maxDisplayChars = 80
-        static let height: CGFloat = 60
-        static let bottomOffset: CGFloat = 48
-    }
-
     private func calculateWidth() -> CGFloat {
-        let textWidth = CGFloat(transcript.prefix(Layout.maxDisplayChars).count) * Layout.charWidth
-        return min(Layout.maxWidth, max(Layout.minWidth, Layout.minWidth + textWidth))
+        let charWidth: CGFloat = 10
+        let maxChars = 80
+        let textWidth = CGFloat(transcript.prefix(maxChars).count) * charWidth
+        return min(DS.Panel.hudMaxWidth, max(DS.Panel.hudMinWidth, DS.Panel.hudMinWidth + textWidth))
     }
 }

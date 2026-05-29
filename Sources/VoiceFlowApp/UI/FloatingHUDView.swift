@@ -6,33 +6,39 @@ struct FloatingHUDView: View {
     let audioLevel: Float
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DS.Spacing.md) {
             Image(systemName: status.iconName)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(status.color)
                 .symbolEffect(.pulse, isActive: status == .listening)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(status.title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(DS.Font.hudStatus)
                     .foregroundStyle(.white)
                 if !transcript.isEmpty {
                     Text(transcript.suffix(80))
-                        .font(.system(size: 14, weight: .medium))
+                        .font(DS.Font.hudTranscript)
                         .foregroundStyle(.white.opacity(0.9))
                         .lineLimit(2)
                 }
             }
+
             if status == .listening {
                 AudioMeterView(level: audioLevel)
                     .frame(width: 40, height: 24)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, DS.Spacing.xl)
+        .padding(.vertical, DS.Spacing.md)
         .background(.ultraThinMaterial.opacity(0.9))
         .background(status.color.opacity(0.3))
         .clipShape(Capsule())
-        .shadow(color: .black.opacity(0.3), radius: 10, y: 4)
+        .shadow(
+            color: DS.Shadow.hud.color,
+            radius: DS.Shadow.hud.radius,
+            y: DS.Shadow.hud.y
+        )
     }
 }
 
@@ -64,10 +70,10 @@ enum HUDStatus: Equatable {
 
     var color: Color {
         switch self {
-        case .listening: .red
-        case .processing: .orange
-        case .copied, .inserted: .green
-        case .error: .red
+        case .listening: DS.Colors.recording
+        case .processing: DS.Colors.processing
+        case .copied, .inserted: DS.Colors.success
+        case .error: DS.Colors.error
         }
     }
 }
