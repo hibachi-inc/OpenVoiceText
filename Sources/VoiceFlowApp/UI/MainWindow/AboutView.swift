@@ -35,11 +35,7 @@ struct AboutView: View {
                     Label("Report a Bug", systemImage: "ladybug")
                 }
 
-                Link(destination: URL(string: "https://hibachi.co.jp")!) {
-                    Label("Hibachi Inc.", systemImage: "building.2")
-                }
-
-                Link(destination: URL(string: "https://reki-note.com")!) {
+                Link(destination: URL(string: "https://rekinote.app/")!) {
                     Label("Reki note — by the same team", systemImage: "doc.richtext")
                 }
             }
