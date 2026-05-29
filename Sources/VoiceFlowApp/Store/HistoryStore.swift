@@ -31,13 +31,15 @@ final class HistoryStore {
 
     private init() {
         let schema = Schema([HistoryEntry.self])
-        let config = ModelConfiguration(isStoredInMemoryOnly: false)
+        let diskConfig = ModelConfiguration(isStoredInMemoryOnly: false)
+        let memoryConfig = ModelConfiguration(isStoredInMemoryOnly: true)
         do {
-            container = try ModelContainer(for: schema, configurations: [config])
-            context = ModelContext(container)
+            container = try ModelContainer(for: schema, configurations: [diskConfig])
         } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+            // Fallback to in-memory if disk store is corrupted (e.g. schema migration failure)
+            container = try! ModelContainer(for: schema, configurations: [memoryConfig])
         }
+        context = ModelContext(container)
     }
 
     func add(rawTranscript: String, refinedText: String, appName: String, category: String) {
