@@ -11,30 +11,38 @@ final class RefinerService: NSObject, RefinerServiceProtocol, @unchecked Sendabl
     }
 
     func translate(text: String, targetLanguage: String, reply: @escaping (String?) -> Void) {
-        // Translation requires Pro version
         reply(text)
     }
 }
 
 enum SimpleRefiner {
+    // Compiled once, reused across calls
+    private static let enFillerRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"\b(um|uh|like|you know|I mean|so|well|basically|actually|literally)\b"#,
+        options: .caseInsensitive
+    )
+
+    // Japanese fillers — only match standalone (surrounded by whitespace, punctuation, or string boundaries)
+    // Longer forms first to avoid partial matches
+    private static let jaFillerRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"(?:^|(?<=[\s、。，．！？!?\n]))(?:えーっと|えーと|えっと|あのー|まあ|えー|なんか)(?=$|[\s、。，．！？!?\n])"#,
+        options: []
+    )
+
     static func clean(_ text: String) -> String {
         var result = text
 
         let lang = detectLanguage(text)
-        if lang == "ja" {
-            for filler in ["えーと", "えっと", "あのー", "あの", "まあ", "えー", "そのー", "その", "なんか"] {
-                result = result.replacingOccurrences(of: filler, with: "")
-            }
-        } else {
-            let pattern = #"\b(um|uh|like|you know|I mean|so|well|basically|actually|literally)\b"#
-            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
-                result = regex.stringByReplacingMatches(
-                    in: result, range: NSRange(result.startIndex..., in: result), withTemplate: ""
-                )
-            }
+        let regex = lang == "ja" ? jaFillerRegex : enFillerRegex
+
+        if let regex {
+            result = regex.stringByReplacingMatches(
+                in: result,
+                range: NSRange(result.startIndex..., in: result),
+                withTemplate: ""
+            )
         }
 
-        // Normalize whitespace
         result = result.replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
         result = result.trimmingCharacters(in: .whitespacesAndNewlines)
 

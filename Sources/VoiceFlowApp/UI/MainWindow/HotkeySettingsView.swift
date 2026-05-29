@@ -17,12 +17,6 @@ struct HotkeySettingsView: View {
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
             }
-
-            Section("Translation") {
-                Text("Translation shortcuts are configured per-language in the Translation tab.")
-                    .font(DS.Font.caption)
-                    .foregroundStyle(DS.Colors.secondary)
-            }
         }
         .formStyle(.grouped)
         .navigationTitle("Hotkey")

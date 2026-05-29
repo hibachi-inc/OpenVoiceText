@@ -12,6 +12,8 @@ final class RecordingCoordinator {
 
     var onStateChanged: (() -> Void)?
     private var stopTask: Task<Void, Never>?
+    private var cancelTask: Task<Void, Never>?
+    private var errorResetTask: Task<Void, Never>?
 
     var isRecording: Bool { session.state.isActive }
 
@@ -84,13 +86,11 @@ final class RecordingCoordinator {
     // MARK: - Private
 
     private func startRecording() {
-        if let cancelTask {
-            Task {
-                await cancelTask.value
-                self.startRecording()
-            }
-            return
-        }
+        guard cancelTask == nil else { return }
+
+        errorResetTask?.cancel()
+        errorResetTask = nil
+
         session.transition(.startRequested)
         hud.showListening()
         onStateChanged?()
@@ -158,8 +158,6 @@ final class RecordingCoordinator {
         }
     }
 
-    private var cancelTask: Task<Void, Never>?
-
     private func cancelRecording() {
         session.transition(.cancel)
         stopTask?.cancel()
@@ -167,6 +165,14 @@ final class RecordingCoordinator {
         cancelTask = Task {
             let _ = await sttClient.stopRecording()
             cancelTask = nil
+        }
+        // Safety: if cancelTask hangs, force-clear after 5 seconds
+        Task {
+            try? await Task.sleep(for: .seconds(5))
+            if cancelTask != nil {
+                cancelTask?.cancel()
+                cancelTask = nil
+            }
         }
         hud.hide()
         onStateChanged?()
@@ -180,9 +186,10 @@ final class RecordingCoordinator {
         hud.showError(message)
         onStateChanged?()
 
-        Task {
+        errorResetTask?.cancel()
+        errorResetTask = Task {
             try? await Task.sleep(for: .seconds(3))
-            guard case .error = session.state else { return }
+            guard !Task.isCancelled, case .error = session.state else { return }
             session.transition(.reset)
             onStateChanged?()
         }

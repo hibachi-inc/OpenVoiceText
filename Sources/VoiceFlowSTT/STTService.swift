@@ -65,6 +65,9 @@ final class STTService: NSObject, STTServiceProtocol {
                 self.client?.didUpdateTranscript(text)
             }
             if let error {
+                // Ignore cancellation errors from finish() during normal stop
+                let nsError = error as NSError
+                guard nsError.code != 203 && nsError.code != 216 else { return }
                 self.client?.didEncounterError(error.localizedDescription)
             }
         }
