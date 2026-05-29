@@ -141,38 +141,19 @@ final class RecordingCoordinator {
             var timedOut = false
 
             #if PROFEATURES
-            switch currentMode {
-            case .translate(let targetLang):
+            if case .translate(let targetLang) = currentMode {
                 hud.showProcessing(transcript: rawTranscript)
                 let result = await refinerClient.translate(
                     text: rawTranscript, targetLanguage: targetLang
                 )
                 refined = result.0
                 timedOut = result.1
-            case .normal where prefs.refinementMode == .refine:
-                hud.showProcessing(transcript: rawTranscript)
-                let result = await refinerClient.refine(
-                    text: rawTranscript,
-                    category: context?.category.rawValue ?? "generic"
-                )
-                refined = result.0
-                timedOut = result.1
-            default:
-                refined = rawTranscript
+            } else {
+                (refined, timedOut) = await refineIfEnabled(rawTranscript, context: context)
             }
             currentMode = .normal
             #else
-            if prefs.refinementMode == .refine {
-                hud.showProcessing(transcript: rawTranscript)
-                let result = await refinerClient.refine(
-                    text: rawTranscript,
-                    category: context?.category.rawValue ?? "generic"
-                )
-                refined = result.0
-                timedOut = result.1
-            } else {
-                refined = rawTranscript
-            }
+            (refined, timedOut) = await refineIfEnabled(rawTranscript, context: context)
             #endif
 
             guard !Task.isCancelled else { return }
@@ -235,5 +216,14 @@ final class RecordingCoordinator {
             session.transition(.reset)
             onStateChanged?()
         }
+    }
+
+    private func refineIfEnabled(_ text: String, context: AppContext?) async -> (String, Bool) {
+        guard prefs.refinementMode == .refine else { return (text, false) }
+        hud.showProcessing(transcript: text)
+        return await refinerClient.refine(
+            text: text,
+            category: context?.category.rawValue ?? "generic"
+        )
     }
 }

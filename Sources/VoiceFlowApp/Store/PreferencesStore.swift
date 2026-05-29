@@ -135,38 +135,43 @@ enum RefinementMode: String, CaseIterable, Identifiable {
     case refine = "refine"
 
     var id: String { rawValue }
+
+    #if PROFEATURES
+    static let refineLabel = "AI Refinement"
+    static let refineDescription = "Clean up with Apple Intelligence based on active app"
+    #else
+    static let refineLabel = "Basic cleanup (filler removal)"
+    static let refineDescription = "Remove filler words and normalize whitespace"
+    #endif
+
     var label: String {
         switch self {
         case .off: "Off (raw transcript)"
-        #if PROFEATURES
-        case .refine: "AI Refinement"
-        #else
-        case .refine: "Basic cleanup (filler removal)"
-        #endif
+        case .refine: Self.refineLabel
         }
     }
     var description: String {
         switch self {
         case .off: "Insert speech-to-text output as-is"
-        #if PROFEATURES
-        case .refine: "Clean up with Apple Intelligence based on active app"
-        #else
-        case .refine: "Remove filler words and normalize whitespace"
-        #endif
+        case .refine: Self.refineDescription
         }
     }
 }
 
 #if PROFEATURES
 struct TranslationLanguage: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     var code: String
     var label: String
     var modifier: HotkeyModifier
     var key: HotkeyKey
 
-    static func == (lhs: TranslationLanguage, rhs: TranslationLanguage) -> Bool {
-        lhs.code == rhs.code && lhs.modifier == rhs.modifier && lhs.key == rhs.key
+    init(code: String, label: String, modifier: HotkeyModifier, key: HotkeyKey) {
+        self.id = UUID()
+        self.code = code
+        self.label = label
+        self.modifier = modifier
+        self.key = key
     }
 }
 
