@@ -89,7 +89,14 @@ This builds all three targets (app + 2 XPC services), assembles the `.app` bundl
 swift test
 ```
 
-36 tests covering the state machine, app context classification, and recording coordinator.
+62 tests across 4 suites: state machine, app context, recording coordinator, and SimpleRefiner.
+
+### Distribution builds
+
+```bash
+make bundle-mas   # Mac App Store (App Sandbox)
+make bundle-dmg   # Direct distribution (Hardened Runtime)
+```
 
 ### Direct distribution build
 
@@ -106,10 +113,11 @@ This enables `AccessibilityInjector` which simulates ⌘V to paste text at the c
 ```
 Sources/
 ├── VoiceFlowApp/          # Main process
-│   ├── App/               # Entry point, AppDelegate
+│   ├── App/               # Entry point, AppDelegate, GlobalHotkey
 │   ├── Core/              # State machine, coordinator, app context
 │   ├── Injector/          # ClipboardInjector / AccessibilityInjector
-│   ├── UI/                # Floating HUD, SwiftUI views
+│   ├── Store/             # PreferencesStore, HistoryStore, ProUpgradeManager
+│   ├── UI/                # Floating HUD, SwiftUI views, Settings
 │   └── XPC/               # XPC client wrappers with timeout
 ├── VoiceFlowSTT/          # STT XPC service
 ├── VoiceFlowRefiner/      # Refiner XPC service (FoundationModels)
