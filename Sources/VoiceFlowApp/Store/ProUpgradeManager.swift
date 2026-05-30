@@ -90,6 +90,7 @@ final class ProUpgradeManager {
     func refreshPurchaseState() async {
         refreshTask?.cancel()
         let task = Task {
+            defer { refreshTask = nil }
             var found = false
             for await entitlement in Transaction.currentEntitlements {
                 guard !Task.isCancelled else { return }

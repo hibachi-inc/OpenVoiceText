@@ -95,6 +95,15 @@ final class RecordingCoordinator {
     }
 
     func disconnect() {
+        stopTask?.cancel()
+        stopTask = nil
+        cancelTask?.cancel()
+        cancelTask = nil
+        safetyTimerTask?.cancel()
+        safetyTimerTask = nil
+        errorResetTask?.cancel()
+        errorResetTask = nil
+        session.forceReset()
         sttClient.disconnect()
         refinerClient.disconnect()
     }
@@ -127,6 +136,7 @@ final class RecordingCoordinator {
         onStateChanged?()
 
         stopTask = Task {
+            defer { stopTask = nil }
             let rawTranscript = await sttClient.stopRecording() ?? ""
 
             guard !Task.isCancelled else { return }

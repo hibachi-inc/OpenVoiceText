@@ -8,14 +8,15 @@ DMG_NAME = $(APP_NAME)-$(VERSION).dmg
 SIGN_ID = Developer ID Application: HIBACHI inc. (TYX92DB6TA)
 NOTARY_PROFILE = rekinote-notarize
 DIRECT_FLAGS = -Xswiftc -DDIRECT
+EMBED_PLIST = -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Resources/Info.plist
 
 .PHONY: build build-release bundle run clean bundle-mas bundle-dmg release dmg notarize
 
 build:
-	swift build
+	swift build $(EMBED_PLIST)
 
 build-release:
-	swift build -c release $(DIRECT_FLAGS)
+	swift build -c release $(DIRECT_FLAGS) $(EMBED_PLIST)
 
 bundle: build
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"

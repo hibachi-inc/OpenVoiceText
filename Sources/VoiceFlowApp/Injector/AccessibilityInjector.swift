@@ -7,10 +7,10 @@ import Carbon.HIToolbox
 @MainActor
 struct AccessibilityInjector: TextInjecting {
     private enum Timing {
+        static let inputSourceDelay: TimeInterval  = 0.05    // 50ms — wait for input source switch
         static let preWriteDelay: TimeInterval     = 0.06    // 60ms — wait for pasteboard write to settle
         static let interPasteDelay: TimeInterval   = 0.14    // 140ms — gap between double-paste
         static let postPasteDelay: TimeInterval     = 0.22    // 220ms — wait for target app to process paste
-        static let inputSourceDelay: useconds_t    = 50_000   // 50ms — wait for input source switch
     }
 
     func inject(_ text: String) {
@@ -28,7 +28,7 @@ struct AccessibilityInjector: TextInjecting {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
-        let t1 = Timing.preWriteDelay
+        let t1 = Timing.inputSourceDelay + Timing.preWriteDelay
         let t2 = t1 + Timing.interPasteDelay
         let t3 = t2 + Timing.postPasteDelay
 
@@ -68,7 +68,6 @@ struct AccessibilityInjector: TextInjecting {
         )?.takeRetainedValue() as? [TISInputSource],
               let abc = sources.first else { return }
         TISSelectInputSource(abc)
-        usleep(Timing.inputSourceDelay)
     }
 
     // MARK: - Pasteboard save/restore
