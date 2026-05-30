@@ -19,6 +19,7 @@ final class RecordingCoordinator {
     private var stopTask: Task<Void, Never>?
     private var cancelTask: Task<Void, Never>?
     private var errorResetTask: Task<Void, Never>?
+    private var safetyTimerTask: Task<Void, Never>?
 
     var isRecording: Bool { session.state.isActive }
 
@@ -121,6 +122,7 @@ final class RecordingCoordinator {
     }
 
     private func stopRecording() {
+        guard stopTask == nil else { return }
         session.transition(.stopRequested)
         onStateChanged?()
 
@@ -183,19 +185,30 @@ final class RecordingCoordinator {
 
     private func cancelRecording() {
         session.transition(.cancel)
+        let pendingStopTask = stopTask
         stopTask?.cancel()
         stopTask = nil
         cancelTask = Task {
-            let _ = await sttClient.stopRecording()
+            if let pendingStopTask {
+                await pendingStopTask.value
+            } else {
+                let _ = await sttClient.stopRecording()
+            }
+            safetyTimerTask?.cancel()
+            safetyTimerTask = nil
             cancelTask = nil
+            session.transition(.reset)
+            onStateChanged?()
         }
         // Safety: if cancelTask hangs, force-clear after 5 seconds
-        Task {
+        safetyTimerTask?.cancel()
+        safetyTimerTask = Task {
             try? await Task.sleep(for: .seconds(5))
-            if cancelTask != nil {
-                cancelTask?.cancel()
-                cancelTask = nil
-            }
+            guard !Task.isCancelled else { return }
+            cancelTask?.cancel()
+            cancelTask = nil
+            session.transition(.reset)
+            onStateChanged?()
         }
         hud.hide()
         onStateChanged?()

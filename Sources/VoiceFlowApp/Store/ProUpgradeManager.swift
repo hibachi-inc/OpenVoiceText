@@ -85,19 +85,30 @@ final class ProUpgradeManager {
         }
     }
 
+    private var refreshTask: Task<Void, Never>?
+
     func refreshPurchaseState() async {
-        for await entitlement in Transaction.currentEntitlements {
-            if let transaction = try? entitlement.payloadValue,
-               transaction.productID == Self.productID {
-                isPro = true
+        refreshTask?.cancel()
+        let task = Task {
+            var found = false
+            for await entitlement in Transaction.currentEntitlements {
+                guard !Task.isCancelled else { return }
+                if let transaction = try? entitlement.payloadValue,
+                   transaction.productID == Self.productID {
+                    found = true
+                    break
+                }
+            }
+            guard !Task.isCancelled else { return }
+            isPro = found
+            if found {
                 purchaseState = .purchased
                 logger.info("Pro entitlement verified")
-                return
+            } else if product != nil {
+                purchaseState = .available
             }
         }
-        isPro = false
-        if product != nil {
-            purchaseState = .available
-        }
+        refreshTask = task
+        await task.value
     }
 }

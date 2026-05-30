@@ -28,6 +28,10 @@ final class STTService: NSObject, STTServiceProtocol {
     }
 
     func startRecording(locale localeID: String) {
+        if recognitionTask != nil {
+            cleanup()
+        }
+
         let locale = Locale(identifier: localeID)
         guard let recognizer = SFSpeechRecognizer(locale: locale),
               recognizer.isAvailable else {

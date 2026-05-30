@@ -3,15 +3,17 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>VoiceFlow</string>
+    <string>OpenVoiceText</string>
     <key>CFBundleDisplayName</key>
-    <string>VoiceFlow</string>
+    <string>OpenVoiceText</string>
     <key>CFBundleIdentifier</key>
     <string>com.hibachi.voiceflow</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
@@ -21,8 +23,8 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>VoiceFlow uses your microphone to transcribe speech to text. Audio is processed entirely on-device and never sent to any server.</string>
+    <string>OpenVoiceText uses your microphone to transcribe speech to text. Audio is processed entirely on-device and never sent to any server.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>VoiceFlow uses on-device speech recognition to convert your voice to text. No audio or text data leaves your device.</string>
+    <string>OpenVoiceText uses on-device speech recognition to convert your voice to text. No audio or text data leaves your device.</string>
 </dict>
 </plist>
