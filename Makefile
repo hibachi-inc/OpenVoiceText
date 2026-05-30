@@ -25,6 +25,8 @@ bundle: build
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
 	cp "Resources/AppIcon.icns" "$(APP_BUNDLE)/Contents/Resources/"
 	cp "Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/Resources/"
+	cp -R "Resources/en.lproj" "$(APP_BUNDLE)/Contents/Resources/"
+	cp -R "Resources/ja.lproj" "$(APP_BUNDLE)/Contents/Resources/"
 
 	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS"
 	cp "$(BUILD_DIR)/VoiceFlowSTT" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS/VoiceFlowSTT"
@@ -34,9 +36,9 @@ bundle: build
 	cp "$(BUILD_DIR)/VoiceFlowRefiner" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.refiner.xpc/Contents/MacOS/VoiceFlowRefiner"
 	cp "Resources/Refiner-Info.plist" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.refiner.xpc/Contents/Info.plist"
 
-	codesign --force --sign - "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc"
-	codesign --force --sign - "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.refiner.xpc"
-	codesign --force --sign - "$(APP_BUNDLE)"
+	codesign --force --sign "$(SIGN_ID)" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc"
+	codesign --force --sign "$(SIGN_ID)" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.refiner.xpc"
+	codesign --force --sign "$(SIGN_ID)" "$(APP_BUNDLE)"
 
 # MAS build: App Sandbox enabled
 bundle-mas: build
@@ -46,6 +48,8 @@ bundle-mas: build
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
 	cp "Resources/AppIcon.icns" "$(APP_BUNDLE)/Contents/Resources/"
 	cp "Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/Resources/"
+	cp -R "Resources/en.lproj" "$(APP_BUNDLE)/Contents/Resources/"
+	cp -R "Resources/ja.lproj" "$(APP_BUNDLE)/Contents/Resources/"
 
 	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS"
 	cp "$(BUILD_DIR)/VoiceFlowSTT" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS/VoiceFlowSTT"
@@ -71,6 +75,8 @@ bundle-dmg: build-release
 	mkdir -p "$(RELEASE_BUNDLE)/Contents/Resources"
 	cp "Resources/AppIcon.icns" "$(RELEASE_BUNDLE)/Contents/Resources/"
 	cp "Resources/PrivacyInfo.xcprivacy" "$(RELEASE_BUNDLE)/Contents/Resources/"
+	cp -R "Resources/en.lproj" "$(RELEASE_BUNDLE)/Contents/Resources/"
+	cp -R "Resources/ja.lproj" "$(RELEASE_BUNDLE)/Contents/Resources/"
 
 	mkdir -p "$(RELEASE_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS"
 	cp "$(RELEASE_DIR)/VoiceFlowSTT" "$(RELEASE_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS/VoiceFlowSTT"

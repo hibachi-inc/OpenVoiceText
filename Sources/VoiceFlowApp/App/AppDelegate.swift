@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installHotkey()
         syncLaunchAtLogin()
         Task { await requestPermissions() }
+        mainWindow.show()
     }
 
     // MARK: - Status Bar
@@ -41,23 +42,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.removeAllItems()
 
         let shortcutLabel = "\(prefs.hotkeyModifier.symbol)\(prefs.hotkeyKey.label)"
-        let title = coordinator.isRecording ? "Stop Recording" : "Start Recording (\(shortcutLabel))"
+        let title = coordinator.isRecording
+            ? String(localized: "menu.stop_recording")
+            : String(localized: "menu.start_recording \(shortcutLabel)")
         let item = NSMenuItem(title: title, action: #selector(toggleRecording), keyEquivalent: "")
         item.target = self
         menu.addItem(item)
 
         menu.addItem(.separator())
-        let info = NSMenuItem(title: "\(shortcutLabel) to toggle recording", action: nil, keyEquivalent: "")
+        let info = NSMenuItem(title: String(localized: "menu.shortcut_hint \(shortcutLabel)"), action: nil, keyEquivalent: "")
         info.isEnabled = false
         menu.addItem(info)
 
         menu.addItem(.separator())
-        let settings = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: String(localized: "menu.settings"), action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings)
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit OpenVoiceText", action: #selector(terminateApp), keyEquivalent: "q")
+        let quit = NSMenuItem(title: String(localized: "menu.quit"), action: #selector(terminateApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }
@@ -85,7 +88,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         translateHotkeys = prefs.translationLanguages.compactMap { lang in
             let langKey = (lang.key.keyCode, lang.modifier.carbonModifier)
             let keyStr = "\(langKey.0)-\(langKey.1)"
-            // Skip duplicates: same shortcut as main hotkey or another translation language
             guard registeredKeys.insert(keyStr).inserted else { return nil }
             let hk = GlobalHotkey()
             let code = lang.code
@@ -127,15 +129,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Permissions
 
     private nonisolated func requestPermissions() async {
-        let speech = await withCheckedContinuation { cont in
-            SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
+        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+            let speech = await withCheckedContinuation { cont in
+                SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
+            }
+            if speech != .authorized {
+                await MainActor.run { coordinator.showPermissionError(String(localized: "permission.speech")) }
+            }
         }
-        if speech != .authorized {
-            await MainActor.run { coordinator.showPermissionError("Speech recognition permission required.") }
-        }
-        let mic = await AVCaptureDevice.requestAccess(for: .audio)
-        if !mic {
-            await MainActor.run { coordinator.showPermissionError("Microphone permission required.") }
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            let mic = await AVCaptureDevice.requestAccess(for: .audio)
+            if !mic {
+                await MainActor.run { coordinator.showPermissionError(String(localized: "permission.microphone")) }
+            }
         }
     }
 

@@ -21,6 +21,15 @@ final class PreferencesStore {
     var launchAtLogin: Bool {
         didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") }
     }
+    var appLanguage: String {
+        didSet {
+            if appLanguage == "system" {
+                defaults.removeObject(forKey: "AppleLanguages")
+            } else {
+                defaults.set([appLanguage], forKey: "AppleLanguages")
+            }
+        }
+    }
 
     #if PROFEATURES
     var translationLanguages: [TranslationLanguage] {
@@ -36,6 +45,11 @@ final class PreferencesStore {
         locale = defaults.string(forKey: "locale") ?? "system"
         refinementMode = RefinementMode(rawValue: defaults.string(forKey: "refinementMode") ?? "") ?? .refine
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
+        if let langs = defaults.array(forKey: "AppleLanguages") as? [String], let first = langs.first {
+            appLanguage = first
+        } else {
+            appLanguage = "system"
+        }
         #if PROFEATURES
         translationLanguages = Self.loadTranslationLanguages(from: defaults)
         #endif
@@ -136,24 +150,24 @@ enum RefinementMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    #if PROFEATURES
-    static let refineLabel = "AI Refinement"
-    static let refineDescription = "Clean up with Apple Intelligence based on active app"
-    #else
-    static let refineLabel = "Basic cleanup (filler removal)"
-    static let refineDescription = "Remove filler words and normalize whitespace"
-    #endif
-
     var label: String {
         switch self {
-        case .off: "Off (raw transcript)"
-        case .refine: Self.refineLabel
+        case .off: String(localized: "refinement.off")
+        #if PROFEATURES
+        case .refine: String(localized: "refinement.refine_pro")
+        #else
+        case .refine: String(localized: "refinement.refine")
+        #endif
         }
     }
     var description: String {
         switch self {
-        case .off: "Insert speech-to-text output as-is"
-        case .refine: Self.refineDescription
+        case .off: String(localized: "refinement.off_desc")
+        #if PROFEATURES
+        case .refine: String(localized: "refinement.refine_pro_desc")
+        #else
+        case .refine: String(localized: "refinement.refine_desc")
+        #endif
         }
     }
 }

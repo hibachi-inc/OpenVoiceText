@@ -9,28 +9,28 @@ struct HistoryView: View {
         Group {
             if entries.isEmpty {
                 ContentUnavailableView(
-                    "No history yet",
+                    "history.empty",
                     systemImage: "clock.arrow.circlepath",
-                    description: Text("Voice input history will appear here.")
+                    description: Text("history.empty_desc")
                 )
             } else {
                 List(entries, id: \.id, selection: $selectedEntry) { entry in
                     HistoryRow(entry: entry)
                         .contextMenu {
-                            Button("Copy to Clipboard") { injector.inject(entry.refinedText) }
-                            Button("Copy Raw Transcript") { injector.inject(entry.rawTranscript) }
+                            Button("history.copy") { injector.inject(entry.refinedText) }
+                            Button("history.copy_raw") { injector.inject(entry.rawTranscript) }
                             Divider()
-                            Button("Delete", role: .destructive) { delete(entry) }
+                            Button("history.delete", role: .destructive) { delete(entry) }
                         }
                 }
                 .listStyle(.inset)
             }
         }
-        .navigationTitle("History")
+        .navigationTitle(String(localized: "sidebar.history"))
         .toolbar {
             if !entries.isEmpty {
                 ToolbarItem {
-                    Button("Clear All", role: .destructive) {
+                    Button("history.clear_all", role: .destructive) {
                         HistoryStore.shared.clearAll()
                         reload()
                     }
@@ -91,12 +91,12 @@ struct HistoryRow: View {
 
     private func relativeTime(_ date: Date) -> String {
         let seconds = Int(-date.timeIntervalSinceNow)
-        if seconds < 60 { return "Just now" }
+        if seconds < 60 { return String(localized: "history.just_now") }
         let minutes = seconds / 60
-        if minutes < 60 { return "\(minutes)m ago" }
+        if minutes < 60 { return String(localized: "history.minutes_ago \(minutes)") }
         let hours = minutes / 60
-        if hours < 24 { return "\(hours)h ago" }
+        if hours < 24 { return String(localized: "history.hours_ago \(hours)") }
         let days = hours / 24
-        return "\(days)d ago"
+        return String(localized: "history.days_ago \(days)")
     }
 }

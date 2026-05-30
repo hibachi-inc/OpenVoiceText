@@ -168,10 +168,12 @@ final class FloatingHUD: HUDProtocol {
     }
 
     private func calculateWidth() -> CGFloat {
-        let baseWidth: CGFloat = 260
         let maxWidth: CGFloat = 500
-        let charCount = transcript.suffix(60).count
-        let textWidth = CGFloat(min(charCount, 20)) * 8
-        return min(maxWidth, baseWidth + textWidth)
+        if transcript.isEmpty {
+            return 180
+        }
+        let charCount = transcript.suffix(80).count
+        let textWidth = CGFloat(min(charCount, 30)) * 8
+        return min(maxWidth, 180 + textWidth)
     }
 }

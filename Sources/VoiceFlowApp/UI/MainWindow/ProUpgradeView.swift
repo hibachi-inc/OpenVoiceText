@@ -12,14 +12,14 @@ struct ProUpgradeView: View {
                         .foregroundStyle(DS.Colors.accent)
 
                     VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                        Text("OpenVoiceText Pro")
+                        Text("pro.title")
                             .font(DS.Font.title)
                         if upgradeManager.isPro {
-                            Text("Unlocked")
+                            Text("pro.unlocked")
                                 .font(DS.Font.caption)
                                 .foregroundStyle(DS.Colors.success)
                         } else {
-                            Text("Upgrade to unlock AI refinement and translation")
+                            Text("pro.upgrade_prompt")
                                 .font(DS.Font.caption)
                                 .foregroundStyle(DS.Colors.secondary)
                         }
@@ -29,11 +29,11 @@ struct ProUpgradeView: View {
             }
 
             if !upgradeManager.isPro {
-                Section("Pro Features") {
-                    Label("AI-powered text refinement", systemImage: "sparkles")
-                    Label("Context-aware formatting (chat, email, code...)", systemImage: "app.dashed")
-                    Label("Multi-language translation", systemImage: "globe")
-                    Label("Translate with per-language shortcuts", systemImage: "keyboard")
+                Section("pro.features") {
+                    Label("pro.ai_refinement", systemImage: "sparkles")
+                    Label("pro.context_aware", systemImage: "app.dashed")
+                    Label("pro.multi_lang", systemImage: "globe")
+                    Label("pro.per_lang_shortcuts", systemImage: "keyboard")
                 }
 
                 Section {
@@ -41,10 +41,10 @@ struct ProUpgradeView: View {
                         HStack {
                             Spacer()
                             if let product = upgradeManager.product {
-                                Text("Upgrade for \(product.displayPrice)")
+                                Text("pro.upgrade \(product.displayPrice)")
                                     .font(DS.Font.bodyMedium)
                             } else {
-                                Text("Loading...")
+                                Text("pro.loading")
                                     .font(DS.Font.bodyMedium)
                             }
                             Spacer()
@@ -52,7 +52,7 @@ struct ProUpgradeView: View {
                     }
                     .disabled(upgradeManager.product == nil)
 
-                    Button("Restore Purchases") {
+                    Button("pro.restore") {
                         Task { await upgradeManager.restorePurchases() }
                     }
                 }
@@ -66,14 +66,14 @@ struct ProUpgradeView: View {
                 }
             } else {
                 Section {
-                    Label("AI Refinement", systemImage: "checkmark.circle.fill")
+                    Label("pro.ai_refinement_active", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(DS.Colors.success)
-                    Label("Translation", systemImage: "checkmark.circle.fill")
+                    Label("pro.translation_active", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(DS.Colors.success)
                 }
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Pro")
+        .navigationTitle(String(localized: "sidebar.pro"))
     }
 }

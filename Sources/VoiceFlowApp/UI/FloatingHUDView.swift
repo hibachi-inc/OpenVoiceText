@@ -20,11 +20,13 @@ struct FloatingHUDView: View {
                     Text(status.title)
                         .font(DS.Font.hudStatus)
                         .foregroundStyle(.white.opacity(0.7))
-                    Text(displayTranscript.isEmpty ? " " : displayTranscript)
-                        .font(DS.Font.hudTranscript)
-                        .foregroundStyle(displayTranscript.isEmpty ? .clear : .white)
-                        .lineLimit(1)
-                        .truncationMode(.head)
+                    if !displayTranscript.isEmpty {
+                        Text(displayTranscript)
+                            .font(DS.Font.hudTranscript)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                    }
                 }
             }
 
@@ -36,7 +38,7 @@ struct FloatingHUDView: View {
                     }
                     HStack {
                         Spacer()
-                        Text("\(shortcutLabel) stop")
+                        Text("hud.stop \(shortcutLabel)")
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(.white.opacity(0.3))
                     }
@@ -132,10 +134,10 @@ enum HUDStatus: Equatable {
 
     var title: String {
         switch self {
-        case .listening: "Listening..."
-        case .processing: "Refining..."
-        case .copied: "Copied — ⌘V to paste"
-        case .inserted: "Inserted"
+        case .listening: String(localized: "hud.listening")
+        case .processing: String(localized: "hud.processing")
+        case .copied: String(localized: "hud.copied")
+        case .inserted: String(localized: "hud.inserted")
         case .error(let msg): msg
         }
     }

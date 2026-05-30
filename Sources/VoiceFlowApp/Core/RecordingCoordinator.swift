@@ -60,7 +60,7 @@ final class RecordingCoordinator {
         }
         sttClient.onConnectionInvalidated = { [weak self] in
             guard let self, self.session.state.isActive else { return }
-            self.handleError("Speech service connection lost.")
+            self.handleError(String(localized: "error.stt_connection_lost"))
         }
         refinerClient.onError = { [weak self] message in
             self?.handleError(message)
@@ -82,6 +82,7 @@ final class RecordingCoordinator {
     #endif
 
     private func handleToggle() {
+        FileLogger.log("handleToggle state=\(String(describing: self.session.state)) stopTask=\(self.stopTask != nil) cancelTask=\(self.cancelTask != nil)")
         switch session.state {
         case .idle:
             startRecording()
@@ -90,6 +91,7 @@ final class RecordingCoordinator {
         case .starting, .processing:
             cancelRecording()
         default:
+            FileLogger.log("handleToggle: default branch, no action")
             break
         }
     }
@@ -131,7 +133,8 @@ final class RecordingCoordinator {
     }
 
     private func stopRecording() {
-        guard stopTask == nil else { return }
+        FileLogger.log("stopRecording called, stopTask=\(self.stopTask != nil)")
+        guard stopTask == nil else { FileLogger.log("stopRecording BLOCKED by existing stopTask"); return }
         session.transition(.stopRequested)
         onStateChanged?()
 
@@ -181,7 +184,7 @@ final class RecordingCoordinator {
             )
 
             if timedOut {
-                hud.showError("Refinement skipped (timeout)")
+                hud.showError(String(localized: "error.refinement_timeout"))
             } else {
                 #if DIRECT
                 hud.showInserted(text: refined)
@@ -194,6 +197,7 @@ final class RecordingCoordinator {
     }
 
     private func cancelRecording() {
+        FileLogger.log("cancelRecording called")
         session.transition(.cancel)
         let pendingStopTask = stopTask
         stopTask?.cancel()

@@ -170,7 +170,7 @@ struct RecordingCoordinatorTests {
         try? await Task.sleep(for: .milliseconds(50))
 
         #expect(injector.injectedText == "Test input")
-        #expect(hud.states.contains("error:Refinement skipped (timeout)"))
+        #expect(hud.states.contains { $0.hasPrefix("error:") && $0.contains("timeout") })
     }
 
     // MARK: - Cancel

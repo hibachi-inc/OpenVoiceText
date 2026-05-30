@@ -1,16 +1,29 @@
 import SwiftUI
 
 enum SidebarSection: String, CaseIterable, Identifiable {
-    case general = "General"
-    case hotkey = "Hotkey"
+    case general = "general"
+    case hotkey = "hotkey"
     #if PROFEATURES
-    case translation = "Translation"
+    case translation = "translation"
     #endif
-    case pro = "Pro"
-    case history = "History"
-    case about = "About"
+    case history = "history"
+    case about = "about"
+    case pro = "pro"
 
     var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .general: String(localized: "sidebar.general")
+        case .hotkey: String(localized: "sidebar.hotkey")
+        #if PROFEATURES
+        case .translation: String(localized: "sidebar.translation")
+        #endif
+        case .pro: String(localized: "sidebar.pro")
+        case .history: String(localized: "sidebar.history")
+        case .about: String(localized: "sidebar.about")
+        }
+    }
 
     var icon: String {
         switch self {
@@ -32,7 +45,7 @@ struct MainWindowView: View {
     var body: some View {
         NavigationSplitView {
             List(SidebarSection.allCases, selection: $selection) { section in
-                Label(section.rawValue, systemImage: section.icon)
+                Label(section.label, systemImage: section.icon)
                     .tag(section)
             }
             .listStyle(.sidebar)

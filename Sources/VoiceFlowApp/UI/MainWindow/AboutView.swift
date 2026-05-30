@@ -15,10 +15,10 @@ struct AboutView: View {
                     VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                         Text("OpenVoiceText")
                             .font(DS.Font.title)
-                        Text("Version \(version) (\(build))")
+                        Text("about.version \(version) \(build)")
                             .font(DS.Font.caption)
                             .foregroundStyle(DS.Colors.secondary)
-                        Text("Context-aware voice input for macOS")
+                        Text("about.tagline")
                             .font(DS.Font.body)
                             .foregroundStyle(DS.Colors.secondary)
                     }
@@ -26,29 +26,29 @@ struct AboutView: View {
                 .padding(.vertical, DS.Spacing.sm)
             }
 
-            Section("Links") {
+            Section("about.links") {
                 Link(destination: URL(string: "https://github.com/hibachi-inc/OpenVoiceText")!) {
-                    Label("GitHub Repository", systemImage: "link")
+                    Label("about.github", systemImage: "link")
                 }
 
                 Link(destination: URL(string: "https://github.com/hibachi-inc/OpenVoiceText/issues")!) {
-                    Label("Report a Bug", systemImage: "ladybug")
+                    Label("about.bug_report", systemImage: "ladybug")
                 }
 
                 Link(destination: URL(string: "https://rekinote.app/")!) {
-                    Label("Reki note — by the same team", systemImage: "doc.richtext")
+                    Label("about.reki", systemImage: "doc.richtext")
                 }
             }
 
-            Section("License") {
-                Text("MIT License — Hibachi Inc.")
+            Section("about.license") {
+                Text("about.license_text")
                     .font(DS.Font.body)
-                Text("100% local processing. No audio or text data ever leaves your Mac.")
+                Text("about.privacy")
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("About")
+        .navigationTitle(String(localized: "sidebar.about"))
     }
 }
