@@ -63,7 +63,7 @@ enum DS {
     // MARK: - Panel
 
     enum Panel {
-        static let hudHeight: CGFloat = 60
+        static let hudHeight: CGFloat = 76
         static let hudMinWidth: CGFloat = 240
         static let hudMaxWidth: CGFloat = 620
         static let hudBottomOffset: CGFloat = 48

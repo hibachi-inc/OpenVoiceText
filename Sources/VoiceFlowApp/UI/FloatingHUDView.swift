@@ -12,35 +12,39 @@ struct FloatingHUDView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: DS.Spacing.md) {
+        VStack(spacing: DS.Spacing.xs) {
+            HStack(alignment: .top, spacing: DS.Spacing.sm) {
                 statusIndicator
-                textContent
-                if status == .listening {
-                    Spacer(minLength: 0)
-                    WaveformView(level: audioLevel)
-                        .frame(width: 48, height: 28)
-                        .transition(.scale.combined(with: .opacity))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.title)
+                        .font(DS.Font.hudStatus)
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text(displayTranscript.isEmpty ? " " : displayTranscript)
+                        .font(DS.Font.hudTranscript)
+                        .foregroundStyle(displayTranscript.isEmpty ? .clear : .white)
+                        .lineLimit(1)
+                        .truncationMode(.head)
                 }
             }
 
             if status == .listening || status == .processing {
-                HStack(spacing: DS.Spacing.xs) {
-                    Text(shortcutLabel)
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(.white.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                    Text("or click to stop")
-                        .font(.system(size: 10, weight: .medium))
+                ZStack {
+                    if status == .listening {
+                        WaveformView(level: audioLevel)
+                            .frame(width: 64, height: 14)
+                    }
+                    HStack {
+                        Spacer()
+                        Text("\(shortcutLabel) stop")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
                 }
-                .foregroundStyle(.white.opacity(0.4))
-                .padding(.top, DS.Spacing.xs)
             }
         }
-        .padding(.horizontal, DS.Spacing.xl)
-        .padding(.vertical, DS.Spacing.md)
+        .padding(.horizontal, DS.Spacing.md)
+        .padding(.vertical, DS.Spacing.sm)
         .background {
             ZStack {
                 VisualEffectBackground(material: .hudWindow, blendingMode: .behindWindow)
@@ -69,33 +73,16 @@ struct FloatingHUDView: View {
         ZStack {
             Circle()
                 .fill(status.color.opacity(0.2))
-                .frame(width: 32, height: 32)
+                .frame(width: 26, height: 26)
 
             Image(systemName: status.iconName)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(status.color)
                 .symbolEffect(.pulse, isActive: status == .listening)
                 .contentTransition(.symbolEffect(.replace))
         }
     }
 
-    // MARK: - Text content
-
-    private var textContent: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(status.title)
-                .font(DS.Font.hudStatus)
-                .foregroundStyle(.white.opacity(0.7))
-
-            if !displayTranscript.isEmpty {
-                Text(displayTranscript)
-                    .font(DS.Font.hudTranscript)
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .contentTransition(.numericText())
-            }
-        }
-    }
 }
 
 // MARK: - Waveform visualizer
