@@ -6,6 +6,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
     #if PROFEATURES
     case translation = "Translation"
     #endif
+    case pro = "Pro"
     case history = "History"
     case about = "About"
 
@@ -18,6 +19,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
         #if PROFEATURES
         case .translation: "globe"
         #endif
+        case .pro: "sparkles"
         case .history: "clock.arrow.circlepath"
         case .about: "info.circle"
         }
@@ -43,6 +45,7 @@ struct MainWindowView: View {
                 #if PROFEATURES
                 case .translation: TranslationSettingsView()
                 #endif
+                case .pro: ProUpgradeView()
                 case .history: HistoryView()
                 case .about: AboutView()
                 }

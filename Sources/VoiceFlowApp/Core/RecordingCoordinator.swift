@@ -141,7 +141,7 @@ final class RecordingCoordinator {
             var timedOut = false
 
             #if PROFEATURES
-            if case .translate(let targetLang) = currentMode {
+            if case .translate(let targetLang) = currentMode, ProUpgradeManager.shared.isPro {
                 hud.showProcessing(transcript: rawTranscript)
                 let result = await refinerClient.translate(
                     text: rawTranscript, targetLanguage: targetLang
@@ -220,6 +220,9 @@ final class RecordingCoordinator {
 
     private func refineIfEnabled(_ text: String, context: AppContext?) async -> (String, Bool) {
         guard prefs.refinementMode == .refine else { return (text, false) }
+        #if PROFEATURES
+        guard ProUpgradeManager.shared.isPro else { return (text, false) }
+        #endif
         hud.showProcessing(transcript: text)
         return await refinerClient.refine(
             text: text,
