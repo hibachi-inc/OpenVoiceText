@@ -11,7 +11,8 @@ bundle: build
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	cp "$(BUILD_DIR)/VoiceFlowApp" "$(APP_BUNDLE)/Contents/MacOS/VoiceFlowApp"
 	cp "Resources/Info.plist" "$(APP_BUNDLE)/Contents/"
-	cp "Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/"
+	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
+	cp "Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/Resources/"
 
 	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS"
 	cp "$(BUILD_DIR)/VoiceFlowSTT" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS/VoiceFlowSTT"
@@ -30,7 +31,8 @@ bundle-mas: build
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	cp "$(BUILD_DIR)/VoiceFlowApp" "$(APP_BUNDLE)/Contents/MacOS/VoiceFlowApp"
 	cp "Resources/Info.plist" "$(APP_BUNDLE)/Contents/"
-	cp "Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/"
+	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
+	cp "Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/Resources/"
 
 	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS"
 	cp "$(BUILD_DIR)/VoiceFlowSTT" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS/VoiceFlowSTT"
@@ -52,7 +54,8 @@ bundle-dmg: build
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
 	cp "$(BUILD_DIR)/VoiceFlowApp" "$(APP_BUNDLE)/Contents/MacOS/VoiceFlowApp"
 	cp "Resources/Info.plist" "$(APP_BUNDLE)/Contents/"
-	cp "Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/"
+	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
+	cp "Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/Resources/"
 
 	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS"
 	cp "$(BUILD_DIR)/VoiceFlowSTT" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc/Contents/MacOS/VoiceFlowSTT"
