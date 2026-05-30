@@ -1,7 +1,7 @@
 import Foundation
 
 @objc public protocol STTServiceProtocol {
-    func startRecording(locale: String)
+    func startRecording(locale: String, engine: String)
     func stopRecording(reply: @escaping (String?) -> Void)
 }
 

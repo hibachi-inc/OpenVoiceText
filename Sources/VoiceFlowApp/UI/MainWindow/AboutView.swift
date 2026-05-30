@@ -8,9 +8,9 @@ struct AboutView: View {
         Form {
             Section {
                 HStack(spacing: DS.Spacing.lg) {
-                    Image(systemName: "mic.badge.xmark")
-                        .font(.system(size: 40))
-                        .foregroundStyle(DS.Colors.accent)
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 64, height: 64)
 
                     VStack(alignment: .leading, spacing: DS.Spacing.xs) {
                         Text("OpenVoiceText")

@@ -1,6 +1,7 @@
 import Foundation
 
 @MainActor
+@Observable
 final class RecordingCoordinator {
     let session: RecordingStateMachine
     private var sttClient: STTClientProtocol_App
@@ -21,7 +22,12 @@ final class RecordingCoordinator {
     private var errorResetTask: Task<Void, Never>?
     private var safetyTimerTask: Task<Void, Never>?
 
-    var isRecording: Bool { session.state.isActive }
+    private(set) var isRecording: Bool = false
+    private(set) var currentTranscript: String = ""
+
+    private func syncState() {
+        isRecording = session.state.isActive
+    }
 
     init(
         session: RecordingStateMachine = RecordingStateMachine(),
@@ -49,6 +55,7 @@ final class RecordingCoordinator {
         hud.onTap = { [weak self] in self?.toggle() }
         sttClient.onTranscript = { [weak self] text in
             guard let self, case .recording = self.session.state else { return }
+            self.currentTranscript = text
             self.hud.updateTranscript(text)
         }
         sttClient.onAudioLevel = { [weak self] level in
@@ -72,6 +79,11 @@ final class RecordingCoordinator {
         currentMode = .normal
         #endif
         handleToggle()
+    }
+
+    func cancel() {
+        guard session.state.isActive else { return }
+        cancelRecording()
     }
 
     #if PROFEATURES
@@ -123,12 +135,14 @@ final class RecordingCoordinator {
         errorResetTask = nil
 
         session.transition(.startRequested)
+        currentTranscript = ""
+        syncState()
         hud.showListening()
         onStateChanged?()
 
         let rawLocale = prefs.locale == "system" ? Locale.current.identifier : prefs.locale
         let localeID = Locale(identifier: rawLocale).identifier
-        sttClient.startRecording(locale: localeID)
+        sttClient.startRecording(locale: localeID, engine: prefs.sttEngine.rawValue)
         session.transition(.micReady)
     }
 
@@ -136,6 +150,7 @@ final class RecordingCoordinator {
         FileLogger.log("stopRecording called, stopTask=\(self.stopTask != nil)")
         guard stopTask == nil else { FileLogger.log("stopRecording BLOCKED by existing stopTask"); return }
         session.transition(.stopRequested)
+        syncState()
         onStateChanged?()
 
         stopTask = Task {
@@ -147,7 +162,8 @@ final class RecordingCoordinator {
             if rawTranscript.isEmpty {
                 session.transition(.refinementDone)
                 hud.hide()
-                onStateChanged?()
+                syncState()
+        onStateChanged?()
                 return
             }
 
@@ -192,7 +208,8 @@ final class RecordingCoordinator {
                 hud.showCopied(text: refined)
                 #endif
             }
-            onStateChanged?()
+            syncState()
+        onStateChanged?()
         }
     }
 
@@ -212,7 +229,8 @@ final class RecordingCoordinator {
             safetyTimerTask = nil
             cancelTask = nil
             session.transition(.reset)
-            onStateChanged?()
+            syncState()
+        onStateChanged?()
         }
         // Safety: if cancelTask hangs, force-clear after 5 seconds
         safetyTimerTask?.cancel()
@@ -222,9 +240,11 @@ final class RecordingCoordinator {
             cancelTask?.cancel()
             cancelTask = nil
             session.transition(.reset)
-            onStateChanged?()
+            syncState()
+        onStateChanged?()
         }
         hud.hide()
+        syncState()
         onStateChanged?()
     }
 
@@ -234,6 +254,7 @@ final class RecordingCoordinator {
         stopTask = nil
         session.transition(.failed(message))
         hud.showError(message)
+        syncState()
         onStateChanged?()
 
         errorResetTask?.cancel()
@@ -241,7 +262,8 @@ final class RecordingCoordinator {
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled, case .error = session.state else { return }
             session.transition(.reset)
-            onStateChanged?()
+            syncState()
+        onStateChanged?()
         }
     }
 

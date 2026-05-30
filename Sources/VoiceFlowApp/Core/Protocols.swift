@@ -7,7 +7,7 @@ protocol STTClientProtocol_App {
     var onError: ((String) -> Void)? { get set }
     var onConnectionInvalidated: (() -> Void)? { get set }
 
-    func startRecording(locale: String)
+    func startRecording(locale: String, engine: String)
     func stopRecording() async -> String?
     func disconnect()
 }

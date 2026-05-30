@@ -5,14 +5,27 @@ struct HistoryView: View {
     @State private var selectedEntry: HistoryEntry?
     private let injector = ClipboardInjector()
 
+    private var coordinator: RecordingCoordinator? {
+        (NSApp.delegate as? AppDelegate)?.recordingCoordinator
+    }
+
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            if let coordinator {
+                RecordingControl(coordinator: coordinator, onComplete: reload)
+                    .padding(.horizontal, DS.Spacing.lg)
+                    .padding(.vertical, DS.Spacing.md)
+
+                Divider()
+            }
+
             if entries.isEmpty {
                 ContentUnavailableView(
                     "history.empty",
                     systemImage: "clock.arrow.circlepath",
                     description: Text("history.empty_desc")
                 )
+                .frame(maxHeight: .infinity)
             } else {
                 List(entries, id: \.id, selection: $selectedEntry) { entry in
                     HistoryRow(entry: entry)
@@ -49,6 +62,67 @@ struct HistoryView: View {
         reload()
     }
 }
+
+// MARK: - Recording Control
+
+struct RecordingControl: View {
+    let coordinator: RecordingCoordinator
+    var onComplete: () -> Void = {}
+
+    @State private var prevRecording = false
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.md) {
+            Button(action: { coordinator.toggle() }) {
+                ZStack {
+                    Circle()
+                        .fill(coordinator.isRecording ? DS.Colors.recording : DS.Colors.accent)
+                        .frame(width: 48, height: 48)
+                        .shadow(color: (coordinator.isRecording ? DS.Colors.recording : DS.Colors.accent).opacity(0.4), radius: 8)
+
+                    Image(systemName: coordinator.isRecording ? "stop.fill" : "mic.fill")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 2) {
+                if coordinator.isRecording {
+                    Text("history.recording")
+                        .font(DS.Font.bodyMedium)
+                        .foregroundStyle(DS.Colors.recording)
+
+                    if !coordinator.currentTranscript.isEmpty {
+                        Text(coordinator.currentTranscript)
+                            .font(DS.Font.caption)
+                            .foregroundStyle(DS.Colors.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                    }
+                } else {
+                    Text("history.tap_to_start")
+                        .font(DS.Font.bodyMedium)
+                        .foregroundStyle(DS.Colors.secondary)
+                }
+            }
+
+            Spacer()
+        }
+        .animation(DS.Animation.content, value: coordinator.isRecording)
+        .onChange(of: coordinator.isRecording) { old, new in
+            if old && !new {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(300))
+                    onComplete()
+                }
+            }
+        }
+    }
+}
+
+// MARK: - History Row
 
 struct HistoryRow: View {
     let entry: HistoryEntry

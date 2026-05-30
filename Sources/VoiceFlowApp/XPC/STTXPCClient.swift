@@ -68,9 +68,9 @@ final class STTXPCClient: NSObject, STTClientProtocol, STTClientProtocol_App {
         } as? STTServiceProtocol
     }
 
-    func startRecording(locale: String) {
-        logger.info("Starting recording with locale: \(locale)")
-        service?.startRecording(locale: locale)
+    func startRecording(locale: String, engine: String = "enhanced") {
+        logger.info("Starting recording with locale: \(locale), engine: \(engine)")
+        service?.startRecording(locale: locale, engine: engine)
     }
 
     func stopRecording() async -> String? {

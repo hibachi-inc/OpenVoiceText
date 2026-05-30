@@ -38,6 +38,11 @@
 "general.locale.fr" = "French";
 "general.locale.es" = "Spanish";
 "general.on_device" = "On-device recognition. No audio is sent to any server.";
+"general.stt_engine" = "Recognition Engine";
+"general.stt_engine.auto" = "Apple Intelligence (Enhanced)";
+"general.stt_engine.auto_desc" = "Higher accuracy with automatic punctuation. Requires macOS 26+.";
+"general.stt_engine.classic" = "Classic (SFSpeechRecognizer)";
+"general.stt_engine.classic_desc" = "Standard on-device speech recognition.";
 "general.refinement" = "Text Refinement";
 "general.mode" = "Mode";
 "general.startup" = "Startup";
@@ -69,6 +74,8 @@
 "history.copy_raw" = "Copy Raw Transcript";
 "history.delete" = "Delete";
 "history.clear_all" = "Clear All";
+"history.tap_to_start" = "Tap to start voice input";
+"history.recording" = "Listening... Tap to stop";
 "history.just_now" = "Just now";
 "history.minutes_ago %lld" = "%lldm ago";
 "history.hours_ago %lld" = "%lldh ago";

@@ -44,6 +44,18 @@ struct GeneralSettingsView: View {
                 }
                 .pickerStyle(.menu)
 
+                Picker("general.stt_engine", selection: $prefs.sttEngine) {
+                    Text("general.stt_engine.auto").tag(STTEngine.enhanced)
+                    Text("general.stt_engine.classic").tag(STTEngine.classic)
+                }
+                .pickerStyle(.radioGroup)
+
+                Text(prefs.sttEngine == .enhanced
+                    ? String(localized: "general.stt_engine.auto_desc")
+                    : String(localized: "general.stt_engine.classic_desc"))
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Colors.secondary)
+
                 Text("general.on_device")
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)

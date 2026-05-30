@@ -18,6 +18,9 @@ final class PreferencesStore {
     var refinementMode: RefinementMode {
         didSet { defaults.set(refinementMode.rawValue, forKey: "refinementMode") }
     }
+    var sttEngine: STTEngine {
+        didSet { defaults.set(sttEngine.rawValue, forKey: "sttEngine") }
+    }
     var launchAtLogin: Bool {
         didSet { defaults.set(launchAtLogin, forKey: "launchAtLogin") }
     }
@@ -40,10 +43,11 @@ final class PreferencesStore {
     private let defaults = UserDefaults.standard
 
     private init() {
-        hotkeyModifier = HotkeyModifier(rawValue: defaults.string(forKey: "hotkeyModifier") ?? "") ?? .option
-        hotkeyKey = HotkeyKey(rawValue: defaults.string(forKey: "hotkeyKey") ?? "") ?? .space
+        hotkeyModifier = HotkeyModifier(rawValue: defaults.string(forKey: "hotkeyModifier") ?? "") ?? .control
+        hotkeyKey = HotkeyKey(rawValue: defaults.string(forKey: "hotkeyKey") ?? "") ?? .v
         locale = defaults.string(forKey: "locale") ?? "system"
         refinementMode = RefinementMode(rawValue: defaults.string(forKey: "refinementMode") ?? "") ?? .refine
+        sttEngine = STTEngine(rawValue: defaults.string(forKey: "sttEngine") ?? "") ?? .enhanced
         launchAtLogin = defaults.bool(forKey: "launchAtLogin")
         if let langs = defaults.array(forKey: "AppleLanguages") as? [String], let first = langs.first {
             appLanguage = first
@@ -140,6 +144,15 @@ enum HotkeyKey: String, CaseIterable, Identifiable {
     static func from(keyCode: UInt16) -> HotkeyKey? {
         allCases.first { $0.keyCode == keyCode }
     }
+}
+
+// MARK: - STT Engine
+
+enum STTEngine: String, CaseIterable, Identifiable {
+    case enhanced = "enhanced"
+    case classic = "classic"
+
+    var id: String { rawValue }
 }
 
 // MARK: - Refinement Mode

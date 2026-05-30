@@ -1,12 +1,12 @@
 import SwiftUI
 
 enum SidebarSection: String, CaseIterable, Identifiable {
+    case history = "history"
     case general = "general"
     case hotkey = "hotkey"
     #if PROFEATURES
     case translation = "translation"
     #endif
-    case history = "history"
     case about = "about"
     case pro = "pro"
 
@@ -40,7 +40,7 @@ enum SidebarSection: String, CaseIterable, Identifiable {
 }
 
 struct MainWindowView: View {
-    @State private var selection: SidebarSection = .general
+    @State private var selection: SidebarSection = .history
 
     var body: some View {
         NavigationSplitView {

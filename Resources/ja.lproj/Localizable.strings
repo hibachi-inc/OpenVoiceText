@@ -38,6 +38,11 @@
 "general.locale.fr" = "フランス語";
 "general.locale.es" = "スペイン語";
 "general.on_device" = "デバイス上で処理されます。音声がサーバーに送信されることはありません。";
+"general.stt_engine" = "認識エンジン";
+"general.stt_engine.auto" = "Apple Intelligence（高精度）";
+"general.stt_engine.auto_desc" = "高精度な認識と自動句読点。macOS 26以降が必要。";
+"general.stt_engine.classic" = "クラシック（SFSpeechRecognizer）";
+"general.stt_engine.classic_desc" = "標準のオンデバイス音声認識。";
 "general.refinement" = "テキスト整形";
 "general.mode" = "モード";
 "general.startup" = "起動";
@@ -69,6 +74,8 @@
 "history.copy_raw" = "元のテキストをコピー";
 "history.delete" = "削除";
 "history.clear_all" = "すべてクリア";
+"history.tap_to_start" = "タップして音声入力を開始";
+"history.recording" = "聞き取り中... タップして停止";
 "history.just_now" = "たった今";
 "history.minutes_ago %lld" = "%lld分前";
 "history.hours_ago %lld" = "%lld時間前";

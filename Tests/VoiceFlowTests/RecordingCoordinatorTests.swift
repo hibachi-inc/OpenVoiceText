@@ -17,7 +17,7 @@ final class MockSTTClient: STTClientProtocol_App {
     var stopDelay: Duration?
     var disconnected = false
 
-    func startRecording(locale: String) {
+    func startRecording(locale: String, engine: String = "enhanced") {
         startedWithLocale = locale
     }
 
