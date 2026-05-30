@@ -130,6 +130,7 @@
 "general.model.not_installed" = "AIモデル未ダウンロード";
 "general.model.download" = "ダウンロード";
 "general.model.downloading %lld" = "ダウンロード中... %lld%%";
+"general.model.cancel" = "キャンセル";
 "general.model.retry" = "再試行";
 
 /* Errors */

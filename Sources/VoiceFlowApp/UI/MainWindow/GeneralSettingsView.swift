@@ -157,6 +157,11 @@ struct SpeechModelStatusView: View {
                 Text("general.model.downloading \(Int(progress * 100))")
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
+                Spacer()
+                Button("general.model.cancel") {
+                    manager.cancelDownload()
+                }
+                .controlSize(.small)
 
             case .error(let msg):
                 Image(systemName: "exclamationmark.triangle.fill")

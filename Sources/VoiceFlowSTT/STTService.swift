@@ -143,6 +143,8 @@ final class STTService: NSObject, STTServiceProtocol {
         let locale = Locale(identifier: localeID)
         let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
 
+        // SAFETY: STTService lives in an XPC service; startRecording/stopRecording are serialized by XPC.
+        // Mutable state (confirmedText, provisionalText, stopped) is protected by `lock`.
         nonisolated(unsafe) let unsafeSelf = self
         Task {
             let status = await AssetInventory.status(forModules: [transcriber])
@@ -189,6 +191,7 @@ final class STTService: NSObject, STTServiceProtocol {
             return
         }
 
+        // SAFETY: see comment in startWithSpeechAnalyzer — XPC serialization + lock protection.
         nonisolated(unsafe) let unsafeSelf = self
         analyzerTask = Task {
             do {

@@ -130,6 +130,7 @@
 "general.model.not_installed" = "AI model not downloaded";
 "general.model.download" = "Download";
 "general.model.downloading %lld" = "Downloading... %lld%%";
+"general.model.cancel" = "Cancel";
 "general.model.retry" = "Retry";
 
 /* Errors */
