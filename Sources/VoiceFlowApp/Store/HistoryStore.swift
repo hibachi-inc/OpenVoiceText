@@ -31,12 +31,15 @@ final class HistoryStore {
 
     private init() {
         let schema = Schema([HistoryEntry.self])
-        let diskConfig = ModelConfiguration(isStoredInMemoryOnly: false)
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let storeDir = appSupport.appendingPathComponent("OpenVoiceText", isDirectory: true)
+        try? FileManager.default.createDirectory(at: storeDir, withIntermediateDirectories: true)
+        let storeURL = storeDir.appendingPathComponent("history.store")
+        let diskConfig = ModelConfiguration(url: storeURL)
         let memoryConfig = ModelConfiguration(isStoredInMemoryOnly: true)
         do {
             container = try ModelContainer(for: schema, configurations: [diskConfig])
         } catch {
-            // Fallback to in-memory if disk store is corrupted (e.g. schema migration failure)
             container = try! ModelContainer(for: schema, configurations: [memoryConfig])
         }
         context = ModelContext(container)

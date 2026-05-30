@@ -56,6 +56,12 @@ struct GeneralSettingsView: View {
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
 
+                if prefs.sttEngine == .enhanced {
+                    if #available(macOS 26, *) {
+                        SpeechModelStatusView()
+                    }
+                }
+
                 Text("general.on_device")
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
@@ -81,6 +87,12 @@ struct GeneralSettingsView: View {
                 Toggle("general.launch_at_login", isOn: $prefs.launchAtLogin)
                     .onChange(of: prefs.launchAtLogin) { syncLaunchAtLogin() }
             }
+
+            Section {
+                Button("general.restart_app") {
+                    restartApp()
+                }
+            }
         }
         .formStyle(.grouped)
         .navigationTitle(String(localized: "sidebar.general"))
@@ -93,13 +105,75 @@ struct GeneralSettingsView: View {
 
     private func restartApp() {
         let url = Bundle.main.bundleURL
-        let task = Process()
-        task.launchPath = "/usr/bin/open"
-        task.arguments = ["-n", url.path]
-        try? task.run()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            NSApplication.shared.terminate(nil)
+        let config = NSWorkspace.OpenConfiguration()
+        config.createsNewApplicationInstance = true
+        NSWorkspace.shared.openApplication(at: url, configuration: config) { _, error in
+            guard error == nil else { return }
+            DispatchQueue.main.async {
+                NSApplication.shared.terminate(nil)
+            }
         }
+    }
+}
+
+@available(macOS 26, *)
+struct SpeechModelStatusView: View {
+    @State private var manager = SpeechModelManager.shared
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.sm) {
+            switch manager.status {
+            case .checking:
+                ProgressView()
+                    .controlSize(.small)
+                Text("general.model.checking")
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Colors.secondary)
+
+            case .installed:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                    .font(.system(size: 14))
+                Text("general.model.installed")
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Colors.secondary)
+
+            case .notInstalled:
+                Image(systemName: "arrow.down.circle")
+                    .foregroundStyle(DS.Colors.accent)
+                    .font(.system(size: 14))
+                Text("general.model.not_installed")
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Colors.secondary)
+                Spacer()
+                Button("general.model.download") {
+                    manager.download()
+                }
+                .controlSize(.small)
+
+            case .downloading(let progress):
+                ProgressView(value: progress)
+                    .frame(width: 80)
+                Text("general.model.downloading \(Int(progress * 100))")
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Colors.secondary)
+
+            case .error(let msg):
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(DS.Colors.error)
+                    .font(.system(size: 14))
+                Text(msg)
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Colors.error)
+                    .lineLimit(1)
+                Spacer()
+                Button("general.model.retry") {
+                    manager.download()
+                }
+                .controlSize(.small)
+            }
+        }
+        .onAppear { manager.checkStatus() }
+        .onChange(of: PreferencesStore.shared.locale) { manager.checkStatus() }
     }
 }

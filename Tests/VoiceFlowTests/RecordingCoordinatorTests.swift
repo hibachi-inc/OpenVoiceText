@@ -11,6 +11,7 @@ final class MockSTTClient: STTClientProtocol_App {
     var onError: ((String) -> Void)?
     var onConnectionInvalidated: (() -> Void)?
 
+    var onEngineChanged: ((String) -> Void)?
     var startedWithLocale: String?
     var stopCallCount = 0
     var transcriptToReturn: String? = "Hello world"
@@ -78,6 +79,7 @@ final class MockHUD: HUDProtocol {
     func showError(_ message: String) { states.append("error:\(message)") }
     func updateTranscript(_ text: String) { states.append("transcript:\(text)") }
     func updateAudioLevel(_ level: Float) { states.append("level") }
+    func updateEngine(_ engine: String) { states.append("engine:\(engine)") }
     func hide() { states.append("hide") }
 }
 
@@ -315,6 +317,23 @@ struct RecordingCoordinatorTests {
 
         coordinator.toggle() // start
         #expect(callCount >= 1)
+    }
+
+    // MARK: - Engine change
+
+    @Test func engineChangedUpdatesActiveEngine() {
+        let (coordinator, stt, _, hud, _) = makeCoordinator()
+        coordinator.toggle()
+        stt.onEngineChanged?("enhanced")
+        #expect(coordinator.activeEngine == "enhanced")
+        #expect(hud.states.contains("engine:enhanced"))
+    }
+
+    @Test func engineChangedWhileIdleStillUpdates() {
+        let (coordinator, stt, _, hud, _) = makeCoordinator()
+        stt.onEngineChanged?("classic")
+        #expect(coordinator.activeEngine == "classic")
+        #expect(hud.states.contains("engine:classic"))
     }
 
     // MARK: - Permission error

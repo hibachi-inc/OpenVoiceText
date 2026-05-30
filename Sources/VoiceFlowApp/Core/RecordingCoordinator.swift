@@ -24,6 +24,7 @@ final class RecordingCoordinator {
 
     private(set) var isRecording: Bool = false
     private(set) var currentTranscript: String = ""
+    private(set) var activeEngine: String = ""
 
     private func syncState() {
         isRecording = session.state.isActive
@@ -61,6 +62,10 @@ final class RecordingCoordinator {
         sttClient.onAudioLevel = { [weak self] level in
             guard let self, case .recording = self.session.state else { return }
             self.hud.updateAudioLevel(level)
+        }
+        sttClient.onEngineChanged = { [weak self] engine in
+            self?.activeEngine = engine
+            self?.hud.updateEngine(engine)
         }
         sttClient.onError = { [weak self] message in
             self?.handleError(message)

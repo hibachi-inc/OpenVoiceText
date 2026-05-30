@@ -52,6 +52,7 @@
 "general.app_language.en" = "English";
 "general.app_language.ja" = "日本語";
 "general.app_language_restart" = "The app will restart to apply the language change.";
+"general.restart_app" = "Restart App";
 
 /* Refinement Mode */
 "refinement.off" = "Off (raw transcript)";
@@ -118,6 +119,18 @@
 "translation.language" = "Language";
 "translation.cancel" = "Cancel";
 "translation.add_button" = "Add";
+
+/* Engine */
+"engine.enhanced_short" = "AI";
+"engine.classic_short" = "Classic";
+
+/* Model Download */
+"general.model.checking" = "Checking model status...";
+"general.model.installed" = "AI model ready";
+"general.model.not_installed" = "AI model not downloaded";
+"general.model.download" = "Download";
+"general.model.downloading %lld" = "Downloading... %lld%%";
+"general.model.retry" = "Retry";
 
 /* Errors */
 "error.stt_connection_lost" = "Speech service connection lost.";

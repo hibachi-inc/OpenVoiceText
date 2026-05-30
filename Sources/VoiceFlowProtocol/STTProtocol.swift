@@ -9,6 +9,7 @@ import Foundation
     func didUpdateTranscript(_ text: String)
     func didUpdateAudioLevel(_ level: Float)
     func didEncounterError(_ description: String)
+    @objc optional func didChangeEngine(_ engine: String)
 }
 
 public enum STTXPCConstants {

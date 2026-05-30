@@ -52,6 +52,7 @@
 "general.app_language.en" = "English";
 "general.app_language.ja" = "日本語";
 "general.app_language_restart" = "言語の変更を反映するためにアプリを再起動します。";
+"general.restart_app" = "アプリを再起動";
 
 /* Refinement Mode */
 "refinement.off" = "オフ (生テキスト)";
@@ -118,6 +119,18 @@
 "translation.language" = "言語";
 "translation.cancel" = "キャンセル";
 "translation.add_button" = "追加";
+
+/* Engine */
+"engine.enhanced_short" = "AI";
+"engine.classic_short" = "クラシック";
+
+/* Model Download */
+"general.model.checking" = "モデルの状態を確認中...";
+"general.model.installed" = "AIモデル準備完了";
+"general.model.not_installed" = "AIモデル未ダウンロード";
+"general.model.download" = "ダウンロード";
+"general.model.downloading %lld" = "ダウンロード中... %lld%%";
+"general.model.retry" = "再試行";
 
 /* Errors */
 "error.stt_connection_lost" = "音声認識サービスとの接続が切れました。";

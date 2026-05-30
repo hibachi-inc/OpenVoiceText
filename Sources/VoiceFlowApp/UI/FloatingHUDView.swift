@@ -5,6 +5,7 @@ struct FloatingHUDView: View {
     let transcript: String
     let audioLevel: Float
     var shortcutLabel: String = "⌥Space"
+    var engineLabel: String = ""
     var onTap: (() -> Void)? = nil
 
     private var displayTranscript: String {
@@ -17,9 +18,20 @@ struct FloatingHUDView: View {
                 statusIndicator
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(status.title)
-                        .font(DS.Font.hudStatus)
-                        .foregroundStyle(.white.opacity(0.7))
+                    HStack(spacing: 4) {
+                        Text(status.title)
+                            .font(DS.Font.hudStatus)
+                            .foregroundStyle(.white.opacity(0.7))
+                        if status == .listening, !engineLabel.isEmpty {
+                            Text(engineLabel)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.5))
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(.white.opacity(0.1))
+                                .clipShape(Capsule())
+                        }
+                    }
                     if !displayTranscript.isEmpty {
                         Text(displayTranscript)
                             .font(DS.Font.hudTranscript)

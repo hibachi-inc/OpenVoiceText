@@ -4,6 +4,9 @@ import AVFAudio
 import Accelerate
 import VoiceFlowProtocol
 import CoreMedia
+import os
+
+private let sttLogger = Logger(subsystem: "com.hibachi.voiceflow.stt", category: "STTService")
 
 final class STTService: NSObject, STTServiceProtocol {
     private var recognizer: SFSpeechRecognizer?
@@ -51,6 +54,7 @@ final class STTService: NSObject, STTServiceProtocol {
     // MARK: - Classic (SFSpeechRecognizer)
 
     private func startWithClassic(locale localeID: String) {
+        client?.didChangeEngine?("classic")
         let locale = Locale(identifier: localeID)
         guard let recognizer = SFSpeechRecognizer(locale: locale),
               recognizer.isAvailable else {
@@ -142,16 +146,19 @@ final class STTService: NSObject, STTServiceProtocol {
         nonisolated(unsafe) let unsafeSelf = self
         Task {
             let status = await AssetInventory.status(forModules: [transcriber])
-            guard status >= .installed else {
-                unsafeSelf.startWithClassic(locale: localeID)
+            sttLogger.notice("[STTService] AssetInventory status: \(String(describing: status))")
+            if status >= .installed {
+                unsafeSelf.launchAnalyzer(transcriber: transcriber, locale: localeID)
                 return
             }
-            unsafeSelf.launchAnalyzer(transcriber: transcriber, locale: localeID)
+            sttLogger.notice("[STTService] Model not installed, falling back to classic")
+            unsafeSelf.startWithClassic(locale: localeID)
         }
     }
 
     @available(macOS 26, *)
     private func launchAnalyzer(transcriber: SpeechTranscriber, locale localeID: String) {
+        client?.didChangeEngine?("enhanced")
         lock.lock()
         confirmedText = ""
         provisionalText = ""
@@ -198,9 +205,17 @@ final class STTService: NSObject, STTServiceProtocol {
                     unsafeSelf.client?.didUpdateTranscript(display)
                 }
             } catch {
-                let isStopped = unsafeSelf.lock.withLock { unsafeSelf.stopped }
+                sttLogger.notice("[STTService] SpeechAnalyzer error: \(error), falling back to classic")
+                let isStopped = unsafeSelf.lock.withLock {
+                    guard !unsafeSelf.stopped else { return true }
+                    unsafeSelf.confirmedText = unsafeSelf.lockedFullTranscript
+                    unsafeSelf.provisionalText = ""
+                    return false
+                }
                 if !isStopped {
-                    unsafeSelf.client?.didEncounterError(error.localizedDescription)
+                    unsafeSelf.cleanup()
+                    unsafeSelf._analyzer = nil
+                    unsafeSelf.startWithClassic(locale: localeID)
                 }
             }
         }
@@ -238,20 +253,25 @@ final class STTService: NSObject, STTServiceProtocol {
 
     private func installTapIfNeeded(handler: @escaping (AVAudioPCMBuffer) -> Void) {
         audioTapHandler = handler
-        guard !tapInstalled else { return }
+        let alreadyInstalled = lock.withLock { tapInstalled }
+        guard !alreadyInstalled else { return }
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.audioTapHandler?(buffer)
             self?.processAudioLevel(buffer: buffer)
         }
-        tapInstalled = true
+        lock.withLock { tapInstalled = true }
     }
 
     private func cleanup() {
-        if tapInstalled {
+        lock.lock()
+        let shouldRemoveTap = tapInstalled
+        tapInstalled = false
+        lock.unlock()
+
+        if shouldRemoveTap {
             audioEngine.inputNode.removeTap(onBus: 0)
-            tapInstalled = false
         }
         audioTapHandler = nil
         audioEngine.stop()

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct HistoryView: View {
     @State private var entries: [HistoryEntry] = []
@@ -90,9 +91,23 @@ struct RecordingControl: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 if coordinator.isRecording {
-                    Text("history.recording")
-                        .font(DS.Font.bodyMedium)
-                        .foregroundStyle(DS.Colors.recording)
+                    HStack(spacing: DS.Spacing.xs) {
+                        Text("history.recording")
+                            .font(DS.Font.bodyMedium)
+                            .foregroundStyle(DS.Colors.recording)
+
+                        if !coordinator.activeEngine.isEmpty {
+                            Text(coordinator.activeEngine == "enhanced"
+                                ? String(localized: "engine.enhanced_short")
+                                : String(localized: "engine.classic_short"))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(coordinator.activeEngine == "enhanced" ? DS.Colors.accent : DS.Colors.secondary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background((coordinator.activeEngine == "enhanced" ? DS.Colors.accent : DS.Colors.secondary).opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                    }
 
                     if !coordinator.currentTranscript.isEmpty {
                         Text(coordinator.currentTranscript)
@@ -126,6 +141,7 @@ struct RecordingControl: View {
 
 struct HistoryRow: View {
     let entry: HistoryEntry
+    @State private var copied = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Spacing.xs) {
@@ -147,6 +163,15 @@ struct HistoryRow: View {
                 Text(relativeTime(entry.timestamp))
                     .font(DS.Font.caption)
                     .foregroundStyle(DS.Colors.secondary)
+
+                Button(action: copyText) {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 12))
+                        .foregroundStyle(copied ? .green : DS.Colors.secondary)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.plain)
+                .help(String(localized: "history.copy"))
             }
 
             Text(entry.refinedText)
@@ -161,6 +186,16 @@ struct HistoryRow: View {
             }
         }
         .padding(.vertical, DS.Spacing.xs)
+    }
+
+    private func copyText() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(entry.refinedText, forType: .string)
+        copied = true
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            copied = false
+        }
     }
 
     private func relativeTime(_ date: Date) -> String {
