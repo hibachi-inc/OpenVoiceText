@@ -62,7 +62,7 @@ bundle-dmg: build
 	cp "$(BUILD_DIR)/VoiceFlowRefiner" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.refiner.xpc/Contents/MacOS/VoiceFlowRefiner"
 	cp "Resources/Refiner-Info.plist" "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.refiner.xpc/Contents/Info.plist"
 
-	codesign --force --sign - --options runtime \
+	codesign --force --sign - --options runtime --entitlements "Resources/Entitlements/STT-XPC-DMG.entitlements" \
 		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.stt.xpc"
 	codesign --force --sign - --options runtime \
 		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voiceflow.refiner.xpc"

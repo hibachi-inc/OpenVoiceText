@@ -22,9 +22,13 @@ final class ProUpgradeManager {
     private init() {
         updatesTask = Task {
             for await update in Transaction.updates {
-                if let transaction = try? update.payloadValue {
+                switch update {
+                case .verified(let transaction):
                     await refreshPurchaseState()
                     await transaction.finish()
+                case .unverified(_, let error):
+                    logger.warning("Unverified transaction: \(error.localizedDescription)")
+                    await refreshPurchaseState()
                 }
             }
         }
@@ -68,6 +72,7 @@ final class ProUpgradeManager {
         } catch {
             logger.error("Purchase failed: \(error.localizedDescription)")
             purchaseState = .failed(error.localizedDescription)
+            await refreshPurchaseState()
         }
     }
 
