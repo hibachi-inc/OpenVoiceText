@@ -5,6 +5,7 @@ APP_BUNDLE = .build/Koeri.app
 MAS_BUNDLE = .build/mas/Koeri.app
 MAS_PKG = .build/Koeri.pkg
 PRO_SWIFT_FLAGS = -Xswiftc -DPROFEATURES
+DIRECT_FLAGS = -Xswiftc -DDIRECT
 EMBED_PLIST = -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Resources/Info.plist
 MAS_SIGN_APP = 3rd Party Mac Developer Application: HIBACHI inc. (TYX92DB6TA)
 MAS_SIGN_INST = 3rd Party Mac Developer Installer: HIBACHI inc. (TYX92DB6TA)
@@ -19,7 +20,7 @@ PRO_INJECT = $(OSS_DIR)/Sources/VoiceFlowApp/Store/ProUpgradeManager.swift \
 build:
 	cp Sources/ProApp/ProUpgradeManager.swift $(OSS_DIR)/Sources/VoiceFlowApp/Store/
 	cp Sources/ProApp/ProUpgradeView.swift $(OSS_DIR)/Sources/VoiceFlowApp/UI/MainWindow/
-	cd $(OSS_DIR) && swift build $(PRO_SWIFT_FLAGS) || { rm -f $(PRO_INJECT); exit 1; }
+	cd $(OSS_DIR) && swift build $(PRO_SWIFT_FLAGS) $(DIRECT_FLAGS) || { rm -f $(PRO_INJECT); exit 1; }
 	rm -f $(PRO_INJECT)
 	swift build
 
