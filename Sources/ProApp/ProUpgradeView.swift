@@ -3,6 +3,10 @@ import SwiftUI
 struct ProUpgradeView: View {
     @State private var upgradeManager = ProUpgradeManager.shared
 
+    #if DIRECT
+    @State private var keyInput = ""
+    #endif
+
     var body: some View {
         Form {
             Section {
@@ -15,7 +19,7 @@ struct ProUpgradeView: View {
                         Text("pro.title")
                             .font(DS.Font.title)
                         if upgradeManager.isPro {
-                            Text("pro.unlocked")
+                            Text("pro.activated")
                                 .font(DS.Font.caption)
                                 .foregroundStyle(DS.Colors.success)
                         } else {
@@ -36,6 +40,40 @@ struct ProUpgradeView: View {
                     Label("pro.per_lang_shortcuts", systemImage: "keyboard")
                 }
 
+                #if DIRECT
+                Section("pro.enter_license") {
+                    TextField("pro.enter_license.placeholder", text: $keyInput)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+
+                    HStack {
+                        Button(action: {
+                            Task { await upgradeManager.activate(key: keyInput) }
+                        }) {
+                            HStack {
+                                if case .loading = upgradeManager.purchaseState {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("pro.validating")
+                                        .font(DS.Font.bodyMedium)
+                                } else {
+                                    Text("pro.activate")
+                                        .font(DS.Font.bodyMedium)
+                                }
+                            }
+                        }
+                        .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                  || upgradeManager.isLoading)
+
+                        Spacer()
+
+                        Link(destination: ProUpgradeManager.purchaseURL) {
+                            Text("pro.buy_license")
+                                .font(DS.Font.bodyMedium)
+                        }
+                    }
+                }
+                #else
                 Section {
                     Button(action: { Task { await upgradeManager.purchase() } }) {
                         HStack {
@@ -56,6 +94,7 @@ struct ProUpgradeView: View {
                         Task { await upgradeManager.restorePurchases() }
                     }
                 }
+                #endif
 
                 if case .failed(let message) = upgradeManager.purchaseState {
                     Section {
@@ -71,6 +110,14 @@ struct ProUpgradeView: View {
                     Label("pro.translation_active", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(DS.Colors.success)
                 }
+
+                #if DIRECT
+                Section {
+                    Button("pro.deactivate", role: .destructive) {
+                        Task { await upgradeManager.deactivate() }
+                    }
+                }
+                #endif
             }
         }
         .formStyle(.grouped)

@@ -1,23 +1,258 @@
-import StoreKit
+import Foundation
+import Security
 import os
 
-private let logger = Logger(subsystem: "com.hibachi.voiceflow", category: "ProUpgrade")
+#if !DIRECT
+import StoreKit
+#endif
+
+private let logger = Logger(subsystem: "com.hibachi.koeri", category: "ProUpgrade")
 
 @MainActor
 @Observable
 final class ProUpgradeManager {
     static let shared = ProUpgradeManager()
 
-    static let productID = "com.hibachi.openvoicetext.pro"
-
     private(set) var isPro = false
-    private(set) var product: Product?
     private(set) var purchaseState: PurchaseState = .unknown
-    private var updatesTask: Task<Void, Never>?
 
     enum PurchaseState {
         case unknown, loading, available, purchased, failed(String)
     }
+
+    var isLoading: Bool {
+        if case .loading = purchaseState { return true }
+        return false
+    }
+
+    #if DIRECT
+    // MARK: - DMG: Polar License Key
+
+    private static let polarOrgID = "45255454-9dd3-4919-9b62-f286ea3cff29"
+    static let purchaseURL = URL(string: "https://polar.sh/checkout?productId=be98eb3b-a65b-45a7-8388-48d5d4f839db")!
+
+    private let defaults = UserDefaults.standard
+    private static let keychainService = "com.hibachi.koeri.license"
+    private static let keychainLicenseAccount = "licenseKey"
+    private static let keychainActivationAccount = "activationID"
+    private static let proValidatedKey = "polarProValidated"
+    private static let lastValidatedKey = "polarLastValidated"
+    private static let gracePeriodDays = 7
+
+    var licenseKey: String {
+        Self.keychainRead(account: Self.keychainLicenseAccount) ?? ""
+    }
+
+    private var activationID: String? {
+        get { Self.keychainRead(account: Self.keychainActivationAccount) }
+        set {
+            if let newValue {
+                Self.keychainWrite(account: Self.keychainActivationAccount, value: newValue)
+            } else {
+                Self.keychainDelete(account: Self.keychainActivationAccount)
+            }
+        }
+    }
+
+    private init() {
+        if defaults.bool(forKey: Self.proValidatedKey) && !licenseKey.isEmpty && !isGracePeriodExpired {
+            isPro = true
+            purchaseState = .purchased
+        }
+        Task { await revalidateIfNeeded() }
+    }
+
+    func activate(key: String) async {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isLoading else { return }
+        purchaseState = .loading
+
+        let deviceName = Host.current().localizedName ?? "Mac"
+        let (actID, error) = await polarActivate(key: trimmed, label: deviceName)
+
+        if let actID {
+            Self.keychainWrite(account: Self.keychainLicenseAccount, value: trimmed)
+            activationID = actID
+            defaults.set(true, forKey: Self.proValidatedKey)
+            defaults.set(Date().timeIntervalSince1970, forKey: Self.lastValidatedKey)
+            isPro = true
+            purchaseState = .purchased
+            logger.info("License activated")
+        } else {
+            let msg = error ?? String(localized: "pro.invalid_key")
+            purchaseState = .failed(msg)
+            logger.error("Activation failed: \(msg)")
+        }
+    }
+
+    func deactivate() async {
+        guard !licenseKey.isEmpty else { return }
+        if let actID = activationID {
+            let success = await polarDeactivate(key: licenseKey, activationID: actID)
+            guard success else {
+                purchaseState = .failed(String(localized: "pro.network_error"))
+                return
+            }
+        }
+        Self.keychainDelete(account: Self.keychainLicenseAccount)
+        Self.keychainDelete(account: Self.keychainActivationAccount)
+        defaults.set(false, forKey: Self.proValidatedKey)
+        defaults.removeObject(forKey: Self.lastValidatedKey)
+        isPro = false
+        purchaseState = .available
+        logger.info("License deactivated")
+    }
+
+    private var isGracePeriodExpired: Bool {
+        let lastValidated = defaults.double(forKey: Self.lastValidatedKey)
+        guard lastValidated > 0 else { return true }
+        let elapsed = Date().timeIntervalSince1970 - lastValidated
+        return elapsed > Double(Self.gracePeriodDays) * 86400
+    }
+
+    private func revalidateIfNeeded() async {
+        guard !licenseKey.isEmpty else { return }
+        let valid = await polarValidate(key: licenseKey, activationID: activationID)
+        if valid {
+            defaults.set(true, forKey: Self.proValidatedKey)
+            defaults.set(Date().timeIntervalSince1970, forKey: Self.lastValidatedKey)
+            isPro = true
+            purchaseState = .purchased
+        } else if isGracePeriodExpired {
+            defaults.set(false, forKey: Self.proValidatedKey)
+            isPro = false
+            purchaseState = .available
+            logger.warning("Grace period expired, license locked")
+        }
+    }
+
+    // MARK: - Keychain
+
+    private static func keychainWrite(account: String, value: String) {
+        keychainDelete(account: account)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: Data(value.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked
+        ]
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    private static func keychainRead(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func keychainDelete(account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+
+    // MARK: - Polar API
+
+    private func polarValidate(key: String, activationID: String?) async -> Bool {
+        var body: [String: Any] = [
+            "key": key,
+            "organization_id": Self.polarOrgID
+        ]
+        if let actID = activationID {
+            body["activation_id"] = actID
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return false }
+        var request = URLRequest(url: URL(string: "https://api.polar.sh/v1/customer-portal/license-keys/validate")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+
+        do {
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
+            if let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+               let status = json["status"] as? String, status == "granted" {
+                return true
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    private func polarActivate(key: String, label: String) async -> (String?, String?) {
+        let body: [String: Any] = [
+            "key": key,
+            "organization_id": Self.polarOrgID,
+            "label": label
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else {
+            return (nil, "Invalid request")
+        }
+        var request = URLRequest(url: URL(string: "https://api.polar.sh/v1/customer-portal/license-keys/activate")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+
+        do {
+            let (responseData, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return (nil, "Invalid response") }
+            if http.statusCode == 200 {
+                if let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+                   let actID = json["id"] as? String {
+                    return (actID, nil)
+                }
+                return (nil, String(localized: "pro.invalid_key"))
+            }
+            if let json = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+               let detail = json["detail"] as? String {
+                return (nil, detail)
+            }
+            return (nil, String(localized: "pro.invalid_key"))
+        } catch {
+            return (nil, String(localized: "pro.network_error"))
+        }
+    }
+
+    private func polarDeactivate(key: String, activationID: String) async -> Bool {
+        let body: [String: Any] = [
+            "key": key,
+            "organization_id": Self.polarOrgID,
+            "activation_id": activationID
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return false }
+        var request = URLRequest(url: URL(string: "https://api.polar.sh/v1/customer-portal/license-keys/deactivate")!)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode == 204
+        } catch {
+            return false
+        }
+    }
+
+    #else
+    // MARK: - MAS: StoreKit 2
+
+    static let productID = "com.hibachi.koeri.pro"
+
+    private(set) var product: Product?
+    private var updatesTask: Task<Void, Never>?
 
     private init() {
         updatesTask = Task {
@@ -112,4 +347,5 @@ final class ProUpgradeManager {
         refreshTask = task
         await task.value
     }
+    #endif
 }
