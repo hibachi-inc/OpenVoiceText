@@ -60,6 +60,10 @@ cd OpenVoiceText && swift test
 cd OpenVoiceText && make release
 ```
 
+## ビルド注意事項
+
+- **XPCサービスを変更したら `swift package clean` が必須**。XPCバイナリはキャッシュが強く、インクリメンタルビルドでは反映されないことがある。特に RefinerService / STTService のプロトコル変更・ロジック変更時はクリーンビルドしないと古いXPCが使われ続ける。
+
 ## アーキテクチャ
 
 ```
