@@ -1,15 +1,16 @@
 import Foundation
 import NaturalLanguage
 import os
+import VoiceFlowProtocol
 
 #if canImport(FoundationModels)
 import FoundationModels
 
-private let logger = Logger(subsystem: "com.hibachi.voiceflow.refiner", category: "FoundationModels")
+private let logger = Logger(subsystem: "com.hibachi.koeri.refiner", category: "FoundationModels")
 
 @available(macOS 26, *)
 enum FoundationModelsRefiner {
-    static func refine(text: String, category: String) async -> String {
+    static func refine(text: String, context: [String: String]) async -> String {
         let model = SystemLanguageModel(
             guardrails: .permissiveContentTransformations
         )
@@ -18,8 +19,10 @@ enum FoundationModelsRefiner {
             return text
         }
 
+        let category = context[RefinerContextKey.category] ?? "generic"
+        let customPrompt = context[RefinerContextKey.customPrompt]
         let lang = detectLanguage(text)
-        let taskPrompt = refinePrompt(for: text, category: category, language: lang)
+        let taskPrompt = refinePrompt(for: text, category: category, language: lang, customPrompt: customPrompt)
         let session = LanguageModelSession(model: model)
 
         do {
@@ -54,14 +57,18 @@ enum FoundationModelsRefiner {
 
     // MARK: - Prompts
 
-    private static func refinePrompt(for text: String, category: String, language: String) -> String {
+    private static func refinePrompt(for text: String, category: String, language: String, customPrompt: String?) -> String {
         let rules: String
         if language == "ja" {
             rules = jaRules(for: category)
         } else {
             rules = enRules(for: category)
         }
-        return "\(rules)\n\n[INPUT] \"\(text)\""
+        var prompt = rules
+        if let customPrompt, !customPrompt.isEmpty {
+            prompt += "\n[USER INSTRUCTION] \(customPrompt)"
+        }
+        return "\(prompt)\n\n[INPUT] \"\(text)\""
     }
 
     private static func jaRules(for category: String) -> String {
