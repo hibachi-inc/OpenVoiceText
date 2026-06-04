@@ -37,5 +37,9 @@
 	<string>VoiceLatte uses on-device speech recognition to convert your voice to text. No audio or text data leaves your device.</string>
 	<key>NSAccentColorName</key>
 	<string>AccentColor</string>
+	<key>SUFeedURL</key>
+	<string>https://voicelatte.app/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>PjexQBnOp3qJVP4yp5WdBKsF2rz62TpXNUBf2hM0S3I=</string>
 </dict>
 </plist>
