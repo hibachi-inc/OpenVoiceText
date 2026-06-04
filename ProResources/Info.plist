@@ -38,7 +38,7 @@
 	<key>NSAccentColorName</key>
 	<string>AccentColor</string>
 	<key>SUFeedURL</key>
-	<string>https://voicelatte.app/appcast.xml</string>
+	<string>https://raw.githubusercontent.com/hibachi-inc/voicelatte-releases/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>PjexQBnOp3qJVP4yp5WdBKsF2rz62TpXNUBf2hM0S3I=</string>
 </dict>

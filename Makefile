@@ -19,7 +19,12 @@ SPARKLE_FLAGS = -Xswiftc -F$(CURDIR)/$(SPARKLE_DIR) \
     -Xlinker -F$(CURDIR)/$(SPARKLE_DIR) \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks
 
-.PHONY: build build-mas bundle bundle-mas run run-mas mas upload clean clean-sparkle sparkle sparkle-keys appcast
+VERSION = $(shell plutil -extract CFBundleShortVersionString raw ProResources/Info.plist)
+DMG_NAME = VoiceLatte-$(VERSION).dmg
+DMG_PATH = .build/$(DMG_NAME)
+NOTARIZE_PROFILE = rekinote-notarize
+
+.PHONY: build build-release build-mas bundle bundle-release bundle-mas dmg notarize release run run-mas mas upload clean clean-sparkle sparkle sparkle-keys appcast
 
 PRO_INJECT = $(OSS_DIR)/Sources/VoiceFlowApp/Store/ProUpgradeManager.swift \
              $(OSS_DIR)/Sources/VoiceFlowApp/UI/MainWindow/ProUpgradeView.swift
@@ -100,6 +105,76 @@ run: bundle
 	sleep 0.5
 	open "$(APP_BUNDLE)"
 
+# --- DMG Release (with Sparkle) ---
+
+build-release: sparkle
+	cp Sources/ProApp/ProUpgradeManager.swift $(OSS_DIR)/Sources/VoiceFlowApp/Store/
+	cp Sources/ProApp/ProUpgradeView.swift $(OSS_DIR)/Sources/VoiceFlowApp/UI/MainWindow/
+	cd $(OSS_DIR) && swift build -c release $(PRO_SWIFT_FLAGS) $(DIRECT_FLAGS) $(SPARKLE_FLAGS) || { rm -f $(PRO_INJECT); exit 1; }
+	rm -f $(PRO_INJECT)
+	swift build -c release
+
+bundle-release: build-release
+	rm -rf "$(APP_BUNDLE)"
+	mkdir -p "$(APP_BUNDLE)/Contents/MacOS"
+	cp "$(OSS_DIR)/.build/arm64-apple-macosx/release/VoiceFlowApp" "$(APP_BUNDLE)/Contents/MacOS/VoiceFlowApp"
+	cp "ProResources/Info.plist" "$(APP_BUNDLE)/Contents/"
+	mkdir -p "$(APP_BUNDLE)/Contents/Resources"
+	cp "$(OSS_DIR)/Resources/AppIcon.icns" "$(APP_BUNDLE)/Contents/Resources/"
+	cp "$(OSS_DIR)/Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/Resources/"
+	cp -R "$(OSS_DIR)/Resources/en.lproj" "$(APP_BUNDLE)/Contents/Resources/"
+	cp -R "$(OSS_DIR)/Resources/ja.lproj" "$(APP_BUNDLE)/Contents/Resources/"
+	mkdir -p "$(APP_BUNDLE)/Contents/Frameworks"
+	cp -R "$(SPARKLE_FRAMEWORK)" "$(APP_BUNDLE)/Contents/Frameworks/"
+	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/MacOS"
+	cp "$(OSS_DIR)/.build/arm64-apple-macosx/release/VoiceFlowSTT" \
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/MacOS/VoiceFlowSTT"
+	cp "ProResources/STT-Info.plist" \
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/Info.plist"
+	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/MacOS"
+	cp "$(PRO_RELEASE_DIR)/ProRefiner" \
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/MacOS/ProRefiner"
+	cp "ProResources/Refiner-Info.plist" \
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/Info.plist"
+	codesign --force --options runtime --timestamp --sign "$(DEV_SIGN)" \
+		--entitlements "$(OSS_DIR)/Resources/Entitlements/STT-XPC-DMG.entitlements" \
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc"
+	codesign --force --options runtime --timestamp --sign "$(DEV_SIGN)" \
+		--entitlements "$(OSS_DIR)/Resources/Entitlements/Refiner-XPC.entitlements" \
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc"
+	codesign --force --options runtime --timestamp --sign "$(DEV_SIGN)" \
+		"$(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc"
+	codesign --force --options runtime --timestamp --sign "$(DEV_SIGN)" \
+		"$(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"
+	codesign --force --options runtime --timestamp --sign "$(DEV_SIGN)" \
+		"$(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+	codesign --force --options runtime --timestamp --sign "$(DEV_SIGN)" \
+		"$(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+	codesign --force --options runtime --timestamp --sign "$(DEV_SIGN)" \
+		"$(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework"
+	codesign --force --options runtime --timestamp --sign "$(DEV_SIGN)" \
+		--entitlements "$(OSS_DIR)/Resources/Entitlements/App-DMG.entitlements" \
+		"$(APP_BUNDLE)"
+
+dmg: bundle-release
+	rm -f "$(DMG_PATH)"
+	hdiutil create -volname "VoiceLatte" -srcfolder "$(APP_BUNDLE)" \
+		-ov -format UDZO "$(DMG_PATH)"
+	codesign --force --sign "$(DEV_SIGN)" "$(DMG_PATH)"
+	@echo "=== DMG ready: $(DMG_PATH) ==="
+
+notarize: dmg
+	xcrun notarytool submit "$(DMG_PATH)" --keychain-profile "$(NOTARIZE_PROFILE)" --wait
+	xcrun stapler staple "$(DMG_PATH)"
+	@echo "=== Notarized: $(DMG_PATH) ==="
+
+release: notarize
+	gh release create "v$(VERSION)" "$(DMG_PATH)" \
+		--repo hibachi-inc/voicelatte-releases \
+		--title "VoiceLatte $(VERSION)" \
+		--notes "VoiceLatte $(VERSION)"
+	@echo "=== Released v$(VERSION) on voicelatte-releases ==="
+
 # --- MAS Release (no Sparkle) ---
 
 build-mas:
@@ -157,7 +232,14 @@ mas: bundle-mas
 	@echo "=== MAS pkg ready: $(MAS_PKG) ==="
 
 upload: mas
-	xcrun altool --upload-app -f "$(MAS_PKG)" -t macos --apiKey "$(ASC_API_KEY)" --apiIssuer "$(ASC_API_ISSUER)"
+	xcrun altool --upload-package "$(MAS_PKG)" \
+		--type macos \
+		--apple-id "$(ASC_APP_APPLE_ID)" \
+		--bundle-id com.hibachi.voicelatte \
+		--bundle-version "$$(plutil -extract CFBundleVersion raw ProResources/Info.plist)" \
+		--bundle-short-version-string "$$(plutil -extract CFBundleShortVersionString raw ProResources/Info.plist)" \
+		--apiKey "$(ASC_API_KEY)" --apiIssuer "$(ASC_API_ISSUER)"
+	@echo "=== Uploaded to App Store Connect ==="
 
 run-mas: bundle-mas
 	pkill -9 -f VoiceFlowApp 2>/dev/null || true

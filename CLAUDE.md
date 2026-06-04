@@ -95,10 +95,44 @@ XPC バンドルを差し替えるだけで OSS/Pro が切り替わる。メイ�
 | 項目 | 値 |
 |------|-----|
 | Developer ID 証明書 | `Developer ID Application: HIBACHI inc. (TYX92DB6TA)` |
+| MAS署名（App） | `3rd Party Mac Developer Application: HIBACHI inc. (TYX92DB6TA)` |
+| MAS署名（Installer） | `3rd Party Mac Developer Installer: HIBACHI inc. (TYX92DB6TA)` |
 | 公証プロファイル | `rekinote-notarize`（Keychain 保存済み） |
-| メインバンドルID | `com.hibachi.voiceflow` |
-| STT XPC | `com.hibachi.voiceflow.stt` |
-| Refiner XPC | `com.hibachi.voiceflow.refiner` |
+| メインバンドルID | `com.hibachi.voicelatte` |
+| STT XPC | `com.hibachi.voicelatte.stt` |
+| Refiner XPC | `com.hibachi.voicelatte.refiner` |
+| Provisioning Profile | `ProResources/embedded.provisionprofile` |
+
+## App Store Connect
+
+| 項目 | 値 |
+|------|-----|
+| App Apple ID | `6776692293` |
+| バンドルID | `com.hibachi.voicelatte` |
+| SKU | `voicelatte` |
+| IAP Product ID | `com.hibachi.voicelatte.pro`（非消耗型） |
+| ASC API Key ID | `WZQ52NQR67` |
+| ASC Issuer ID | `8df6663b-5f13-482b-8b9c-0e5ca7dce4c2` |
+| API Key (.p8) | `~/.private_keys/AuthKey_WZQ52NQR67.p8` |
+
+### MASアップロード
+
+```bash
+make upload \
+  ASC_API_KEY=WZQ52NQR67 \
+  ASC_API_ISSUER=8df6663b-5f13-482b-8b9c-0e5ca7dce4c2 \
+  ASC_APP_APPLE_ID=6776692293
+```
+
+### DMG自動更新（Sparkle）
+
+| 項目 | 値 |
+|------|-----|
+| Sparkle バージョン | 2.9.2（`.build/Sparkle/` に自動DL） |
+| EdDSA公開鍵 | `ProResources/Info.plist` の `SUPublicEDKey` |
+| EdDSA秘密鍵 | macOS Keychain（`make sparkle-keys` で生成済み） |
+| Appcast URL | `https://raw.githubusercontent.com/hibachi-inc/voicelatte-releases/main/appcast.xml` |
+| Release リポ | `hibachi-inc/voicelatte-releases`（Public） |
 
 ## デバッグ
 
