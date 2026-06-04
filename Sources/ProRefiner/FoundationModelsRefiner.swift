@@ -6,7 +6,7 @@ import VoiceFlowProtocol
 #if canImport(FoundationModels)
 import FoundationModels
 
-private let logger = Logger(subsystem: "com.hibachi.koeri.refiner", category: "FoundationModels")
+private let logger = Logger(subsystem: "com.hibachi.voicelatte.refiner", category: "FoundationModels")
 
 @available(macOS 26, *)
 enum FoundationModelsRefiner {

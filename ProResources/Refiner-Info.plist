@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.hibachi.koeri.refiner</string>
+    <string>com.hibachi.voicelatte.refiner</string>
     <key>CFBundleName</key>
     <string>ProRefiner</string>
     <key>CFBundleExecutable</key>

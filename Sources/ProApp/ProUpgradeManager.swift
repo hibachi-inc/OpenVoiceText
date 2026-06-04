@@ -6,7 +6,7 @@ import os
 import StoreKit
 #endif
 
-private let logger = Logger(subsystem: "com.hibachi.koeri", category: "ProUpgrade")
+private let logger = Logger(subsystem: "com.hibachi.voicelatte", category: "ProUpgrade")
 
 @MainActor
 @Observable
@@ -32,7 +32,7 @@ final class ProUpgradeManager {
     static let purchaseURL = URL(string: "https://polar.sh/checkout?productId=be98eb3b-a65b-45a7-8388-48d5d4f839db")!
 
     private let defaults = UserDefaults.standard
-    private static let keychainService = "com.hibachi.koeri.license"
+    private static let keychainService = "com.hibachi.voicelatte.license"
     private static let keychainLicenseAccount = "licenseKey"
     private static let keychainActivationAccount = "activationID"
     private static let proValidatedKey = "polarProValidated"
@@ -249,7 +249,7 @@ final class ProUpgradeManager {
     #else
     // MARK: - MAS: StoreKit 2
 
-    static let productID = "com.hibachi.koeri.pro"
+    static let productID = "com.hibachi.voicelatte.pro"
 
     private(set) var product: Product?
     private var updatesTask: Task<Void, Never>?

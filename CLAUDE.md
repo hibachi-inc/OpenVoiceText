@@ -2,7 +2,7 @@
 
 ## 概要
 
-macOS 音声入力アプリ。OSS 版（OpenVoiceText）と Pro 版（koeri / MAS配布予定）の2構成。
+macOS 音声入力アプリ。OSS 版（OpenVoiceText）と Pro 版（voicelatte / MAS配布予定）の2構成。
 OSS 版を git submodule で参照し、Refiner XPC サービスだけ Pro 版に差し替える。
 
 ## ブランド
@@ -10,9 +10,9 @@ OSS 版を git submodule で参照し、Refiner XPC サービスだけ Pro 版�
 | 配布チャネル | 名前 | リポジトリ |
 |---|---|---|
 | GitHub（OSS） | **OpenVoiceText** | `hibachi-inc/OpenVoiceText`（PUBLIC, MIT） |
-| Mac App Store | **koeri** | `hibachi-inc/OpenVoiceText-Pro`（PRIVATE） |
+| Mac App Store | **voicelatte** | `hibachi-inc/OpenVoiceText-Pro`（PRIVATE） |
 
-Reki ブランドファミリー（Reki note の姉妹プロダクト）。アイコンは共通（koeri アイコン）。
+Reki ブランドファミリー（Reki note の姉妹プロダクト）。アイコンは共通（voicelatte アイコン）。
 
 ## リポジトリ構成
 
@@ -56,7 +56,7 @@ cd .. && make run
 # テスト
 cd OpenVoiceText && swift test
 
-# OSS版リリース（→ /koeri-release スキル参照）
+# OSS版リリース（→ /voicelatte-release スキル参照）
 cd OpenVoiceText && make release
 ```
 

@@ -1,12 +1,13 @@
 OSS_DIR = OpenVoiceText
 PRO_BUILD_DIR = .build/arm64-apple-macosx/debug
 PRO_RELEASE_DIR = .build/arm64-apple-macosx/release
-APP_BUNDLE = .build/Koeri.app
-MAS_BUNDLE = .build/mas/Koeri.app
-MAS_PKG = .build/Koeri.pkg
+APP_BUNDLE = .build/VoiceLatte.app
+MAS_BUNDLE = .build/mas/VoiceLatte.app
+MAS_PKG = .build/VoiceLatte.pkg
 PRO_SWIFT_FLAGS = -Xswiftc -DPROFEATURES
 DIRECT_FLAGS = -Xswiftc -DDIRECT
 EMBED_PLIST = -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Resources/Info.plist
+DEV_SIGN = Developer ID Application: HIBACHI inc. (TYX92DB6TA)
 MAS_SIGN_APP = 3rd Party Mac Developer Application: HIBACHI inc. (TYX92DB6TA)
 MAS_SIGN_INST = 3rd Party Mac Developer Installer: HIBACHI inc. (TYX92DB6TA)
 
@@ -34,19 +35,25 @@ bundle: build
 	cp "$(OSS_DIR)/Resources/PrivacyInfo.xcprivacy" "$(APP_BUNDLE)/Contents/Resources/"
 	cp -R "$(OSS_DIR)/Resources/en.lproj" "$(APP_BUNDLE)/Contents/Resources/"
 	cp -R "$(OSS_DIR)/Resources/ja.lproj" "$(APP_BUNDLE)/Contents/Resources/"
-	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.stt.xpc/Contents/MacOS"
+	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/MacOS"
 	cp "$(OSS_DIR)/.build/arm64-apple-macosx/debug/VoiceFlowSTT" \
-		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.stt.xpc/Contents/MacOS/VoiceFlowSTT"
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/MacOS/VoiceFlowSTT"
 	cp "ProResources/STT-Info.plist" \
-		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.stt.xpc/Contents/Info.plist"
-	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.refiner.xpc/Contents/MacOS"
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/Info.plist"
+	mkdir -p "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/MacOS"
 	cp "$(PRO_BUILD_DIR)/ProRefiner" \
-		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.refiner.xpc/Contents/MacOS/ProRefiner"
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/MacOS/ProRefiner"
 	cp "ProResources/Refiner-Info.plist" \
-		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.refiner.xpc/Contents/Info.plist"
-	codesign --force --sign - "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.stt.xpc"
-	codesign --force --sign - "$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.refiner.xpc"
-	codesign --force --sign - "$(APP_BUNDLE)"
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/Info.plist"
+	codesign --force --sign "$(DEV_SIGN)" \
+		--entitlements "$(OSS_DIR)/Resources/Entitlements/STT-XPC-DMG.entitlements" \
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc"
+	codesign --force --sign "$(DEV_SIGN)" \
+		--entitlements "$(OSS_DIR)/Resources/Entitlements/Refiner-XPC.entitlements" \
+		"$(APP_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc"
+	codesign --force --sign "$(DEV_SIGN)" \
+		--entitlements "$(OSS_DIR)/Resources/Entitlements/App-DMG.entitlements" \
+		"$(APP_BUNDLE)"
 
 run: bundle
 	open "$(APP_BUNDLE)"
@@ -76,24 +83,24 @@ bundle-mas: build-mas
 		cp ProResources/embedded.provisionprofile "$(MAS_BUNDLE)/Contents/"; \
 	fi
 	# STT XPC
-	mkdir -p "$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.stt.xpc/Contents/MacOS"
+	mkdir -p "$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/MacOS"
 	cp "$(OSS_DIR)/.build/arm64-apple-macosx/release/VoiceFlowSTT" \
-		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.stt.xpc/Contents/MacOS/VoiceFlowSTT"
+		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/MacOS/VoiceFlowSTT"
 	cp "ProResources/STT-Info.plist" \
-		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.stt.xpc/Contents/Info.plist"
+		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc/Contents/Info.plist"
 	# Pro Refiner XPC
-	mkdir -p "$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.refiner.xpc/Contents/MacOS"
+	mkdir -p "$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/MacOS"
 	cp "$(PRO_RELEASE_DIR)/ProRefiner" \
-		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.refiner.xpc/Contents/MacOS/ProRefiner"
+		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/MacOS/ProRefiner"
 	cp "ProResources/Refiner-Info.plist" \
-		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.refiner.xpc/Contents/Info.plist"
+		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc/Contents/Info.plist"
 	# Sign with MAS certificates
 	codesign --force --sign "$(MAS_SIGN_APP)" \
 		--entitlements "$(OSS_DIR)/Resources/Entitlements/STT-XPC.entitlements" \
-		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.stt.xpc"
+		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.stt.xpc"
 	codesign --force --sign "$(MAS_SIGN_APP)" \
 		--entitlements "$(OSS_DIR)/Resources/Entitlements/Refiner-XPC.entitlements" \
-		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.koeri.refiner.xpc"
+		"$(MAS_BUNDLE)/Contents/XPCServices/com.hibachi.voicelatte.refiner.xpc"
 	codesign --force --sign "$(MAS_SIGN_APP)" \
 		--entitlements "$(OSS_DIR)/Resources/Entitlements/App-MAS.entitlements" \
 		"$(MAS_BUNDLE)"

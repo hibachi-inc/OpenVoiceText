@@ -8,119 +8,235 @@ struct ProUpgradeView: View {
     #endif
 
     var body: some View {
-        Form {
-            Section {
-                HStack(spacing: DS.Spacing.lg) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 32))
-                        .foregroundStyle(DS.Colors.accent)
-
-                    VStack(alignment: .leading, spacing: DS.Spacing.xs) {
-                        Text("pro.title")
-                            .font(DS.Font.title)
-                        if upgradeManager.isPro {
-                            Text("pro.activated")
-                                .font(DS.Font.caption)
-                                .foregroundStyle(DS.Colors.success)
-                        } else {
-                            Text("pro.upgrade_prompt")
-                                .font(DS.Font.caption)
-                                .foregroundStyle(DS.Colors.secondary)
-                        }
-                    }
+        ScrollView {
+            VStack(spacing: DS.Spacing.xl) {
+                heroSection
+                if !upgradeManager.isPro {
+                    featuresGrid
+                    purchaseSection
+                } else {
+                    activeSection
                 }
-                .padding(.vertical, DS.Spacing.sm)
+            }
+            .padding(DS.Spacing.xl)
+        }
+        .navigationTitle(String(localized: "sidebar.pro"))
+    }
+
+    // MARK: - Hero
+
+    private var heroSection: some View {
+        HStack(spacing: DS.Spacing.lg) {
+            ZStack {
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [DS.Colors.accent.opacity(0.25), DS.Colors.accent.opacity(0.0)],
+                            center: .center, startRadius: 0, endRadius: 28
+                        )
+                    )
+                    .frame(width: 56, height: 56)
+
+                Image(systemName: upgradeManager.isPro ? "checkmark.seal.fill" : "sparkles")
+                    .font(.system(size: 24, weight: .medium))
+                    .foregroundStyle(upgradeManager.isPro ? DS.Colors.success : DS.Colors.accent)
+                    .symbolEffect(.pulse, isActive: !upgradeManager.isPro)
             }
 
-            if !upgradeManager.isPro {
-                Section("pro.features") {
-                    Label("pro.ai_refinement", systemImage: "sparkles")
-                    Label("pro.context_aware", systemImage: "app.dashed")
-                    Label("pro.multi_lang", systemImage: "globe")
-                    Label("pro.per_lang_shortcuts", systemImage: "keyboard")
+            VStack(alignment: .leading, spacing: DS.Spacing.xs) {
+                Text("pro.title")
+                    .font(.system(size: 18, weight: .bold))
+
+                if upgradeManager.isPro {
+                    Text("pro.activated")
+                        .font(DS.Font.caption)
+                        .foregroundStyle(DS.Colors.success)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(DS.Colors.success.opacity(0.1))
+                        .clipShape(Capsule())
+                } else {
+                    Text("pro.upgrade_prompt")
+                        .font(DS.Font.body)
+                        .foregroundStyle(DS.Colors.secondary)
                 }
+            }
 
-                #if DIRECT
-                Section("pro.enter_license") {
-                    TextField("pro.enter_license.placeholder", text: $keyInput)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+            Spacer()
+        }
+        .padding(DS.Spacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous)
+                .fill(DS.Colors.cardBg)
+        )
+    }
 
-                    HStack {
-                        Button(action: {
-                            Task { await upgradeManager.activate(key: keyInput) }
-                        }) {
-                            HStack {
-                                if case .loading = upgradeManager.purchaseState {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                    Text("pro.validating")
-                                        .font(DS.Font.bodyMedium)
-                                } else {
-                                    Text("pro.activate")
-                                        .font(DS.Font.bodyMedium)
-                                }
-                            }
-                        }
-                        .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                  || upgradeManager.isLoading)
+    // MARK: - Features
 
-                        Spacer()
+    private var featuresGrid: some View {
+        VStack(spacing: 0) {
+            FeatureRow(icon: "sparkles", titleKey: "pro.ai_refinement", color: .orange)
+            FeatureRow(icon: "app.dashed", titleKey: "pro.context_aware", color: .blue)
+            FeatureRow(icon: "globe", titleKey: "pro.multi_lang", color: .green)
+            FeatureRow(icon: "keyboard", titleKey: "pro.per_lang_shortcuts", color: .purple)
+        }
+        .background(DS.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+    }
 
-                        Link(destination: ProUpgradeManager.purchaseURL) {
-                            Text("pro.buy_license")
-                                .font(DS.Font.bodyMedium)
-                        }
-                    }
-                }
-                #else
-                Section {
-                    Button(action: { Task { await upgradeManager.purchase() } }) {
-                        HStack {
-                            Spacer()
-                            if let product = upgradeManager.product {
-                                Text("pro.upgrade \(product.displayPrice)")
-                                    .font(DS.Font.bodyMedium)
+    // MARK: - Purchase
+
+    private var purchaseSection: some View {
+        VStack(spacing: DS.Spacing.md) {
+            #if DIRECT
+            VStack(spacing: DS.Spacing.sm) {
+                TextField("pro.enter_license.placeholder", text: $keyInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+
+                HStack(spacing: DS.Spacing.md) {
+                    Button(action: {
+                        Task { await upgradeManager.activate(key: keyInput) }
+                    }) {
+                        HStack(spacing: DS.Spacing.sm) {
+                            if case .loading = upgradeManager.purchaseState {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("pro.validating")
                             } else {
-                                Text("pro.loading")
-                                    .font(DS.Font.bodyMedium)
+                                Image(systemName: "key.fill")
+                                Text("pro.activate")
                             }
-                            Spacer()
                         }
+                        .font(DS.Font.bodyMedium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
-                    .disabled(upgradeManager.product == nil)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                              || upgradeManager.isLoading)
 
-                    Button("pro.restore") {
-                        Task { await upgradeManager.restorePurchases() }
+                    Link(destination: ProUpgradeManager.purchaseURL) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "cart.fill")
+                            Text("pro.buy_license")
+                        }
+                        .font(DS.Font.bodyMedium)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            #else
+            Button(action: { Task { await upgradeManager.purchase() } }) {
+                HStack(spacing: DS.Spacing.sm) {
+                    Image(systemName: "sparkles")
+                    if let product = upgradeManager.product {
+                        Text("pro.upgrade \(product.displayPrice)")
+                    } else {
+                        Text("pro.loading")
                     }
                 }
-                #endif
+                .font(.system(size: 14, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(upgradeManager.product == nil)
 
-                if case .failed(let message) = upgradeManager.purchaseState {
-                    Section {
-                        Text(message)
-                            .font(DS.Font.caption)
-                            .foregroundStyle(DS.Colors.error)
-                    }
-                }
-            } else {
-                Section {
-                    Label("pro.ai_refinement_active", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(DS.Colors.success)
-                    Label("pro.translation_active", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(DS.Colors.success)
-                }
+            Button("pro.restore") {
+                Task { await upgradeManager.restorePurchases() }
+            }
+            .buttonStyle(.plain)
+            .font(DS.Font.caption)
+            .foregroundStyle(DS.Colors.secondary)
+            #endif
 
-                #if DIRECT
-                Section {
-                    Button("pro.deactivate", role: .destructive) {
-                        Task { await upgradeManager.deactivate() }
-                    }
-                }
-                #endif
+            if case .failed(let message) = upgradeManager.purchaseState {
+                Text(message)
+                    .font(DS.Font.caption)
+                    .foregroundStyle(DS.Colors.error)
+                    .padding(DS.Spacing.sm)
+                    .frame(maxWidth: .infinity)
+                    .background(DS.Colors.error.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle(String(localized: "sidebar.pro"))
+    }
+
+    // MARK: - Active
+
+    private var activeSection: some View {
+        VStack(spacing: DS.Spacing.md) {
+            ActiveFeatureRow(icon: "sparkles", titleKey: "pro.ai_refinement_active")
+            ActiveFeatureRow(icon: "globe", titleKey: "pro.translation_active")
+
+            #if DIRECT
+            Divider()
+                .padding(.vertical, DS.Spacing.sm)
+
+            Button("pro.deactivate", role: .destructive) {
+                Task { await upgradeManager.deactivate() }
+            }
+            .buttonStyle(.plain)
+            .font(DS.Font.caption)
+            #endif
+        }
+        .padding(DS.Spacing.lg)
+        .background(DS.Colors.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
+    }
+}
+
+// MARK: - Feature Row
+
+private struct FeatureRow: View {
+    let icon: String
+    let titleKey: LocalizedStringKey
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.md) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(color)
+                .frame(width: 28, height: 28)
+                .background(color.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            Text(titleKey)
+                .font(DS.Font.body)
+
+            Spacer()
+        }
+        .padding(.horizontal, DS.Spacing.md)
+        .padding(.vertical, 10)
+    }
+}
+
+// MARK: - Active Feature Row
+
+private struct ActiveFeatureRow: View {
+    let icon: String
+    let titleKey: LocalizedStringKey
+
+    var body: some View {
+        HStack(spacing: DS.Spacing.md) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 16))
+                .foregroundStyle(DS.Colors.success)
+
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(DS.Colors.secondary)
+                .frame(width: 24)
+
+            Text(titleKey)
+                .font(DS.Font.bodyMedium)
+
+            Spacer()
+        }
     }
 }
