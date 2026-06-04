@@ -76,7 +76,6 @@ struct ProUpgradeView: View {
     private var featuresGrid: some View {
         VStack(spacing: 0) {
             FeatureRow(icon: "globe", titleKey: "pro.feature_translation", color: .green)
-            FeatureRow(icon: "keyboard", titleKey: "pro.feature_lang_shortcuts", color: .purple)
             FeatureRow(icon: "slider.horizontal.3", titleKey: "pro.feature_custom_refine", color: .blue)
         }
         .background(DS.Colors.cardBg)

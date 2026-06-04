@@ -95,7 +95,8 @@ bundle: build
 		"$(APP_BUNDLE)"
 
 run: bundle
-	pkill -9 -f "VoiceFlowApp\|VoiceLatte" 2>/dev/null || true
+	pkill -9 -f VoiceFlowApp 2>/dev/null || true
+	pkill -9 -f VoiceLatte 2>/dev/null || true
 	sleep 0.5
 	open "$(APP_BUNDLE)"
 
@@ -159,7 +160,8 @@ upload: mas
 	xcrun altool --upload-app -f "$(MAS_PKG)" -t macos --apiKey "$(ASC_API_KEY)" --apiIssuer "$(ASC_API_ISSUER)"
 
 run-mas: bundle-mas
-	pkill -9 -f "VoiceFlowApp\|VoiceLatte" 2>/dev/null || true
+	pkill -9 -f VoiceFlowApp 2>/dev/null || true
+	pkill -9 -f VoiceLatte 2>/dev/null || true
 	sleep 0.5
 	open "$(MAS_BUNDLE)"
 
