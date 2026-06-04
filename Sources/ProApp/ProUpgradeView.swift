@@ -91,8 +91,15 @@ struct ProUpgradeView: View {
             #if DIRECT
             VStack(spacing: DS.Spacing.sm) {
                 TextField("pro.enter_license.placeholder", text: $keyInput)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
                     .font(.system(.body, design: .monospaced))
+                    .padding(8)
+                    .background(DS.Colors.fieldBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(DS.Colors.secondary.opacity(0.3))
+                    )
 
                 HStack(spacing: DS.Spacing.md) {
                     Button(action: {
