@@ -75,10 +75,9 @@ struct ProUpgradeView: View {
 
     private var featuresGrid: some View {
         VStack(spacing: 0) {
-            FeatureRow(icon: "sparkles", titleKey: "pro.ai_refinement", color: .orange)
-            FeatureRow(icon: "app.dashed", titleKey: "pro.context_aware", color: .blue)
-            FeatureRow(icon: "globe", titleKey: "pro.multi_lang", color: .green)
-            FeatureRow(icon: "keyboard", titleKey: "pro.per_lang_shortcuts", color: .purple)
+            FeatureRow(icon: "globe", titleKey: "pro.feature_translation", color: .green)
+            FeatureRow(icon: "keyboard", titleKey: "pro.feature_lang_shortcuts", color: .purple)
+            FeatureRow(icon: "slider.horizontal.3", titleKey: "pro.feature_custom_refine", color: .blue)
         }
         .background(DS.Colors.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: DS.Radius.md, style: .continuous))
@@ -177,8 +176,8 @@ struct ProUpgradeView: View {
 
     private var activeSection: some View {
         VStack(spacing: DS.Spacing.md) {
-            ActiveFeatureRow(icon: "sparkles", titleKey: "pro.ai_refinement_active")
             ActiveFeatureRow(icon: "globe", titleKey: "pro.translation_active")
+            ActiveFeatureRow(icon: "slider.horizontal.3", titleKey: "pro.custom_refine_active")
 
             #if DIRECT
             Divider()
