@@ -157,9 +157,14 @@ bundle-release: build-release
 		"$(APP_BUNDLE)"
 
 dmg: bundle-release
-	rm -f "$(DMG_PATH)"
-	hdiutil create -volname "VoiceLatte" -srcfolder "$(APP_BUNDLE)" \
-		-ov -format UDZO "$(DMG_PATH)"
+	rm -f "$(DMG_PATH)" .build/VoiceLatte-rw.dmg
+	hdiutil create -size 200m -fs HFS+ -volname "VoiceLatte" .build/VoiceLatte-rw.dmg
+	hdiutil attach .build/VoiceLatte-rw.dmg -nobrowse -mountpoint /Volumes/VoiceLatte-rw
+	cp -R "$(APP_BUNDLE)" /Volumes/VoiceLatte-rw/
+	ln -s /Applications /Volumes/VoiceLatte-rw/Applications
+	hdiutil detach /Volumes/VoiceLatte-rw
+	hdiutil convert .build/VoiceLatte-rw.dmg -format UDZO -o "$(DMG_PATH)"
+	rm -f .build/VoiceLatte-rw.dmg
 	codesign --force --sign "$(DEV_SIGN)" "$(DMG_PATH)"
 	@echo "=== DMG ready: $(DMG_PATH) ==="
 
