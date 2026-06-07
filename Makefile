@@ -6,7 +6,7 @@ MAS_BUNDLE = .build/mas/VoiceLatte.app
 MAS_PKG = .build/VoiceLatte.pkg
 PRO_SWIFT_FLAGS = -Xswiftc -DPROFEATURES
 DIRECT_FLAGS = -Xswiftc -DDIRECT
-EMBED_PLIST = -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker Resources/Info.plist
+EMBED_PLIST = -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker $(CURDIR)/ProResources/Info.plist
 DEV_SIGN = Developer ID Application: HIBACHI inc. (TYX92DB6TA)
 MAS_SIGN_APP = 3rd Party Mac Developer Application: HIBACHI inc. (TYX92DB6TA)
 MAS_SIGN_INST = 3rd Party Mac Developer Installer: HIBACHI inc. (TYX92DB6TA)
@@ -185,7 +185,11 @@ release: notarize
 build-mas:
 	cp Sources/ProApp/ProUpgradeManager.swift $(OSS_DIR)/Sources/VoiceFlowApp/Store/
 	cp Sources/ProApp/ProUpgradeView.swift $(OSS_DIR)/Sources/VoiceFlowApp/UI/MainWindow/
-	cd $(OSS_DIR) && swift build -c release $(PRO_SWIFT_FLAGS) $(EMBED_PLIST) \
+	# XPC services: build WITHOUT EMBED_PLIST (they have their own Info.plist)
+	cd $(OSS_DIR) && swift build -c release --product VoiceFlowSTT
+	cd $(OSS_DIR) && swift build -c release --product VoiceFlowRefiner
+	# Main app: build WITH EMBED_PLIST + PROFEATURES
+	cd $(OSS_DIR) && swift build -c release --product VoiceFlowApp $(PRO_SWIFT_FLAGS) $(EMBED_PLIST) \
 		|| { rm -f $(PRO_INJECT); exit 1; }
 	rm -f $(PRO_INJECT)
 	swift build -c release
