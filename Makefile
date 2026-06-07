@@ -20,7 +20,7 @@ SPARKLE_FLAGS = -Xswiftc -F$(CURDIR)/$(SPARKLE_DIR) \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks
 
 VERSION = $(shell plutil -extract CFBundleShortVersionString raw ProResources/Info.plist)
-DMG_NAME = VoiceLatte-$(VERSION).dmg
+DMG_NAME = VoiceLatte.dmg
 DMG_PATH = .build/$(DMG_NAME)
 NOTARIZE_PROFILE = rekinote-notarize
 
