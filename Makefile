@@ -6,6 +6,7 @@ MAS_BUNDLE = .build/mas/VoiceLatte.app
 MAS_PKG = .build/VoiceLatte.pkg
 PRO_SWIFT_FLAGS = -Xswiftc -DPROFEATURES
 DIRECT_FLAGS = -Xswiftc -DDIRECT
+DEVTOOLS_FLAGS = -Xswiftc -DDEVTOOLS
 EMBED_PLIST = -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker $(CURDIR)/ProResources/Info.plist
 DEV_SIGN = Developer ID Application: HIBACHI inc. (TYX92DB6TA)
 MAS_SIGN_APP = 3rd Party Mac Developer Application: HIBACHI inc. (TYX92DB6TA)
@@ -49,7 +50,7 @@ sparkle-keys:
 build: sparkle
 	cp Sources/ProApp/ProUpgradeManager.swift $(OSS_DIR)/Sources/VoiceFlowApp/Store/
 	cp Sources/ProApp/ProUpgradeView.swift $(OSS_DIR)/Sources/VoiceFlowApp/UI/MainWindow/
-	cd $(OSS_DIR) && swift build $(PRO_SWIFT_FLAGS) $(DIRECT_FLAGS) $(SPARKLE_FLAGS) || { rm -f $(PRO_INJECT); exit 1; }
+	cd $(OSS_DIR) && swift build $(PRO_SWIFT_FLAGS) $(DIRECT_FLAGS) $(DEVTOOLS_FLAGS) $(SPARKLE_FLAGS) || { rm -f $(PRO_INJECT); exit 1; }
 	rm -f $(PRO_INJECT)
 	swift build
 

@@ -25,13 +25,42 @@ final class ProUpgradeManager {
         return false
     }
 
+    #if DEVTOOLS
+    // MARK: - Dev: Pro status override (excluded from release builds)
+
+    private static let devProOverrideKey = "devProOverride"
+    private let defaults = UserDefaults.standard
+
+    /// Toggle Pro status for development.
+    /// `defaults write com.hibachi.voicelatte devProOverride -bool YES`
+    /// `defaults write com.hibachi.voicelatte devProOverride -bool NO`
+    /// `defaults delete com.hibachi.voicelatte devProOverride` → normal Polar flow
+    var devOverrideActive: Bool {
+        defaults.object(forKey: Self.devProOverrideKey) != nil
+    }
+
+    func devSetPro(_ enabled: Bool) {
+        defaults.set(enabled, forKey: Self.devProOverrideKey)
+        isPro = enabled
+        purchaseState = enabled ? .purchased : .available
+        logger.info("Dev override: isPro = \(enabled)")
+    }
+
+    func devClearOverride() {
+        defaults.removeObject(forKey: Self.devProOverrideKey)
+        logger.info("Dev override cleared")
+    }
+    #endif
+
     #if DIRECT
     // MARK: - DMG: Polar License Key
 
     private static let polarOrgID = "45255454-9dd3-4919-9b62-f286ea3cff29"
     static let purchaseURL = URL(string: "https://polar.sh/checkout?productId=be98eb3b-a65b-45a7-8388-48d5d4f839db")!
 
+    #if !DEVTOOLS
     private let defaults = UserDefaults.standard
+    #endif
     private static let keychainService = "com.hibachi.voicelatte.license"
     private static let keychainLicenseAccount = "licenseKey"
     private static let keychainActivationAccount = "activationID"
@@ -55,6 +84,14 @@ final class ProUpgradeManager {
     }
 
     private init() {
+        #if DEVTOOLS
+        if let override = defaults.object(forKey: Self.devProOverrideKey) as? Bool {
+            isPro = override
+            purchaseState = override ? .purchased : .available
+            logger.info("Dev override active: isPro = \(override)")
+            return
+        }
+        #endif
         if defaults.bool(forKey: Self.proValidatedKey) && !licenseKey.isEmpty && !isGracePeriodExpired {
             isPro = true
             purchaseState = .purchased
