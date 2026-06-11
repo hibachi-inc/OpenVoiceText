@@ -25,11 +25,12 @@ final class ProUpgradeManager {
         return false
     }
 
+    private let defaults = UserDefaults.standard
+
     #if DEVTOOLS
     // MARK: - Dev: Pro status override (excluded from release builds)
 
     private static let devProOverrideKey = "devProOverride"
-    private let defaults = UserDefaults.standard
 
     /// Toggle Pro status for development.
     /// `defaults write com.hibachi.voicelatte devProOverride -bool YES`
@@ -58,9 +59,6 @@ final class ProUpgradeManager {
     private static let polarOrgID = "45255454-9dd3-4919-9b62-f286ea3cff29"
     static let purchaseURL = URL(string: "https://polar.sh/checkout?productId=be98eb3b-a65b-45a7-8388-48d5d4f839db")!
 
-    #if !DEVTOOLS
-    private let defaults = UserDefaults.standard
-    #endif
     private static let keychainService = "com.hibachi.voicelatte.license"
     private static let keychainLicenseAccount = "licenseKey"
     private static let keychainActivationAccount = "activationID"
