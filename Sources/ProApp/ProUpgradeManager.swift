@@ -12,6 +12,7 @@ private let logger = Logger(subsystem: "com.hibachi.voicelatte", category: "ProU
 @Observable
 final class ProUpgradeManager {
     static let shared = ProUpgradeManager()
+    nonisolated static let monetizationEnabled = false
 
     private(set) var isPro = false
     private(set) var purchaseState: PurchaseState = .unknown
@@ -82,6 +83,12 @@ final class ProUpgradeManager {
     }
 
     private init() {
+        guard Self.monetizationEnabled else {
+            isPro = true
+            purchaseState = .purchased
+            return
+        }
+
         #if DEVTOOLS
         if let override = defaults.object(forKey: Self.devProOverrideKey) as? Bool {
             isPro = override
@@ -290,6 +297,12 @@ final class ProUpgradeManager {
     private var updatesTask: Task<Void, Never>?
 
     private init() {
+        guard Self.monetizationEnabled else {
+            isPro = true
+            purchaseState = .purchased
+            return
+        }
+
         updatesTask = Task {
             for await update in Transaction.updates {
                 switch update {
