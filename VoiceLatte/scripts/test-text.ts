@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import {
+  DEFAULT_PROMPT_KEY,
+  appPromptKey,
   buildRefinementPrompt,
+  categoryPromptKey,
+  migrateLegacyCustomPrompts,
+  normalizeCustomPrompts,
   normalizeVocabularyEntries,
   parseVocabularyAliases,
   postProcessTranscript,
+  resolveCustomPrompt,
   vocabularyHints,
 } from "../src/text-processing.ts";
-import { createTranslator, defaultPrompts, resolveSpeechLocale, resolveUiLanguage } from "../src/i18n.ts";
+import { createTranslator, defaultRefinementPrompt, legacyDefaultPrompts, resolveSpeechLocale, resolveUiLanguage } from "../src/i18n.ts";
 
 assert.equal(
   postProcessTranscript("100,000円のお金が200,000円になった", []),
@@ -51,8 +57,43 @@ assert.match(
   buildRefinementPrompt("Keep wording", [{ id: "1", term: "VoiceLatte", aliases: ["Voice Latte"] }], "en-US"),
   /Custom vocabulary/,
 );
+assert.match(buildRefinementPrompt("箇条書きにする", [], "ja-JP"), /フォーマッタ/);
+assert.match(buildRefinementPrompt("箇条書きにする", [], "ja-JP"), /\[個別の整形方針\]/);
+assert.deepEqual(normalizeCustomPrompts({ default: "短く", invalid: 42 }), { default: "短く" });
+const jaPrompts = legacyDefaultPrompts("ja");
+const enPrompts = legacyDefaultPrompts("en");
+const builtInPrompts = {
+  defaultPrompt: [jaPrompts.defaultPrompt, enPrompts.defaultPrompt],
+  chatPrompt: [jaPrompts.chatPrompt, enPrompts.chatPrompt],
+  codePrompt: [jaPrompts.codePrompt, enPrompts.codePrompt],
+};
+assert.deepEqual(
+  migrateLegacyCustomPrompts({
+    defaultPrompt: jaPrompts.defaultPrompt,
+    chatPrompt: "短いチャット文にする",
+    codePrompt: jaPrompts.codePrompt,
+  }, builtInPrompts),
+  { [categoryPromptKey("chat")]: "短いチャット文にする" },
+);
+assert.deepEqual(
+  migrateLegacyCustomPrompts({
+    customPrompts: { [DEFAULT_PROMPT_KEY]: "既存設定" },
+    defaultPrompt: "旧設定",
+  }, builtInPrompts),
+  { [DEFAULT_PROMPT_KEY]: "既存設定" },
+);
+const customPrompts = {
+  [DEFAULT_PROMPT_KEY]: "全体",
+  [categoryPromptKey("chat")]: "チャット",
+  [appPromptKey("chatgpt.com")]: "ChatGPT",
+};
+assert.equal(resolveCustomPrompt(customPrompts, { promptKey: "chatgpt.com", appName: "Safari", category: "chat" }), "ChatGPT");
+assert.equal(resolveCustomPrompt(customPrompts, { appName: "Slack", category: "chat" }), "チャット");
+assert.equal(resolveCustomPrompt(customPrompts, { appName: "Notes", category: "notes" }), "全体");
 assert.equal(createTranslator("en")("nav.general"), "Preferences");
-assert.match(defaultPrompts("en").defaultPrompt, /Do not paraphrase/);
+assert.match(legacyDefaultPrompts("en").defaultPrompt, /Do not paraphrase/);
+assert.match(defaultRefinementPrompt("ja"), /意味や話者の意図を変えず/);
+assert.match(defaultRefinementPrompt("en"), /speech-recognition errors/);
 assert.equal(resolveUiLanguage("system", "ja-JP"), "ja");
 assert.equal(resolveUiLanguage("system", "fr-FR"), "en");
 assert.equal(resolveSpeechLocale("system", ["de-DE", "en-US"]), "de-DE");

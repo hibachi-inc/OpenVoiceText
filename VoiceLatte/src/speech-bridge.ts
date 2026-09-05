@@ -20,6 +20,7 @@ type BridgeEvent = Omit<Partial<SpeechStatus>, "id" | "type"> & {
   bundleID?: string;
   category?: string;
   promptKey?: string;
+  screenContext?: string;
   shortcut?: string;
   devices?: { uid: string; name: string }[];
   microphonePermission?: DeviceSettingsStatus["microphonePermission"];
@@ -76,6 +77,7 @@ export class SpeechBridgeClient {
       bundleID: event.bundleID,
       category: event.category ?? "generic",
       promptKey: event.promptKey,
+      screenContext: event.screenContext,
     };
   }
 
@@ -94,13 +96,29 @@ export class SpeechBridgeClient {
     await this.request({ command: "request_permission", permission }, ["ready"], 10000);
   }
 
-  async start(locale: string, vocabulary: string[], deviceUID: string, muteOtherAudio: boolean, callbacks: RecordingCallbacks) {
+  async start(
+    locale: string,
+    vocabulary: string[],
+    deviceUID: string,
+    muteOtherAudio: boolean,
+    callbacks: RecordingCallbacks,
+    cloud?: { audioPath: string; provider: "groq" | "gemini" },
+  ) {
     await this.ensureStarted();
     const id = this.nextId++;
     this.recordingId = id;
     this.callbacks = callbacks;
     await this.waitFor(id, ["started"], 10000, () => {
-      void this.child?.write(`${JSON.stringify({ id, command: "start", locale, vocabulary, deviceUID, muteOtherAudio })}\n`);
+      void this.child?.write(`${JSON.stringify({
+        id,
+        command: "start",
+        locale,
+        vocabulary,
+        deviceUID,
+        muteOtherAudio,
+        audioPath: cloud?.audioPath,
+        cloudProvider: cloud ? `${cloud.provider}-cloud` : undefined,
+      })}\n`);
     });
   }
 
@@ -121,8 +139,8 @@ export class SpeechBridgeClient {
     this.callbacks = undefined;
   }
 
-  async refine(text: string, category: string, prompt: string, locale: string): Promise<string> {
-    const event = await this.request({ command: "refine", text, category, prompt, locale }, ["refined"], 30000);
+  async refine(text: string, category: string, prompt: string, locale: string, screenContext = ""): Promise<string> {
+    const event = await this.request({ command: "refine", text, category, prompt, locale, screenContext }, ["refined"], 30000);
     return event.text ?? text;
   }
 

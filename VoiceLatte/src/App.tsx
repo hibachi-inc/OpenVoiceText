@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import {
   AlertCircle, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
-  Info, Keyboard, ListPlus, Mic, Settings2, SlidersHorizontal, Square, Trash2, X,
+  Info, Keyboard, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +25,8 @@ import { cn } from "@/lib/utils";
 import "./App.css";
 import {
   createTranslator,
-  defaultPrompts,
+  defaultRefinementPrompt,
+  legacyDefaultPrompts,
   localizeBridgeMessage,
   resolveSpeechLocale,
   resolveUiLanguage,
@@ -35,31 +37,44 @@ import {
 } from "./i18n";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
 import {
+  DEFAULT_PROMPT_KEY,
+  appPromptKey,
   buildRefinementPrompt,
+  categoryPromptKey,
+  migrateLegacyCustomPrompts,
   normalizeVocabularyEntries,
   parseVocabularyAliases,
   postProcessTranscript,
+  resolveCustomPrompt,
   vocabularyHints,
+  type CustomPrompts,
   type VocabularyEntry,
 } from "./text-processing";
 
 type Phase = "idle" | "preparing" | "listening" | "processing" | "done" | "error";
-type Section = "history" | "general" | "vocabulary" | "shortcuts" | "about";
-type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string };
+type Section = "history" | "general" | "ai" | "vocabulary" | "shortcuts" | "about";
+type TranscriptionProvider = "local" | "groq" | "gemini";
+type RefinementProvider = "groq" | "local";
+type CaptureMode = "live" | "deferred";
+type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string };
 type Settings = {
   locale: string;
   appLanguage: UiLanguagePreference;
   autoPaste: boolean;
   refinement: boolean;
-  defaultPrompt: string;
-  chatPrompt: string;
-  codePrompt: string;
+  customPrompts: CustomPrompts;
   toggleShortcut: string;
   holdShortcut: string;
   microphoneUID: string;
   muteOtherAudio: boolean;
+  transcriptionProvider: TranscriptionProvider;
+  refinementProvider: RefinementProvider;
+  promptDefaultsVersion: number;
 };
-type HudState = { phase: Phase; transcript: string; level: number; engine: string; uiLanguage?: UiLanguage; message?: string };
+type HudState = { phase: Phase; transcript: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string };
+type PreparedCapture = { captureId: string; audioPath: string };
+type CloudResult = { text: string; model: string };
+type CloudTranscript = { text: string; model: string };
 
 const systemUiLanguage = resolveUiLanguage("system");
 const DEFAULT_SETTINGS: Settings = {
@@ -67,20 +82,26 @@ const DEFAULT_SETTINGS: Settings = {
   appLanguage: "system",
   autoPaste: true,
   refinement: true,
-  ...defaultPrompts(systemUiLanguage),
+  customPrompts: { [DEFAULT_PROMPT_KEY]: defaultRefinementPrompt(systemUiLanguage) },
   toggleShortcut: "Control+Shift+Space",
   holdShortcut: "Control",
   microphoneUID: "",
   muteOtherAudio: false,
+  transcriptionProvider: "local",
+  refinementProvider: "groq",
+  promptDefaultsVersion: 1,
 };
 
 const nav: { id: Section; label: MessageKey; icon: LucideIcon }[] = [
   { id: "history", label: "nav.history", icon: Clock3 },
   { id: "general", label: "nav.general", icon: Settings2 },
+  { id: "ai", label: "nav.ai", icon: Sparkles },
   { id: "vocabulary", label: "nav.vocabulary", icon: ListPlus },
   { id: "shortcuts", label: "nav.shortcuts", icon: Keyboard },
   { id: "about", label: "nav.about", icon: Info },
 ];
+
+const promptCategories = ["chat", "email", "code", "terminal", "notes", "browser", "generic"];
 
 const I18nContext = createContext<{ language: UiLanguage; t: Translator }>({
   language: systemUiLanguage,
@@ -132,39 +153,57 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const [status, setStatus] = useState<SpeechStatus | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState("");
-  const [, setLevel] = useState(0);
-  const [engine, setEngine] = useState("");
+  const [level, setLevel] = useState(0);
   const [message, setMessage] = useState("");
   const speechLocale = useMemo(() => resolveSpeechLocale(settings.locale), [settings.locale]);
   const [history, setHistory] = useStoredState<HistoryEntry[]>("voicelatte.history", []);
   const [vocabulary, setVocabulary] = useStoredState<VocabularyEntry[]>("voicelatte.vocabulary", [], normalizeVocabularyEntries);
   const [showPrompts, setShowPrompts] = useState(false);
+  const [onboardingComplete, setOnboardingComplete] = useStoredState("voicelatte.onboardingComplete", false, (stored) => stored === true);
+  const [showOnboarding, setShowOnboarding] = useState(!onboardingComplete);
   const [selected, setSelected] = useState<HistoryEntry | null>(null);
   const [shortcutError, setShortcutError] = useState("");
   const [installing, setInstalling] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceSettingsStatus | null>(null);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
+  const [apiKeys, setApiKeys] = useState({ groq: false, gemini: false });
   const transcriptRef = useRef("");
   const phaseRef = useRef<Phase>("idle");
   const levelRef = useRef(0);
   const engineRef = useRef("");
+  const captureModeRef = useRef<CaptureMode>("live");
   const messageRef = useRef("");
+  const hudVisibleRef = useRef(false);
+  const onboardingTestRef = useRef(false);
   const holdTimer = useRef<number | undefined>(undefined);
   const holdActive = useRef(false);
   const shortcutCaptureRef = useRef(false);
-  const contextRef = useRef({ appName: "VoiceLatte", category: "generic" });
+  const contextRef = useRef<{ appName: string; category: string; promptKey?: string; screenContext?: string }>({ appName: "VoiceLatte", category: "generic" });
+  const captureRef = useRef<string | undefined>(undefined);
+  const recordingProviderRef = useRef<TranscriptionProvider>("local");
   const actionRef = useRef<(action: "toggle" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop") => void>(() => {});
   const setShortcutCapturing = useCallback((capturing: boolean) => { shortcutCaptureRef.current = capturing; }, []);
   const localizedError = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     return localizeBridgeMessage(message, language, t);
   }, [language, t]);
+  const refreshApiKeys = useCallback(async () => {
+    const [groq, gemini] = await Promise.all([
+      invoke<boolean>("has_api_key", { provider: "groq" }),
+      invoke<boolean>("has_api_key", { provider: "gemini" }),
+    ]);
+    setApiKeys({ groq, gemini });
+  }, []);
 
   const updateHud = useCallback(async (next: HudState) => {
+    const shouldShow = next.phase !== "idle";
+    const visibilityChanged = hudVisibleRef.current !== shouldShow;
+    hudVisibleRef.current = shouldShow;
     await emitTo("hud", "recording-state", next);
+    if (!visibilityChanged) return;
     const hud = await WebviewWindow.getByLabel("hud");
     if (!hud) return;
-    if (next.phase === "idle") await hud.hide();
+    if (!shouldShow) await hud.hide();
     else await hud.show();
   }, []);
 
@@ -177,73 +216,161 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       setTranscript(next.transcript);
     }
     if (next.level !== undefined) { levelRef.current = next.level; setLevel(next.level); }
-    if (next.engine !== undefined) { engineRef.current = next.engine; setEngine(next.engine); }
+    if (next.engine !== undefined) engineRef.current = next.engine;
+    if (next.captureMode !== undefined) captureModeRef.current = next.captureMode;
     if (next.message !== undefined) { messageRef.current = next.message; setMessage(next.message); }
-    void updateHud({
-      phase: nextPhase,
-      transcript: next.transcript ?? transcriptRef.current,
-      level: next.level ?? levelRef.current,
-      engine: next.engine ?? engineRef.current,
-      uiLanguage: language,
-      message: next.message ?? messageRef.current,
-    });
+    if (!onboardingTestRef.current) {
+      void updateHud({
+        phase: nextPhase,
+        transcript: next.transcript ?? transcriptRef.current,
+        level: next.level ?? levelRef.current,
+        engine: next.engine ?? engineRef.current,
+        captureMode: next.captureMode ?? captureModeRef.current,
+        uiLanguage: language,
+        message: next.message ?? messageRef.current,
+      });
+    }
   }, [language, updateHud]);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (onboardingTest = false) => {
     if (phaseRef.current !== "idle") return;
-    setRecordingState({ phase: "preparing", transcript: "", level: 0, message: t("record.preparing") });
-    contextRef.current = await bridge.context().catch(() => ({ appName: "Unknown", category: "generic" }));
+    onboardingTestRef.current = onboardingTest;
+    const provider = onboardingTest ? "local" : settings.transcriptionProvider;
+    setRecordingState({
+      phase: "preparing",
+      transcript: "",
+      level: 0,
+      captureMode: provider === "local" ? "live" : "deferred",
+      message: t("record.preparing"),
+    });
+    if (!onboardingTest) contextRef.current = await bridge.context().catch(() => ({ appName: "Unknown", category: "generic" }));
     try {
+      if (provider !== "local" && !apiKeys[provider]) throw new Error("cloud.key_missing");
+      recordingProviderRef.current = provider;
+      const cloudProvider = provider === "local" ? undefined : provider;
+      const capture = cloudProvider ? await invoke<PreparedCapture>("prepare_capture") : undefined;
+      captureRef.current = capture?.captureId;
       await bridge.start(
         speechLocale,
         vocabularyHints(vocabulary),
         settings.microphoneUID,
         settings.muteOtherAudio,
         {
-        onTranscript: (text) => setRecordingState({ transcript: text }),
-        onAudioLevel: (nextLevel) => setRecordingState({ level: nextLevel }),
-        onEngine: (nextEngine) => setRecordingState({ engine: nextEngine }),
-        onError: (error) => setRecordingState({ phase: "error", message: localizeBridgeMessage(error, language, t) }),
+          onTranscript: (text) => setRecordingState({ transcript: text }),
+          onAudioLevel: (nextLevel) => setRecordingState({ level: nextLevel }),
+          onEngine: (nextEngine) => setRecordingState({ engine: nextEngine }),
+          onError: (error) => {
+            const captureId = captureRef.current;
+            captureRef.current = undefined;
+            recordingProviderRef.current = "local";
+            void bridge.cancel().catch(() => undefined).finally(() => {
+              if (captureId) void invoke("discard_capture", { captureId });
+            });
+            setRecordingState({ phase: "error", message: localizeBridgeMessage(error, language, t) });
+            window.setTimeout(() => {
+              setRecordingState({ phase: "idle" });
+              onboardingTestRef.current = false;
+            }, 2500);
+          },
         },
+        capture && cloudProvider ? { audioPath: capture.audioPath, provider: cloudProvider } : undefined,
       );
       setRecordingState({ phase: "listening", message: t("record.listening") });
     } catch (error) {
+      if (captureRef.current) {
+        void invoke("discard_capture", { captureId: captureRef.current });
+        captureRef.current = undefined;
+      }
+      recordingProviderRef.current = "local";
       setRecordingState({ phase: "error", message: localizedError(error) });
-      window.setTimeout(() => setRecordingState({ phase: "idle" }), 2500);
+      window.setTimeout(() => {
+        setRecordingState({ phase: "idle" });
+        onboardingTestRef.current = false;
+      }, 2500);
     }
-  }, [bridge, language, localizedError, setRecordingState, settings.microphoneUID, settings.muteOtherAudio, speechLocale, t, vocabulary]);
+  }, [apiKeys, bridge, language, localizedError, setRecordingState, settings.microphoneUID, settings.muteOtherAudio, settings.transcriptionProvider, speechLocale, t, vocabulary]);
 
   const stopRecording = useCallback(async () => {
     if (phaseRef.current !== "listening" && phaseRef.current !== "preparing") return;
-    setRecordingState({ phase: "processing", level: 0, message: t("record.processing") });
+    setRecordingState({ phase: "processing", level: 0, message: recordingProviderRef.current === "local" ? t("record.processing") : t("record.cloudProcessing") });
     try {
       const raw = await bridge.stop();
-      if (!raw.trim()) {
+      if (onboardingTestRef.current) {
+        setRecordingState({ phase: "idle", transcript: raw, level: 0, message: "" });
+        onboardingTestRef.current = false;
+        return;
+      }
+      const { category, appName, promptKey } = contextRef.current;
+      const screenContext = settings.refinement ? contextRef.current.screenContext ?? "" : "";
+      const customPrompt = resolveCustomPrompt(settings.customPrompts, contextRef.current);
+      const refinementPrompt = settings.refinement
+        ? buildRefinementPrompt(customPrompt, vocabulary, speechLocale)
+        : "";
+      const provider = recordingProviderRef.current;
+      const captureId = captureRef.current;
+      if (provider !== "local" && !captureId) throw new Error("cloud.capture_missing");
+      const useGroqRefinement = settings.refinement && settings.refinementProvider === "groq" && apiKeys.groq;
+      const useGeminiCombined = provider === "gemini" && settings.refinement && !useGroqRefinement;
+      const cloud = provider === "local" ? undefined : await invoke<CloudResult>("cloud_transcribe", {
+        captureId,
+        provider,
+        prompt: useGeminiCombined ? refinementPrompt : "",
+        locale: speechLocale,
+        vocabulary: vocabularyHints(vocabulary),
+        screenContext,
+      });
+      captureRef.current = undefined;
+      const source = cloud?.text ?? raw;
+      if (!source.trim()) {
+        recordingProviderRef.current = "local";
         setRecordingState({ phase: "idle", transcript: "" });
         return;
       }
-      const { category, appName } = contextRef.current;
-      const prompt = category === "code" || category === "terminal"
-        ? settings.codePrompt
-        : category === "chat" || category === "email"
-          ? settings.chatPrompt
-          : settings.defaultPrompt;
-      const refined = settings.refinement ? await bridge.refine(raw, category, buildRefinementPrompt(prompt, vocabulary, speechLocale), speechLocale) : raw;
+      if (cloud) setRecordingState({ transcript: source, engine: cloud.model });
+      let refined = source;
+      if (settings.refinement && !useGeminiCombined) {
+        if (useGroqRefinement) {
+          try {
+            const result = await invoke<CloudResult>("groq_refine", { text: source, prompt: refinementPrompt, screenContext });
+            refined = result.text;
+            setRecordingState({ transcript: refined, engine: result.model });
+          } catch {
+            refined = await bridge.refine(source, category, refinementPrompt, speechLocale, screenContext).catch(() => source);
+          }
+        } else {
+          refined = await bridge.refine(source, category, refinementPrompt, speechLocale, screenContext).catch(() => source);
+        }
+      }
       const text = postProcessTranscript(refined, vocabulary);
-      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw, createdAt: Date.now(), category, engine, appName };
+      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: cloud?.model ?? engineRef.current, appName, promptKey: promptKey ?? appName };
       setHistory((items) => [entry, ...items].slice(0, 500));
       await bridge.insert(text, settings.autoPaste);
+      recordingProviderRef.current = "local";
       setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? t("record.inserted") : t("record.completed") });
       window.setTimeout(() => setRecordingState({ phase: "idle" }), 1400);
     } catch (error) {
+      if (captureRef.current) {
+        void invoke("discard_capture", { captureId: captureRef.current });
+        captureRef.current = undefined;
+      }
+      recordingProviderRef.current = "local";
       setRecordingState({ phase: "error", message: localizedError(error) });
-      window.setTimeout(() => setRecordingState({ phase: "idle" }), 2500);
+      window.setTimeout(() => {
+        setRecordingState({ phase: "idle" });
+        onboardingTestRef.current = false;
+      }, 2500);
     }
-  }, [bridge, engine, localizedError, setHistory, setRecordingState, settings, speechLocale, t, vocabulary]);
+  }, [bridge, localizedError, setHistory, setRecordingState, settings, speechLocale, t, vocabulary]);
 
   const cancelRecording = useCallback(async () => {
     await bridge.cancel().catch(() => undefined);
+    if (captureRef.current) {
+      await invoke("discard_capture", { captureId: captureRef.current }).catch(() => undefined);
+      captureRef.current = undefined;
+    }
+    recordingProviderRef.current = "local";
     setRecordingState({ phase: "idle", transcript: "", level: 0 });
+    onboardingTestRef.current = false;
   }, [bridge, setRecordingState]);
 
   useEffect(() => {
@@ -278,17 +405,26 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     void bridge.warmUp(speechLocale).catch(() => undefined);
     void bridge.settingsStatus().then(setDeviceStatus).catch(() => undefined);
     void isAutostartEnabled().then(setLaunchAtLogin).catch(() => undefined);
-  }, [bridge, localizedError, speechLocale]);
+    void refreshApiKeys().catch(() => undefined);
+  }, [bridge, localizedError, refreshApiKeys, speechLocale]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<CloudTranscript>("cloud-transcript", (event) => {
+      if (phaseRef.current === "processing") setRecordingState({ transcript: event.payload.text, engine: event.payload.model });
+    }).then((fn) => { unlisten = fn; });
+    return () => unlisten?.();
+  }, [setRecordingState]);
 
   useEffect(() => () => { void bridge.close(); }, [bridge]);
 
   useEffect(() => {
-    if (section !== "general") return;
+    if (section !== "general" && !showOnboarding) return;
     const refresh = () => void bridge.settingsStatus().then(setDeviceStatus).catch(() => undefined);
     refresh();
     const timer = window.setInterval(refresh, 2000);
     return () => window.clearInterval(timer);
-  }, [bridge, section]);
+  }, [bridge, section, showOnboarding]);
 
   useEffect(() => {
     let alive = true;
@@ -369,12 +505,10 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         {section === "history" && <HistoryPage
           phase={phase} transcript={transcript} history={history}
           onToggle={() => actionRef.current("toggle")} onCancel={() => void cancelRecording()}
-          onSelect={setSelected} onPrompts={() => setShowPrompts(true)}
-          onClear={() => setHistory([])}
+          onSelect={setSelected} onClear={() => setHistory([])}
         />}
         {section === "general" && <GeneralPage
-          status={status} settings={settings} setSettings={setSettings} installing={installing}
-          deviceStatus={deviceStatus} launchAtLogin={launchAtLogin}
+          settings={settings} setSettings={setSettings} deviceStatus={deviceStatus} launchAtLogin={launchAtLogin}
           onLaunchAtLogin={async (enabled) => {
             if (enabled) await enableAutostart(); else await disableAutostart();
             setLaunchAtLogin(await isAutostartEnabled());
@@ -383,19 +517,55 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             await bridge.requestPermission(permission);
             setDeviceStatus(await bridge.settingsStatus());
           }}
+        />}
+        {section === "ai" && <AiPage
+          status={status} settings={settings} setSettings={setSettings} installing={installing}
+          deviceStatus={deviceStatus} apiKeys={apiKeys}
+          onPrompts={() => setShowPrompts(true)}
           onInstall={() => void (async () => {
             setInstalling(true);
             try { await bridge.installModel(speechLocale); setStatus(await bridge.status(speechLocale)); }
             catch (error) { setMessage(localizedError(error)); }
             finally { setInstalling(false); }
           })()}
+          onSaveApiKey={async (provider, key) => {
+            await invoke("set_api_key", { provider, key });
+            await refreshApiKeys();
+          }}
+          onClearApiKey={async (provider) => {
+            await invoke("clear_api_key", { provider });
+            await refreshApiKeys();
+          }}
         />}
         {section === "vocabulary" && <VocabularyPage entries={vocabulary} setEntries={setVocabulary} />}
         {section === "shortcuts" && <ShortcutPage settings={settings} setSettings={setSettings} error={shortcutError} onCaptureChange={setShortcutCapturing} />}
-        {section === "about" && <AboutPage />}
+        {section === "about" && <AboutPage onOpenOnboarding={() => setShowOnboarding(true)} />}
       </section>
 
-      {showPrompts && <PromptDialog settings={settings} setSettings={setSettings} onClose={() => setShowPrompts(false)} />}
+      {showOnboarding && <OnboardingDialog
+        dismissible={onboardingComplete}
+        phase={phase}
+        transcript={transcript}
+        level={level}
+        message={message}
+        settings={settings}
+        setSettings={setSettings}
+        deviceStatus={deviceStatus}
+        onRequestPermission={async (permission) => {
+          await bridge.requestPermission(permission);
+          setDeviceStatus(await bridge.settingsStatus());
+        }}
+        onToggleTest={() => void (phaseRef.current === "idle" ? startRecording(true) : stopRecording())}
+        onComplete={() => {
+          setOnboardingComplete(true);
+          setShowOnboarding(false);
+        }}
+        onClose={() => {
+          if (onboardingTestRef.current) void cancelRecording();
+          setShowOnboarding(false);
+        }}
+      />}
+      {showPrompts && <PromptDialog settings={settings} setSettings={setSettings} history={history} onClose={() => setShowPrompts(false)} />}
       {selected && <HistoryDialog entry={selected} onClose={() => setSelected(null)} />}
       {message && phase === "error" && <div className="toast error-toast">{message}</div>}
     </main>
@@ -405,7 +575,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
 function HistoryPage(props: {
   phase: Phase; transcript: string; history: HistoryEntry[];
   onToggle: () => void; onCancel: () => void; onSelect: (entry: HistoryEntry) => void;
-  onPrompts: () => void; onClear: () => void;
+  onClear: () => void;
 }) {
   const { language, t } = useI18n();
   const active = props.phase !== "idle" && props.phase !== "done" && props.phase !== "error";
@@ -415,9 +585,6 @@ function HistoryPage(props: {
       <span><b>{active ? phaseLabel(props.phase, t) : t("history.start")}</b>{props.transcript && <small>{props.transcript}</small>}</span>
     </Button>
     {active && <Button variant="ghost" size="xs" className="cancel-link" onClick={props.onCancel}>{t("history.cancel")}</Button>}
-    <Button variant="ghost" className="refine-strip h-auto" onClick={props.onPrompts}>
-      <span className="strip-icon"><SlidersHorizontal /></span><span><b>{t("history.refinement")}</b><small>{t("history.refinementDetail")}</small></span><ChevronRight className="chevron" />
-    </Button>
     <div className="list-heading"><span>{t("history.heading")}</span>{props.history.length > 0 && <Button variant="ghost" size="xs" onClick={props.onClear}><Trash2 />{t("history.clear")}</Button>}</div>
     <div className="history-list">
       {props.history.length === 0 && <div className="empty-state">{t("history.empty")}</div>}
@@ -429,16 +596,13 @@ function HistoryPage(props: {
   </>;
 }
 
-function GeneralPage({ status, settings, setSettings, installing, deviceStatus, launchAtLogin, onLaunchAtLogin, onRequestPermission, onInstall }: {
-  status: SpeechStatus | null;
+function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLaunchAtLogin, onRequestPermission }: {
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
-  installing: boolean;
   deviceStatus: DeviceSettingsStatus | null;
   launchAtLogin: boolean;
   onLaunchAtLogin: (enabled: boolean) => Promise<void>;
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility") => Promise<void>;
-  onInstall: () => void;
 }) {
   const { t } = useI18n();
   const locales = [
@@ -459,12 +623,7 @@ function GeneralPage({ status, settings, setSettings, installing, deviceStatus, 
       </Select>
     </SettingRow>
 
-    <p className="settings-group-label">{t("general.speech")}</p>
-    <Card className="glass-card model-card gap-0 py-0">
-      <div><span className={`status-dot ${status?.modelState === "ready" ? "ready" : ""}`} /><b>{status ? engineLabel(status.backend, t) : t("general.checking")}</b></div>
-      <p>{modelStatusMessage(status, t)}</p>
-      {status?.modelState === "download-required" && <Button variant="outline" size="sm" className="secondary-button" onClick={onInstall} disabled={installing}>{installing ? t("general.addingModel") : t("general.addModel")}</Button>}
-    </Card>
+    <p className="settings-group-label">{t("general.voiceInput")}</p>
     <SettingRow label={t("general.speechLanguage")} detail={t("general.speechLanguageDetail")}>
       <Select value={settings.locale} onValueChange={(locale) => setSettings((s) => ({ ...s, locale }))}>
         <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
@@ -478,11 +637,8 @@ function GeneralPage({ status, settings, setSettings, installing, deviceStatus, 
       </Select>
     </SettingRow>}
     {deviceStatus?.platform === "macos" && <SettingRow label={t("general.muteAudio")} detail={t("general.muteAudioDetail")}><Switch checked={settings.muteOtherAudio} onCheckedChange={(muteOtherAudio) => setSettings((s) => ({ ...s, muteOtherAudio }))} /></SettingRow>}
-    <p className="settings-note">{t("general.onDevice")}</p>
-
     <p className="settings-group-label">{t("general.output")}</p>
     <SettingRow label={t("general.autoPaste")} detail={t("general.autoPasteDetail")}><Switch checked={settings.autoPaste} onCheckedChange={(autoPaste) => setSettings((s) => ({ ...s, autoPaste }))} /></SettingRow>
-    <SettingRow label={t("general.refinement")} detail={t("general.refinementDetail")}><Switch checked={settings.refinement} onCheckedChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
 
     <p className="settings-group-label">{t("general.startup")}</p>
     <SettingRow label={t("general.launchAtLogin")} detail={t("general.launchAtLoginDetail")}><Switch checked={launchAtLogin} onCheckedChange={(enabled) => void onLaunchAtLogin(enabled)} /></SettingRow>
@@ -498,6 +654,91 @@ function GeneralPage({ status, settings, setSettings, installing, deviceStatus, 
   </div>;
 }
 
+function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKeys, onPrompts, onInstall, onSaveApiKey, onClearApiKey }: {
+  status: SpeechStatus | null;
+  settings: Settings;
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+  installing: boolean;
+  deviceStatus: DeviceSettingsStatus | null;
+  apiKeys: { groq: boolean; gemini: boolean };
+  onPrompts: () => void;
+  onInstall: () => void;
+  onSaveApiKey: (provider: "groq" | "gemini", key: string) => Promise<void>;
+  onClearApiKey: (provider: "groq" | "gemini") => Promise<void>;
+}) {
+  const { t } = useI18n();
+  return <div className="settings-stack">
+    <p className="settings-group-label">{t("general.speechModel")}</p>
+    <Card className="glass-card recognition-card gap-0 py-0">
+      <SettingRow label={t("general.processingMethod")} detail={t("general.processingMethodDetail")}>
+        <Select value={settings.transcriptionProvider} onValueChange={(transcriptionProvider) => setSettings((s) => ({ ...s, transcriptionProvider: transcriptionProvider as TranscriptionProvider }))}>
+          <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="local">{t("provider.local")}</SelectItem>
+            <SelectItem value="groq">Groq Cloud</SelectItem>
+            <SelectItem value="gemini">Gemini</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      {settings.transcriptionProvider === "local" ? <div className="model-card">
+        <div><span className={`status-dot ${status?.modelState === "ready" ? "ready" : ""}`} /><b>{status ? engineLabel(status.backend, t) : t("general.checking")}</b></div>
+        <p>{modelStatusMessage(status, t)}</p>
+        {status?.modelState === "download-required" && <Button variant="outline" size="sm" className="secondary-button" onClick={onInstall} disabled={installing}>{installing ? t("general.addingModel") : t("general.addModel")}</Button>}
+      </div> : <ApiKeyRow
+        provider={settings.transcriptionProvider}
+        label={settings.transcriptionProvider === "groq" ? "Groq API Key" : "Gemini API Key"}
+        configured={apiKeys[settings.transcriptionProvider]}
+        onSave={onSaveApiKey}
+        onClear={onClearApiKey}
+      />}
+      <p className="settings-note">{settings.transcriptionProvider === "local"
+        ? t("general.onDevice")
+        : t(deviceStatus?.platform === "macos" && settings.refinement ? "general.cloudAudioWithContext" : "general.cloudAudio")}</p>
+    </Card>
+
+    <p className="settings-group-label">{t("ai.refinement")}</p>
+    <SettingRow label={t("general.refinement")} detail={t("general.refinementDetail")}><Switch checked={settings.refinement} onCheckedChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
+    {settings.refinement && <SettingRow label={t("ai.refinementModel")} detail={settings.refinementProvider === "groq" ? t("ai.refinementGroqDetail") : t("ai.refinementLocalDetail")}>
+      <Select value={settings.refinementProvider} onValueChange={(refinementProvider) => setSettings((s) => ({ ...s, refinementProvider: refinementProvider as RefinementProvider }))}>
+        <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="groq">Groq Cloud</SelectItem>
+          <SelectItem value="local">{t("provider.local")}</SelectItem>
+        </SelectContent>
+      </Select>
+    </SettingRow>}
+    {settings.refinement && settings.refinementProvider === "groq" && settings.transcriptionProvider !== "groq" && <ApiKeyRow provider="groq" label="Groq API Key" configured={apiKeys.groq} onSave={onSaveApiKey} onClear={onClearApiKey} />}
+    <Button variant="ghost" className="refine-strip ai-refine-strip h-auto" onClick={onPrompts}>
+      <span className="strip-icon"><SlidersHorizontal /></span><span><b>{t("history.refinement")}</b><small>{t("history.refinementDetail")}</small></span><ChevronRight className="chevron" />
+    </Button>
+  </div>;
+}
+
+function ApiKeyRow({ provider, label, configured, onSave, onClear }: {
+  provider: "groq" | "gemini";
+  label: string;
+  configured: boolean;
+  onSave: (provider: "groq" | "gemini", key: string) => Promise<void>;
+  onClear: (provider: "groq" | "gemini") => Promise<void>;
+}) {
+  const { language, t } = useI18n();
+  const [key, setKey] = useState("");
+  const [error, setError] = useState("");
+  const run = async (action: () => Promise<void>) => {
+    setError("");
+    try { await action(); }
+    catch (reason) { setError(localizeBridgeMessage(reason instanceof Error ? reason.message : String(reason), language, t)); }
+  };
+  return <div className="setting-row api-key-row">
+    <div><b>{label}</b><span>{provider === "gemini" && `${t("apiKey.geminiDetail")} · `}{configured ? t("apiKey.configured") : t("apiKey.notConfigured")}</span>{error && <small className="api-key-error">{error}</small>}</div>
+    <div className="api-key-actions">
+      <Input type="password" value={key} autoComplete="off" spellCheck={false} onChange={(event) => setKey(event.target.value)} placeholder={configured ? t("apiKey.replacePlaceholder") : t("apiKey.placeholder")} />
+      <Button size="sm" disabled={!key.trim()} onClick={() => void run(async () => { await onSave(provider, key); setKey(""); })}>{configured ? t("apiKey.update") : t("apiKey.save")}</Button>
+      {configured && <Button variant="ghost" size="sm" onClick={() => void run(() => onClear(provider))}>{t("apiKey.remove")}</Button>}
+    </div>
+  </div>;
+}
+
 function PermissionRow({ label, detail, status, onAction }: {
   label: string;
   detail?: string;
@@ -505,7 +746,7 @@ function PermissionRow({ label, detail, status, onAction }: {
   onAction: () => Promise<void>;
 }) {
   const { t } = useI18n();
-  const granted = status === "authorized" || status === "not-required";
+  const granted = status === "authorized" || status === "system-managed" || status === "not-required";
   return <div className="permission-row">
     <span className={cn("permission-mark", granted && "granted")}>{granted ? <Check /> : <AlertCircle />}</span>
     <div><b>{label}</b>{detail && <small>{detail}</small>}</div>
@@ -614,31 +855,182 @@ function ShortcutRecorder({ value, active, onStart, onChange }: { value: string;
   return <Button variant="outline" size="sm" className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? t("shortcuts.press") : prettyShortcut(value)}</Button>;
 }
 
-function AboutPage() {
+function AboutPage({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   const { t } = useI18n();
-  return <Card className="glass-card about gap-0 py-0"><div className="about-mark"><Mic /></div><b>VoiceLatte</b><p>{t("about.tagline")}</p><small>{t("about.version")}</small></Card>;
+  return <Card className="glass-card about gap-0 py-0">
+    <div className="about-mark"><Mic /></div>
+    <b>VoiceLatte</b>
+    <p>{t("about.tagline")}</p>
+    <small>{t("about.version")}</small>
+    <Button variant="outline" size="sm" className="about-setup" onClick={onOpenOnboarding}><Settings2 />{t("about.openOnboarding")}</Button>
+  </Card>;
 }
 
-function PromptDialog({ settings, setSettings, onClose }: { settings: Settings; setSettings: React.Dispatch<React.SetStateAction<Settings>>; onClose: () => void }) {
+function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, deviceStatus, onRequestPermission, onToggleTest, onComplete, onClose }: {
+  dismissible: boolean;
+  phase: Phase;
+  transcript: string;
+  level: number;
+  message: string;
+  settings: Settings;
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+  deviceStatus: DeviceSettingsStatus | null;
+  onRequestPermission: (permission: "microphone" | "speech" | "accessibility") => Promise<void>;
+  onToggleTest: () => void;
+  onComplete: () => void;
+  onClose: () => void;
+}) {
   const { t } = useI18n();
+  const permissionReady = (status?: string) => status === "authorized" || status === "system-managed" || status === "not-required";
+  const permissionsReady = permissionReady(deviceStatus?.microphonePermission)
+    && permissionReady(deviceStatus?.speechPermission)
+    && permissionReady(deviceStatus?.accessibilityPermission);
+  const testActive = phase === "listening";
+  const testBusy = phase === "preparing" || phase === "processing";
+  const devices = deviceStatus?.devices ?? [];
+
+  return <Dialog open onOpenChange={(open) => { if (!open && dismissible) onClose(); }}>
+    <DialogContent
+      className="modal onboarding-modal sm:max-w-[560px]"
+      showCloseButton={dismissible}
+      onEscapeKeyDown={(event) => { if (!dismissible) event.preventDefault(); }}
+      onPointerDownOutside={(event) => { if (!dismissible) event.preventDefault(); }}
+    >
+      <DialogHeader>
+        <DialogTitle>{t("onboarding.title")}</DialogTitle>
+        <DialogDescription>{t("onboarding.subtitle")}</DialogDescription>
+      </DialogHeader>
+
+      <div className="onboarding-sections">
+        <Card className="onboarding-section gap-0 py-0">
+          <b className="onboarding-step-title">{t("onboarding.permissions")}</b>
+          {deviceStatus ? <div className="onboarding-permissions">
+            <PermissionRow label={t("permission.microphone")} status={deviceStatus.microphonePermission} onAction={() => onRequestPermission("microphone")} />
+            <PermissionRow label={t("permission.speech")} status={deviceStatus.speechPermission} onAction={() => onRequestPermission("speech")} />
+            <PermissionRow label={t("permission.accessibility")} detail={t("permission.accessibilityDetail")} status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
+          </div> : <p className="onboarding-hint">{t("onboarding.checkingPermissions")}</p>}
+        </Card>
+
+        <Card className="onboarding-section gap-0 py-0">
+          <b className="onboarding-step-title">{t("onboarding.microphone")}</b>
+          <Select value={settings.microphoneUID || "system"} onValueChange={(microphoneUID) => setSettings((current) => ({ ...current, microphoneUID: microphoneUID === "system" ? "" : microphoneUID }))}>
+            <SelectTrigger size="sm" className="onboarding-microphone"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">{t("general.systemDefault")}</SelectItem>
+              {devices.map((device) => <SelectItem value={device.uid} key={device.uid}>{device.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Card>
+
+        <Card className="onboarding-section gap-0 py-0">
+          <b className="onboarding-step-title">{t("onboarding.test")}</b>
+          <div className="onboarding-level" aria-label={t("hud.audioLevel")}><span style={{ width: `${Math.round(Math.min(1, level) * 100)}%` }} /></div>
+          <div className="onboarding-test-row">
+            <Button variant="outline" size="sm" onClick={onToggleTest} disabled={!permissionsReady || testBusy}>{testActive ? t("onboarding.stopTest") : testBusy ? phaseLabel(phase, t) : t("onboarding.startTest")}</Button>
+            <span>{testActive ? t("onboarding.listening") : t("onboarding.testHint")}</span>
+          </div>
+          {transcript && <div className="onboarding-result"><Check />{transcript}</div>}
+          {phase === "error" && message && <p className="inline-error">{message}</p>}
+        </Card>
+      </div>
+
+      <DialogFooter className="dialog-actions"><Button onClick={onComplete} disabled={!permissionsReady || testActive || testBusy}>{t("onboarding.complete")}</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+
+function PromptDialog({ settings, setSettings, history, onClose }: {
+  settings: Settings;
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+  history: HistoryEntry[];
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const [targetToAdd, setTargetToAdd] = useState("");
+  const [lastAdded, setLastAdded] = useState("");
+  const targets = useMemo(() => {
+    const knownApps = new Map<string, string>();
+    for (const entry of history) {
+      const promptKey = entry.promptKey || entry.appName;
+      if (!promptKey || promptKey === "Unknown" || promptKey === "VoiceLatte") continue;
+      const label = promptKey === entry.appName ? entry.appName : `${promptKey} · ${entry.appName}`;
+      knownApps.set(appPromptKey(promptKey), label);
+    }
+    return [
+      { key: DEFAULT_PROMPT_KEY, label: t("prompt.default") },
+      ...promptCategories.map((category) => ({
+        key: categoryPromptKey(category),
+        label: t("prompt.categoryTarget", { name: categoryLabel(category, t) }),
+      })),
+      ...[...knownApps].map(([key, name]) => ({ key, label: t("prompt.appTarget", { name }) })),
+    ];
+  }, [history, t]);
+  const availableTargets = targets.filter(({ key }) => !(key in settings.customPrompts));
+  const configuredTargets = Object.keys(settings.customPrompts).map((key) => ({
+    key,
+    label: targets.find((target) => target.key === key)?.label ?? promptKeyLabel(key, t),
+  }));
+  const addPrompt = () => {
+    if (!targetToAdd) return;
+    setSettings((current) => ({
+      ...current,
+      customPrompts: { ...current.customPrompts, [targetToAdd]: "" },
+    }));
+    setLastAdded(targetToAdd);
+    setTargetToAdd("");
+  };
+  const updatePrompt = (key: string, value: string) => setSettings((current) => ({
+    ...current,
+    customPrompts: { ...current.customPrompts, [key]: value },
+  }));
+  const removePrompt = (key: string) => setSettings((current) => {
+    const customPrompts = { ...current.customPrompts };
+    delete customPrompts[key];
+    return { ...current, customPrompts };
+  });
+
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="modal prompt-modal sm:max-w-[520px]">
       <DialogHeader><DialogTitle>{t("prompt.title")}</DialogTitle><DialogDescription>{t("prompt.description")}</DialogDescription></DialogHeader>
+      <p className="prompt-base-note">{t("prompt.baseNote")}</p>
+      {availableTargets.length > 0 && <div className="prompt-add-row">
+        <Select value={targetToAdd} onValueChange={setTargetToAdd}>
+          <SelectTrigger aria-label={t("prompt.addTarget")}><SelectValue placeholder={t("prompt.addTarget")} /></SelectTrigger>
+          <SelectContent>{availableTargets.map((target) => <SelectItem key={target.key} value={target.key}>{target.label}</SelectItem>)}</SelectContent>
+        </Select>
+        <Button variant="outline" onClick={addPrompt} disabled={!targetToAdd}><Plus />{t("prompt.add")}</Button>
+      </div>}
       <div className="prompt-fields">
-        <PromptField label={t("prompt.default")} value={settings.defaultPrompt} onChange={(defaultPrompt) => setSettings((s) => ({ ...s, defaultPrompt }))} />
-        <PromptField label={t("prompt.chat")} value={settings.chatPrompt} onChange={(chatPrompt) => setSettings((s) => ({ ...s, chatPrompt }))} />
-        <PromptField label={t("prompt.code")} value={settings.codePrompt} onChange={(codePrompt) => setSettings((s) => ({ ...s, codePrompt }))} />
+        {configuredTargets.length === 0 && <div className="prompt-empty">{t("prompt.empty")}</div>}
+        {configuredTargets.map(({ key, label }) => <PromptField
+          key={key}
+          label={label}
+          value={settings.customPrompts[key] ?? ""}
+          defaultOpen={key === lastAdded}
+          onChange={(value) => updatePrompt(key, value)}
+          onRemove={() => removePrompt(key)}
+        />)}
       </div>
       <DialogFooter className="dialog-actions"><Button onClick={onClose}>{t("action.done")}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
 
-function PromptField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  const [open, setOpen] = useState(false);
+function PromptField({ label, value, defaultOpen, onChange, onRemove }: {
+  label: string;
+  value: string;
+  defaultOpen: boolean;
+  onChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(defaultOpen);
   return <Collapsible open={open} onOpenChange={setOpen} className="prompt-field">
-    <CollapsibleTrigger asChild><Button variant="ghost" className="prompt-trigger h-auto"><b>{label}</b>{open ? <ChevronUp /> : <ChevronDown />}</Button></CollapsibleTrigger>
-    <CollapsibleContent><Textarea value={value} onChange={(e) => onChange(e.target.value)} rows={4} /></CollapsibleContent>
+    <div className="prompt-field-header">
+      <CollapsibleTrigger asChild><Button variant="ghost" className="prompt-trigger h-auto"><b>{label}</b>{open ? <ChevronUp /> : <ChevronDown />}</Button></CollapsibleTrigger>
+      <Button variant="ghost" size="icon-xs" aria-label={t("prompt.remove", { name: label })} onClick={onRemove}><Trash2 /></Button>
+    </div>
+    <CollapsibleContent><Textarea autoFocus={defaultOpen} value={value} placeholder={t("prompt.placeholder")} onChange={(e) => onChange(e.target.value)} rows={4} /></CollapsibleContent>
   </Collapsible>;
 }
 
@@ -647,9 +1039,16 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="modal history-modal sm:max-w-[520px]">
       <DialogHeader><DialogTitle>{t("historyDialog.title")}</DialogTitle><DialogDescription>{new Date(entry.createdAt).toLocaleString(language)}</DialogDescription></DialogHeader>
-      <div className="history-full">{entry.text}</div>
-      {entry.raw !== entry.text && <details><summary>{t("historyDialog.showRaw")}</summary><div className="history-raw">{entry.raw}</div></details>}
-      <DialogFooter className="dialog-actions"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(entry.text)}><Copy />{t("action.copy")}</Button><Button onClick={onClose}>{t("action.close")}</Button></DialogFooter>
+      <div className="history-versions">
+        <section className="history-version">
+          <div className="history-version-header"><b>{t("historyDialog.refined")}</b><Button variant="ghost" size="xs" onClick={() => void navigator.clipboard.writeText(entry.text)}><Copy />{t("action.copy")}</Button></div>
+          <div className="history-full">{entry.text}</div>
+        </section>
+        <section className="history-version">
+          <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" onClick={() => void navigator.clipboard.writeText(entry.raw)}><Copy />{t("action.copy")}</Button></div>
+          <div className="history-full original">{entry.raw}</div>
+        </section>
+      </div>
     </DialogContent>
   </Dialog>;
 }
@@ -659,7 +1058,7 @@ function SettingRow({ label, detail, children }: { label: string; detail: string
 }
 
 function Hud() {
-  const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", level: 0, engine: "", uiLanguage: systemUiLanguage });
+  const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", level: 0, engine: "", captureMode: "live", uiLanguage: systemUiLanguage });
   const t = useMemo(() => createTranslator(state.uiLanguage ?? systemUiLanguage), [state.uiLanguage]);
   const transcriptViewRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -685,9 +1084,12 @@ function Hud() {
     if (!state.transcript) view.scrollLeft = 0;
     else view.scrollTo({ left: view.scrollWidth, behavior: "smooth" });
   }, [state.transcript]);
-  return <main className={`hud ${state.phase}`} data-tauri-drag-region>
+  const deferred = state.captureMode === "deferred";
+  const placeholder = !state.transcript && state.phase === "listening";
+  const displayText = state.transcript || (placeholder ? t(deferred ? "hud.deferredPrompt" : "hud.prompt") : state.message) || t("hud.prompt");
+  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}`} data-tauri-drag-region>
     <div className="hud-orb"><span className="hud-pulse" /><span className="hud-mic">●</span></div>
-    <div className="hud-copy"><small>{phaseLabel(state.phase, t)}</small><b ref={transcriptViewRef} className={!state.transcript && state.phase === "listening" ? "placeholder" : undefined}>{state.transcript || (state.phase === "listening" ? t("hud.prompt") : state.message) || t("hud.prompt")}</b></div>
+    <div className="hud-copy"><small>{phaseLabel(state.phase, t, deferred)}</small><b ref={transcriptViewRef} className={placeholder ? "placeholder" : undefined}>{displayText}</b></div>
     <div className="hud-meter" aria-label={t("hud.audioLevel")}>{Array.from({ length: 7 }, (_, i) => <i key={i} className={i / 7 < state.level ? "lit" : ""} />)}</div>
     {(state.phase === "listening" || state.phase === "preparing") && <Button variant="ghost" className="hud-stop h-9 rounded-none" onClick={() => void emitTo("main", "hud-stop")}><Square />{t("hud.stop")}</Button>}
   </main>;
@@ -709,10 +1111,10 @@ function prettyShortcut(shortcut: string) {
   return shortcut.replace("CommandOrControl", "⌘/Ctrl").replace("Control", "⌃").replace("Option", "⌥").replace("Command", "⌘").split("+").join(" ");
 }
 
-function phaseLabel(phase: Phase, t: Translator) {
+function phaseLabel(phase: Phase, t: Translator, deferred = false) {
   if (phase === "preparing") return t("state.preparing");
-  if (phase === "listening") return t("state.listening");
-  if (phase === "processing") return t("state.processing");
+  if (phase === "listening") return t(deferred ? "state.recording" : "state.listening");
+  if (phase === "processing") return t(deferred ? "state.transcribing" : "state.processing");
   if (phase === "done") return t("state.done");
   if (phase === "error") return t("state.error");
   return t("state.idle");
@@ -746,27 +1148,41 @@ function categoryLabel(category: string, t: Translator) {
   return ["chat", "email", "code", "terminal", "notes", "browser", "generic"].includes(category) ? t(key) : category;
 }
 
+function promptKeyLabel(key: string, t: Translator) {
+  if (key === DEFAULT_PROMPT_KEY) return t("prompt.default");
+  if (key.startsWith("category:")) {
+    return t("prompt.categoryTarget", { name: categoryLabel(key.slice("category:".length), t) });
+  }
+  if (key.startsWith("app:")) return t("prompt.appTarget", { name: key.slice("app:".length) });
+  return key;
+}
+
 function settingsWithAppLanguage(settings: Settings, appLanguage: UiLanguagePreference): Settings {
-  const nextDefaults = defaultPrompts(resolveUiLanguage(appLanguage));
-  const jaDefaults = defaultPrompts("ja");
-  const enDefaults = defaultPrompts("en");
-  const builtIn = (key: keyof ReturnType<typeof defaultPrompts>) => settings[key] === jaDefaults[key] || settings[key] === enDefaults[key];
-  return {
-    ...settings,
-    appLanguage,
-    defaultPrompt: builtIn("defaultPrompt") ? nextDefaults.defaultPrompt : settings.defaultPrompt,
-    chatPrompt: builtIn("chatPrompt") ? nextDefaults.chatPrompt : settings.chatPrompt,
-    codePrompt: builtIn("codePrompt") ? nextDefaults.codePrompt : settings.codePrompt,
-  };
+  return { ...settings, appLanguage };
 }
 
 function normalizeSettings(stored: unknown): Settings {
   if (!stored || typeof stored !== "object") return DEFAULT_SETTINGS;
-  const legacy = stored as Partial<Settings>;
+  const legacy = stored as Partial<Settings> & { defaultPrompt?: string; chatPrompt?: string; codePrompt?: string; screenContextEnabled?: boolean };
   const appLanguage: UiLanguagePreference = ["system", "ja", "en"].includes(legacy.appLanguage ?? "")
     ? legacy.appLanguage as UiLanguagePreference
     : "system";
-  const settings = { ...DEFAULT_SETTINGS, ...legacy, appLanguage };
+  const refinementProvider: RefinementProvider = ["groq", "local"].includes(legacy.refinementProvider ?? "")
+    ? legacy.refinementProvider as RefinementProvider
+    : DEFAULT_SETTINGS.refinementProvider;
+  const jaDefaults = legacyDefaultPrompts("ja");
+  const enDefaults = legacyDefaultPrompts("en");
+  const customPrompts = migrateLegacyCustomPrompts(legacy, {
+    defaultPrompt: [jaDefaults.defaultPrompt, enDefaults.defaultPrompt],
+    chatPrompt: [jaDefaults.chatPrompt, enDefaults.chatPrompt],
+    codePrompt: [jaDefaults.codePrompt, enDefaults.codePrompt],
+  });
+  const promptDefaultsVersion = Number.isFinite(legacy.promptDefaultsVersion) ? legacy.promptDefaultsVersion! : 0;
+  if (promptDefaultsVersion < 1 && !(DEFAULT_PROMPT_KEY in customPrompts)) {
+    customPrompts[DEFAULT_PROMPT_KEY] = defaultRefinementPrompt(resolveUiLanguage(appLanguage));
+  }
+  const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, ...current } = legacy;
+  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, promptDefaultsVersion: 1, customPrompts };
   if (legacy.appLanguage === undefined) {
     return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
   }

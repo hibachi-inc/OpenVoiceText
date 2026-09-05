@@ -13,8 +13,7 @@ struct AppContext: Sendable {
     let bundleIdentifier: String?
     let category: Category
     let siteDomain: String?
-    let cursorBefore: String?
-    let cursorAfter: String?
+    let screenContext: String?
 
     /// Display key for prompt lookup: "gmail.com" for browser sites, "Safari" for browsers without domain, "Slack" for native apps.
     var promptKey: String {
@@ -34,14 +33,16 @@ struct AppContext: Sendable {
               let appName = app.localizedName else { return nil }
         let category = classify(appName: appName, bundleID: app.bundleIdentifier)
         let domain = shouldCaptureSiteDomain(for: category) ? siteKey(pid: app.processIdentifier) : nil
-        let cursor = cursorContext(pid: app.processIdentifier)
         return AppContext(
             appName: appName,
             bundleIdentifier: app.bundleIdentifier,
             category: category,
             siteDomain: domain,
-            cursorBefore: cursor.before,
-            cursorAfter: cursor.after
+            screenContext: screenContext(
+                pid: app.processIdentifier,
+                bundleID: app.bundleIdentifier,
+                category: category
+            )
         )
     }
 
@@ -51,8 +52,7 @@ struct AppContext: Sendable {
             bundleIdentifier: bundleID,
             category: classify(appName: appName, bundleID: bundleID),
             siteDomain: siteDomain,
-            cursorBefore: nil,
-            cursorAfter: nil
+            screenContext: nil
         )
     }
 
@@ -60,62 +60,128 @@ struct AppContext: Sendable {
         shouldCaptureSiteDomain(for: classify(appName: appName, bundleID: bundleID))
     }
 
-    // MARK: - Cursor context via AXUIElement
+    // MARK: - Visible window context via AXUIElement
 
-    private static let maxContextChars = 100
+    private static let sensitiveBundleIDs = [
+        "com.1password.1password",
+        "com.bitwarden.desktop",
+        "com.apple.keychainaccess",
+    ]
+    private static let contextRoles: Set<String> = ["AXStaticText", "AXHeading", "AXTextArea", "AXTextField"]
 
-    private static func cursorContext(pid: pid_t) -> (before: String?, after: String?) {
-        guard AXIsProcessTrusted() else { return (nil, nil) }
-        let sysWide = AXUIElementCreateSystemWide()
-        AXUIElementSetMessagingTimeout(sysWide, 0.15)
-        var focusedRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(sysWide, kAXFocusedUIElementAttribute as CFString, &focusedRef) == .success,
-              let focused = focusedRef, CFGetTypeID(focused) == AXUIElementGetTypeID() else {
-            return (nil, nil)
-        }
-        let element = focused as! AXUIElement
+    private struct ContextBudget {
+        let deadline = CFAbsoluteTimeGetCurrent() + 0.2
+        var visited = 0
+        var chunks: [String] = []
+        var seen: Set<String> = []
+    }
 
-        // Skip secure text fields (password inputs)
-        var roleRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
-        if (roleRef as? String) == "AXSecureTextField" { return (nil, nil) }
+    private static func screenContext(pid: pid_t, bundleID: String?, category: Category) -> String? {
+        guard AXIsProcessTrusted(), category != .terminal else { return nil }
+        if let bundleID, sensitiveBundleIDs.contains(where: { bundleID.hasPrefix($0) }) { return nil }
 
-        // Get full text value
-        var valueRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &valueRef) == .success,
-              let fullText = valueRef as? String, !fullText.isEmpty else {
-            return (nil, nil)
-        }
-
-        // Get selected text range to find cursor position
-        var rangeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
-              let rangeValue = rangeRef,
-              CFGetTypeID(rangeValue) == AXValueGetTypeID() else {
-            return (nil, nil)
-        }
-        var cfRange = CFRange(location: 0, length: 0)
-        guard AXValueGetValue(rangeValue as! AXValue, .cfRange, &cfRange) else {
-            return (nil, nil)
-        }
-
-        // cfRange.location is a UTF-16 offset; convert to String.Index via UTF-16 view
-        let utf16 = fullText.utf16
-        let cursorUTF16 = cfRange.location
-        guard cursorUTF16 >= 0, cursorUTF16 <= utf16.count else { return (nil, nil) }
-
-        let cursorIndex = String.Index(utf16Offset: cursorUTF16, in: fullText)
-
-        let beforeStart = fullText.index(cursorIndex, offsetBy: -maxContextChars, limitedBy: fullText.startIndex) ?? fullText.startIndex
-        let before = String(fullText[beforeStart..<cursorIndex])
-
-        let afterEnd = fullText.index(cursorIndex, offsetBy: maxContextChars, limitedBy: fullText.endIndex) ?? fullText.endIndex
-        let after = String(fullText[cursorIndex..<afterEnd])
-
-        return (
-            before.isEmpty ? nil : before,
-            after.isEmpty ? nil : after
+        let app = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(app, 0.1)
+        guard let window = elementAttribute(app, kAXFocusedWindowAttribute),
+              let windowFrame = frame(of: window) else { return nil }
+        let focused = elementAttribute(app, kAXFocusedUIElementAttribute)
+        var budget = ContextBudget()
+        collectVisibleText(
+            from: window,
+            focused: focused,
+            windowFrame: windowFrame,
+            depth: 0,
+            budget: &budget
         )
+
+        let joined = budget.chunks.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !joined.isEmpty else { return nil }
+        return maskSensitiveText(String(joined.suffix(1_500)))
+    }
+
+    private static func collectVisibleText(
+        from element: AXUIElement,
+        focused: AXUIElement?,
+        windowFrame: CGRect,
+        depth: Int,
+        budget: inout ContextBudget
+    ) {
+        guard depth <= 12, budget.visited < 400, CFAbsoluteTimeGetCurrent() < budget.deadline else { return }
+        budget.visited += 1
+        if let focused, CFEqual(element, focused) { return }
+        if boolAttribute(element, kAXHiddenAttribute) == true { return }
+        if let elementFrame = frame(of: element), !windowFrame.intersects(elementFrame) { return }
+
+        let role = stringAttribute(element, kAXRoleAttribute) ?? ""
+        if role == "AXSecureTextField" { return }
+        if contextRoles.contains(role) {
+            var settable = DarwinBoolean(false)
+            let editable = AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
+            if !editable, let text = stringAttribute(element, kAXValueAttribute) ?? stringAttribute(element, kAXTitleAttribute) {
+                let normalized = text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !normalized.isEmpty {
+                    let chunk = String(normalized.prefix(200))
+                    if budget.seen.insert(chunk).inserted { budget.chunks.append(chunk) }
+                }
+            }
+        }
+
+        guard let children = arrayAttribute(element, kAXChildrenAttribute) else { return }
+        for child in children {
+            collectVisibleText(from: child, focused: focused, windowFrame: windowFrame, depth: depth + 1, budget: &budget)
+            if budget.visited >= 400 || CFAbsoluteTimeGetCurrent() >= budget.deadline { return }
+        }
+    }
+
+    private static func elementAttribute(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return (value as! AXUIElement)
+    }
+
+    private static func stringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
+    private static func boolAttribute(_ element: AXUIElement, _ attribute: String) -> Bool? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return value as? Bool
+    }
+
+    private static func arrayAttribute(_ element: AXUIElement, _ attribute: String) -> [AXUIElement]? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
+        return value as? [AXUIElement]
+    }
+
+    private static func frame(of element: AXUIElement) -> CGRect? {
+        var positionRef: CFTypeRef?
+        var sizeRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &positionRef) == .success,
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeRef) == .success,
+              let positionRef, let sizeRef,
+              CFGetTypeID(positionRef) == AXValueGetTypeID(),
+              CFGetTypeID(sizeRef) == AXValueGetTypeID() else { return nil }
+        var position = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionRef as! AXValue, .cgPoint, &position),
+              AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) else { return nil }
+        return CGRect(origin: position, size: size)
+    }
+
+    private static func maskSensitiveText(_ text: String) -> String {
+        [
+            #"(?i)\b(?:sk-|ghp_|github_pat_|AIzaSy)[A-Za-z0-9_\-]{8,}\b"#,
+            #"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"#,
+            #"\b\d{12,}\b"#,
+        ].reduce(text) { result, pattern in
+            result.replacingOccurrences(of: pattern, with: "[非表示]", options: .regularExpression)
+        }
     }
 
     // MARK: - Site key via AXUIElement (domain + first path for multi-service hosts)

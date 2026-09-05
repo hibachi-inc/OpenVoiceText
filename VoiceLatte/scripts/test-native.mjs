@@ -45,6 +45,12 @@ if (shortcuts.id !== 3 || shortcuts.type !== "ready") {
   throw new Error(`Unexpected shortcut response: ${JSON.stringify(shortcuts)}`);
 }
 await request({ id: 4, command: "configure_shortcut", shortcuts: [] });
+
+const context = await request({ id: 5, command: "context" });
+if (context.id !== 5 || context.type !== "context" || typeof context.appName !== "string"
+  || (context.screenContext !== undefined && Array.from(context.screenContext).length > 1500)) {
+  throw new Error("Unexpected app context response");
+}
 child.stdin.end();
 
 console.log(`${response.backend}: ${response.modelState}`);

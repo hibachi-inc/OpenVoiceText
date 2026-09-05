@@ -60,6 +60,9 @@ final class SpeechSession: NSObject, @unchecked Sendable {
     private var stopRequestedWhilePreparing = false
     private var currentVocabulary: [String] = []
     private var currentLocaleID = ""
+    private var cloudAudioFile: AVAudioFile?
+    private var cloudCaptureActive = false
+    private var cloudWriteFailed = false
     // ponytail: 15 seconds bounds PCM memory; move capture to the app process if longer crash replay is required.
     private let maxFallbackBufferDuration: TimeInterval = 15
 
@@ -109,6 +112,38 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         }
 
         startWithClassic(locale: localeID, onCaptureReady: reply)
+    }
+
+    func startCloudCapture(path: String, provider: String, deviceID: UInt32, reply: @escaping () -> Void) {
+        warmUpTask?.cancel()
+        warmUpTask = nil
+        if recognitionTask != nil || _analyzer != nil || audioEngine.isRunning || isPreparing {
+            cleanup()
+        }
+
+        resetSession()
+        configureInputDevice(deviceID)
+        let format = audioEngine.inputNode.outputFormat(forBus: 0)
+        do {
+            cloudAudioFile = try AVAudioFile(forWriting: URL(fileURLWithPath: path), settings: format.settings)
+            cloudCaptureActive = true
+            installTapIfNeeded { [weak self] buffer in
+                guard let self, !self.cloudWriteFailed else { return }
+                do {
+                    try self.cloudAudioFile?.write(from: buffer)
+                } catch {
+                    self.cloudWriteFailed = true
+                    self.emit(.error("録音を保存できませんでした"))
+                }
+            }
+            audioEngine.prepare()
+            try audioEngine.start()
+            emit(.engine(provider))
+            reply()
+        } catch {
+            cleanup()
+            emit(.error("録音を開始できません: \(error.localizedDescription)"))
+        }
     }
 
     // MARK: - Classic (SFSpeechRecognizer)
@@ -560,6 +595,14 @@ final class SpeechSession: NSObject, @unchecked Sendable {
             return
         }
 
+        if cloudCaptureActive {
+            stopAudioCapture()
+            cloudAudioFile = nil
+            cloudCaptureActive = false
+            completeStop()
+            return
+        }
+
         let shouldReplyImmediately = recognitionTask == nil && _analyzer == nil && !wasPreparing
         if shouldReplyImmediately {
             completeStop()
@@ -627,6 +670,9 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         analyzerRunID = nil
         classicRunID = nil
         enhancedAudioHandler = nil
+        cloudAudioFile = nil
+        cloudCaptureActive = false
+        cloudWriteFailed = false
         stopRequestedWhilePreparing = false
         recognitionRequest = nil
         lock.unlock()
@@ -829,6 +875,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
             analyzerRunID = nil
             classicRunID = nil
             enhancedAudioHandler = nil
+            cloudWriteFailed = false
         }
     }
 

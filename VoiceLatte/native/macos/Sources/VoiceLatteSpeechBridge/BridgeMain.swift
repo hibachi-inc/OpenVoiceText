@@ -19,6 +19,9 @@ private struct BridgeRequest: Decodable {
     let muteOtherAudio: Bool?
     let permission: String?
     let autoPaste: Bool?
+    let audioPath: String?
+    let cloudProvider: String?
+    let screenContext: String?
 }
 
 private struct AudioDeviceResponse: Encodable {
@@ -40,6 +43,7 @@ private struct BridgeResponse: Encodable {
     var bundleID: String? = nil
     var category: String? = nil
     var promptKey: String? = nil
+    var screenContext: String? = nil
     var shortcut: String? = nil
     var devices: [AudioDeviceResponse]? = nil
     var microphonePermission: String? = nil
@@ -85,7 +89,8 @@ private final class Bridge: @unchecked Sendable {
                 appName: context?.appName ?? "Unknown",
                 bundleID: context?.bundleIdentifier,
                 category: context?.effectiveCategory.rawValue ?? "generic",
-                promptKey: context?.promptKey
+                promptKey: context?.promptKey,
+                screenContext: context?.screenContext
             ))
         case "settings_status":
             emitSettingsStatus(id: request.id)
@@ -100,6 +105,7 @@ private final class Bridge: @unchecked Sendable {
             let refined = await TextRefiner.refine(text: text, context: [
                 RefinerContextKey.category: request.category ?? "generic",
                 RefinerContextKey.customPrompt: request.prompt ?? "",
+                RefinerContextKey.screenContext: request.screenContext ?? "",
             ])
             output.send(.init(id: request.id, type: "refined", text: refined))
         case "insert":
@@ -126,8 +132,9 @@ private final class Bridge: @unchecked Sendable {
     }
 
     private func start(_ request: BridgeRequest) async {
-        let speechAllowed = await requestSpeechPermission()
         let microphoneAllowed = await AVCaptureDevice.requestAccess(for: .audio)
+        let isCloud = request.audioPath?.isEmpty == false
+        let speechAllowed = isCloud ? true : await requestSpeechPermission()
         guard speechAllowed, microphoneAllowed else {
             output.send(.init(id: request.id, type: "error", message: "マイクと音声認識の許可が必要です"))
             return
@@ -135,6 +142,16 @@ private final class Bridge: @unchecked Sendable {
 
         lock.withLock { recordingID = request.id }
         setOtherAudioMuted(request.muteOtherAudio == true)
+        if let audioPath = request.audioPath, !audioPath.isEmpty {
+            speech.startCloudCapture(
+                path: audioPath,
+                provider: request.cloudProvider ?? "cloud",
+                deviceID: AudioInputDeviceCatalog.deviceID(forUID: request.deviceUID ?? "") ?? 0
+            ) { [weak self] in
+                self?.output.send(.init(id: request.id, type: "started", message: "聞き取り中"))
+            }
+            return
+        }
         speech.startRecording(
             locale: request.locale ?? "ja-JP",
             engine: "enhanced",
@@ -162,7 +179,7 @@ private final class Bridge: @unchecked Sendable {
             output.send(.init(
                 id: id,
                 type: "engine",
-                backend: engine == "enhanced" ? "apple-speech-analyzer" : "apple-speech-classic"
+                backend: engine == "enhanced" ? "apple-speech-analyzer" : engine == "classic" ? "apple-speech-classic" : engine
             ))
         case .transcript(let text):
             output.send(.init(id: id, type: "transcript", text: text))

@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Windows.AI;
 using Microsoft.Windows.AI.Speech;
 using Microsoft.Windows.AI.Text;
+using NAudio.Wave;
 using Windows.Media.Devices;
 
 record BridgeRequest(
@@ -22,7 +23,10 @@ record BridgeRequest(
     string? DeviceUID,
     bool? MuteOtherAudio,
     string? Permission,
-    bool? AutoPaste
+    bool? AutoPaste,
+    string? AudioPath,
+    string? CloudProvider,
+    string? ScreenContext
 );
 
 record AudioDeviceResponse(string Uid, string Name);
@@ -41,6 +45,7 @@ record BridgeResponse(
     string? BundleID = null,
     string? Category = null,
     string? PromptKey = null,
+    string? ScreenContext = null,
     string? Shortcut = null,
     AudioDeviceResponse[]? Devices = null,
     string? MicrophonePermission = null,
@@ -76,6 +81,8 @@ sealed class Bridge
     SpeechRecognitionEngine? classicRecognition;
     SpeechRecognitionModel? model;
     ModifierKeyboardHook? hotkey;
+    WaveInEvent? cloudCapture;
+    WaveFileWriter? cloudWriter;
     readonly object gate = new();
     int recordingId;
     string confirmed = "";
@@ -166,6 +173,11 @@ sealed class Bridge
 
     async Task Start(BridgeRequest request)
     {
+        if (!string.IsNullOrWhiteSpace(request.AudioPath))
+        {
+            StartCloud(request);
+            return;
+        }
         if (!await EnsureModel(request.Id, emitErrors: false))
         {
             StartClassic(request);
@@ -206,6 +218,42 @@ sealed class Bridge
         }
     }
 
+    void StartCloud(BridgeRequest request)
+    {
+        try
+        {
+            recordingId = request.Id;
+            confirmed = "";
+            provisional = "";
+            cloudCapture = new WaveInEvent { WaveFormat = new WaveFormat(16000, 16, 1), BufferMilliseconds = 50 };
+            cloudWriter = new WaveFileWriter(request.AudioPath!, cloudCapture.WaveFormat);
+            cloudCapture.DataAvailable += (_, args) =>
+            {
+                lock (gate)
+                {
+                    cloudWriter?.Write(args.Buffer, 0, args.BytesRecorded);
+                    cloudWriter?.Flush();
+                }
+                double sum = 0;
+                for (var index = 0; index + 1 < args.BytesRecorded; index += 2)
+                {
+                    var sample = BitConverter.ToInt16(args.Buffer, index) / 32768d;
+                    sum += sample * sample;
+                }
+                var samples = Math.Max(args.BytesRecorded / 2, 1);
+                Emit(new(recordingId, "audio_level", Level: (float)Math.Clamp(Math.Sqrt(sum / samples) * 10, 0, 1)));
+            };
+            cloudCapture.StartRecording();
+            Emit(new(request.Id, "engine", Backend: request.CloudProvider ?? "cloud"));
+            Emit(new(request.Id, "started", Message: "聞き取り中"));
+        }
+        catch (Exception error)
+        {
+            StopCloudCapture();
+            Emit(new(request.Id, "error", Message: $"録音を開始できません: {error.Message}"));
+        }
+    }
+
     void StartClassic(BridgeRequest request)
     {
         try
@@ -242,6 +290,13 @@ sealed class Bridge
 
     void Stop(int id)
     {
+        if (cloudCapture is not null)
+        {
+            StopCloudCapture();
+            Emit(new(id, "final", Text: ""));
+            recordingId = 0;
+            return;
+        }
         try { recognition?.StopContinuousRecognition(); } catch { }
         recognition?.Dispose();
         recognition = null;
@@ -250,6 +305,18 @@ sealed class Bridge
         classicRecognition = null;
         Emit(new(id, "final", Text: FullTranscript()));
         recordingId = 0;
+    }
+
+    void StopCloudCapture()
+    {
+        try { cloudCapture?.StopRecording(); } catch { }
+        cloudCapture?.Dispose();
+        cloudCapture = null;
+        lock (gate)
+        {
+            cloudWriter?.Dispose();
+            cloudWriter = null;
+        }
     }
 
     string FullTranscript()
@@ -287,30 +354,20 @@ sealed class Bridge
         {
             using var languageModel = await LanguageModel.CreateAsync();
             var japanese = (request.Locale ?? "ja-JP").StartsWith("ja", StringComparison.OrdinalIgnoreCase);
-            var categoryHint = request.Category is "code" or "terminal"
-                ? japanese
-                    ? "技術用語、識別子、コマンド、フラグ、パスは変更しないでください。"
-                    : "Preserve technical terms, identifiers, commands, flags, and paths exactly."
-                : "";
-            var prompt = japanese
-                ? $"""
-                    以下の音声文字起こしを整形してください。言い換え、要約、補足、文体変更、語順変更はせず、
-                    フィラーを削除し、句読点と数字・金額・日付・単位だけを自然な表記に整えてください。
-                    {categoryHint}
-                    ユーザー指示: {request.Prompt ?? ""}
-                    整形後の本文だけを返してください。
+            var instruction = request.Prompt?.Trim();
+            if (string.IsNullOrWhiteSpace(instruction))
+            {
+                instruction = japanese
+                    ? "音声認識結果を必要最小限に補正してください。意味や文体は変えず、整形後の本文だけを返してください。"
+                    : "Correct the voice transcript minimally without changing its meaning or tone. Return only the formatted text.";
+            }
+            var prompt = $"""
+                {instruction}
 
-                    {original}
-                    """
-                : $"""
-                    Format this voice transcript without paraphrasing, summarizing, adding details, changing tone, or reordering words.
-                    Only remove filler words and format punctuation, numbers, money, dates, and units naturally.
-                    {categoryHint}
-                    User instruction: {request.Prompt ?? ""}
-                    Return only the refined transcript.
-
-                    {original}
-                    """;
+                <transcript>
+                {original}
+                </transcript>
+                """;
             var response = await languageModel.GenerateResponseAsync(prompt);
             var refined = response.Text?.Trim() ?? "";
             return string.IsNullOrWhiteSpace(refined) ? SimpleRefine(original) : refined;
