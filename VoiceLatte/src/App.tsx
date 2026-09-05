@@ -4,9 +4,33 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
+import {
+  AlertCircle, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
+  Info, Keyboard, ListPlus, Mic, Settings2, SlidersHorizontal, Square, Trash2, X,
+  type LucideIcon,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import "./App.css";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
-import { postProcessTranscript, type VocabularyEntry } from "./text-processing";
+import {
+  buildRefinementPrompt,
+  normalizeVocabularyEntries,
+  parseVocabularyAliases,
+  postProcessTranscript,
+  vocabularyHints,
+  type VocabularyEntry,
+} from "./text-processing";
 
 type Phase = "idle" | "preparing" | "listening" | "processing" | "done" | "error";
 type Section = "history" | "general" | "vocabulary" | "shortcuts" | "about";
@@ -38,12 +62,12 @@ const DEFAULT_SETTINGS: Settings = {
   muteOtherAudio: false,
 };
 
-const nav: { id: Section; label: string; icon: string }[] = [
-  { id: "history", label: "音声入力 / 履歴", icon: "◴" },
-  { id: "general", label: "基本設定", icon: "⚙" },
-  { id: "vocabulary", label: "単語登録", icon: "≡" },
-  { id: "shortcuts", label: "ショートカット", icon: "⌨" },
-  { id: "about", label: "アプリについて", icon: "ⓘ" },
+const nav: { id: Section; label: string; icon: LucideIcon }[] = [
+  { id: "history", label: "音声入力 / 履歴", icon: Clock3 },
+  { id: "general", label: "基本設定", icon: Settings2 },
+  { id: "vocabulary", label: "辞書登録", icon: ListPlus },
+  { id: "shortcuts", label: "ショートカット", icon: Keyboard },
+  { id: "about", label: "アプリについて", icon: Info },
 ];
 
 function useStoredState<T>(key: string, initial: T, normalize?: (stored: unknown) => T) {
@@ -79,7 +103,7 @@ function MainApp() {
     (stored) => ({ ...DEFAULT_SETTINGS, ...(stored as Partial<Settings>) }),
   );
   const [history, setHistory] = useStoredState<HistoryEntry[]>("voicelatte.history", []);
-  const [vocabulary, setVocabulary] = useStoredState<VocabularyEntry[]>("voicelatte.vocabulary", []);
+  const [vocabulary, setVocabulary] = useStoredState<VocabularyEntry[]>("voicelatte.vocabulary", [], normalizeVocabularyEntries);
   const [showPrompts, setShowPrompts] = useState(false);
   const [selected, setSelected] = useState<HistoryEntry | null>(null);
   const [shortcutError, setShortcutError] = useState("");
@@ -93,8 +117,10 @@ function MainApp() {
   const messageRef = useRef("");
   const holdTimer = useRef<number | undefined>(undefined);
   const holdActive = useRef(false);
+  const shortcutCaptureRef = useRef(false);
   const contextRef = useRef({ appName: "VoiceLatte", category: "generic" });
-  const actionRef = useRef<(action: "toggle" | "hold-start" | "hold-stop") => void>(() => {});
+  const actionRef = useRef<(action: "toggle" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop") => void>(() => {});
+  const setShortcutCapturing = useCallback((capturing: boolean) => { shortcutCaptureRef.current = capturing; }, []);
 
   const updateHud = useCallback(async (next: HudState) => {
     await emitTo("hud", "recording-state", next);
@@ -131,7 +157,7 @@ function MainApp() {
     try {
       await bridge.start(
         settings.locale,
-        vocabulary.map((entry) => entry.replacement || entry.phrase),
+        vocabularyHints(vocabulary),
         settings.microphoneUID,
         settings.muteOtherAudio,
         {
@@ -163,7 +189,7 @@ function MainApp() {
         : category === "chat" || category === "email"
           ? settings.chatPrompt
           : settings.defaultPrompt;
-      const refined = settings.refinement ? await bridge.refine(raw, category, prompt) : raw;
+      const refined = settings.refinement ? await bridge.refine(raw, category, buildRefinementPrompt(prompt, vocabulary)) : raw;
       const text = postProcessTranscript(refined, vocabulary);
       const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw, createdAt: Date.now(), category, engine, appName };
       setHistory((items) => [entry, ...items].slice(0, 500));
@@ -183,21 +209,28 @@ function MainApp() {
 
   useEffect(() => {
     actionRef.current = (action) => {
-      if (action === "toggle") void (phaseRef.current === "idle" ? startRecording() : stopRecording());
-      if (action === "hold-start") {
+      const beginHold = (delay: number) => {
         window.clearTimeout(holdTimer.current);
+        holdActive.current = false;
         holdTimer.current = window.setTimeout(() => {
           holdActive.current = true;
           void startRecording().then(() => {
             if (!holdActive.current && phaseRef.current === "listening") void stopRecording();
           });
-        }, 150);
-      }
-      if (action === "hold-stop") {
+        }, delay);
+      };
+      const endHold = (toggleOnTap: boolean) => {
         window.clearTimeout(holdTimer.current);
-        if (holdActive.current && phaseRef.current === "listening") void stopRecording();
+        const wasHold = holdActive.current;
+        if (wasHold && phaseRef.current === "listening") void stopRecording();
         holdActive.current = false;
-      }
+        if (toggleOnTap && !wasHold) void (phaseRef.current === "idle" ? startRecording() : stopRecording());
+      };
+      if (action === "toggle") void (phaseRef.current === "idle" ? startRecording() : stopRecording());
+      if (action === "hold-start") beginHold(150);
+      if (action === "hold-stop") endHold(false);
+      if (action === "shared-start") beginHold(300);
+      if (action === "shared-stop") endHold(true);
     };
   }, [startRecording, stopRecording]);
 
@@ -222,16 +255,48 @@ function MainApp() {
     setShortcutError("");
     void (async () => {
       await unregisterAll();
-      await register(settings.toggleShortcut, (event) => {
-        if (event.state === "Pressed") actionRef.current("toggle");
-      });
-      const modifierOnly = ["Control", "Option", "Command", "Shift"].includes(settings.holdShortcut);
-      await bridge.configureModifierShortcut(modifierOnly ? settings.holdShortcut : "", (state) => {
-          actionRef.current(state === "Pressed" ? "hold-start" : "hold-stop");
-      });
-      if (!modifierOnly) {
+      await bridge.configureModifierShortcut("", () => undefined);
+      const toggleModifierOnly = isModifierOnlyShortcut(settings.toggleShortcut);
+      const holdModifierOnly = isModifierOnlyShortcut(settings.holdShortcut);
+      const sharedShortcut = settings.toggleShortcut === settings.holdShortcut;
+      let sharedPressed = false;
+      const handleSharedShortcut = (state: "Pressed" | "Released") => {
+        if (shortcutCaptureRef.current) return;
+        if (state === "Pressed") {
+          if (sharedPressed) return;
+          sharedPressed = true;
+          actionRef.current("shared-start");
+        } else {
+          if (!sharedPressed) return;
+          sharedPressed = false;
+          actionRef.current("shared-stop");
+        }
+      };
+      if (sharedShortcut) {
+        if (toggleModifierOnly) await bridge.configureModifierShortcut(settings.toggleShortcut, handleSharedShortcut);
+        else await register(settings.toggleShortcut, (event) => handleSharedShortcut(event.state));
+        return;
+      }
+      if (toggleModifierOnly && holdModifierOnly) throw new Error("修飾キー単体を両方に使う場合は、同じキーを設定してください");
+      if (!toggleModifierOnly) {
+        await register(settings.toggleShortcut, (event) => {
+          if (!shortcutCaptureRef.current && event.state === "Pressed") actionRef.current("toggle");
+        });
+      }
+      if (!holdModifierOnly) {
         await register(settings.holdShortcut, (event) => {
-          actionRef.current(event.state === "Pressed" ? "hold-start" : "hold-stop");
+          if (!shortcutCaptureRef.current) actionRef.current(event.state === "Pressed" ? "hold-start" : "hold-stop");
+        });
+      }
+      const modifierShortcut = toggleModifierOnly ? settings.toggleShortcut : holdModifierOnly ? settings.holdShortcut : "";
+      if (modifierShortcut) {
+        await bridge.configureModifierShortcut(modifierShortcut, (state) => {
+          if (shortcutCaptureRef.current) return;
+          if (toggleModifierOnly) {
+            if (state === "Pressed") actionRef.current("toggle");
+          } else {
+            actionRef.current(state === "Pressed" ? "hold-start" : "hold-stop");
+          }
         });
       }
     })().catch((error) => alive && setShortcutError(`登録できません: ${String(error)}`));
@@ -248,11 +313,17 @@ function MainApp() {
     <main className="app-shell">
       <div className="window-drag-region" data-tauri-drag-region />
       <aside className="sidebar" aria-label="設定カテゴリ">
-        <nav>{nav.map((item) => (
-          <button className={item.id === section ? "nav-item selected" : "nav-item"} key={item.id} onClick={() => setSection(item.id)}>
-            <span aria-hidden="true">{item.icon}</span>{item.label}
-          </button>
-        ))}</nav>
+        <nav>{nav.map((item) => {
+          const Icon = item.icon;
+          return <Button
+            variant="ghost"
+            className={cn("nav-item h-auto justify-start", item.id === section && "selected")}
+            key={item.id}
+            onClick={() => setSection(item.id)}
+          >
+            <Icon aria-hidden="true" />{item.label}
+          </Button>;
+        })}</nav>
       </aside>
 
       <section className="content">
@@ -281,7 +352,7 @@ function MainApp() {
           })()}
         />}
         {section === "vocabulary" && <VocabularyPage entries={vocabulary} setEntries={setVocabulary} />}
-        {section === "shortcuts" && <ShortcutPage settings={settings} setSettings={setSettings} error={shortcutError} />}
+        {section === "shortcuts" && <ShortcutPage settings={settings} setSettings={setSettings} error={shortcutError} onCaptureChange={setShortcutCapturing} />}
         {section === "about" && <AboutPage />}
       </section>
 
@@ -299,21 +370,21 @@ function HistoryPage(props: {
 }) {
   const active = props.phase !== "idle" && props.phase !== "done" && props.phase !== "error";
   return <>
-    <button className={`record-card ${active ? "active" : ""}`} onClick={props.onToggle}>
-      <span className="mic-orb">{active ? "■" : "●"}</span>
+    <Button variant="ghost" className={cn("record-card h-auto", active && "active")} onClick={props.onToggle}>
+      <span className="mic-orb">{active ? <Square /> : <Mic />}</span>
       <span><b>{active ? phaseLabel(props.phase) : "タップして音声入力を開始"}</b>{props.transcript && <small>{props.transcript}</small>}</span>
-    </button>
-    {active && <button className="cancel-link" onClick={props.onCancel}>キャンセル</button>}
-    <button className="refine-strip" onClick={props.onPrompts}>
-      <span className="strip-icon">☷</span><span><b>整形設定</b><small>デフォルト・アプリ別のプロンプト</small></span><span className="chevron">›</span>
-    </button>
-    <div className="list-heading"><span>履歴</span>{props.history.length > 0 && <button onClick={props.onClear}>すべてクリア</button>}</div>
+    </Button>
+    {active && <Button variant="ghost" size="xs" className="cancel-link" onClick={props.onCancel}>キャンセル</Button>}
+    <Button variant="ghost" className="refine-strip h-auto" onClick={props.onPrompts}>
+      <span className="strip-icon"><SlidersHorizontal /></span><span><b>整形設定</b><small>デフォルト・アプリ別のプロンプト</small></span><ChevronRight className="chevron" />
+    </Button>
+    <div className="list-heading"><span>履歴</span>{props.history.length > 0 && <Button variant="ghost" size="xs" onClick={props.onClear}><Trash2 />すべてクリア</Button>}</div>
     <div className="history-list">
       {props.history.length === 0 && <div className="empty-state">音声入力した内容がここに残ります</div>}
-      {props.history.map((entry) => <button className="history-card" key={entry.id} onClick={() => props.onSelect(entry)}>
-        <div className="tags"><span>{entry.appName || "VoiceLatte"}</span><span>{entry.category}</span><time>{relativeTime(entry.createdAt)}</time></div>
+      {props.history.map((entry) => <Button variant="ghost" className="history-card h-auto" key={entry.id} onClick={() => props.onSelect(entry)}>
+        <div className="tags"><Badge variant="secondary">{entry.appName || "VoiceLatte"}</Badge><Badge variant="secondary">{entry.category}</Badge><time>{relativeTime(entry.createdAt)}</time></div>
         <p>{entry.text}</p>
-      </button>)}
+      </Button>)}
     </div>
   </>;
 }
@@ -329,39 +400,47 @@ function GeneralPage({ status, settings, setSettings, installing, deviceStatus, 
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility") => Promise<void>;
   onInstall: () => void;
 }) {
+  const locales = [
+    ["ja-JP", "日本語"], ["en-US", "英語（US）"], ["en-GB", "英語（UK）"],
+    ["zh-Hans", "中国語（簡体字）"], ["zh-Hant", "中国語（繁体字）"], ["ko-KR", "韓国語"],
+    ["de-DE", "ドイツ語"], ["fr-FR", "フランス語"], ["es-ES", "スペイン語"],
+  ] as const;
   return <div className="settings-stack">
     <p className="settings-group-label">音声認識</p>
-    <section className="glass-card model-card">
+    <Card className="glass-card model-card gap-0 py-0">
       <div><span className={`status-dot ${status?.modelState === "ready" ? "ready" : ""}`} /><b>{status ? engineLabel(status.backend) : "確認中"}</b></div>
       <p>{status?.message ?? "音声認識モデルを確認しています…"}</p>
-      {status?.modelState === "download-required" && <button className="secondary-button" onClick={onInstall} disabled={installing}>{installing ? "追加しています…" : "高精度モデルを追加"}</button>}
-    </section>
-    <SettingRow label="言語" detail="音声認識に使う言語"><select value={settings.locale} onChange={(e) => setSettings((s) => ({ ...s, locale: e.target.value }))}>
-      <option value="ja-JP">日本語</option><option value="en-US">英語（US）</option><option value="en-GB">英語（UK）</option>
-      <option value="zh-Hans">中国語（簡体字）</option><option value="zh-Hant">中国語（繁体字）</option><option value="ko-KR">韓国語</option>
-      <option value="de-DE">ドイツ語</option><option value="fr-FR">フランス語</option><option value="es-ES">スペイン語</option>
-    </select></SettingRow>
-    {deviceStatus?.platform === "macos" && <SettingRow label="マイク" detail="音声入力に使うデバイス"><select value={settings.microphoneUID} onChange={(e) => setSettings((s) => ({ ...s, microphoneUID: e.target.value }))}>
-      <option value="">システムの既定</option>
-      {deviceStatus.devices.map((device) => <option value={device.uid} key={device.uid}>{device.name}</option>)}
-    </select></SettingRow>}
-    {deviceStatus?.platform === "macos" && <SettingRow label="録音中は他の音声をミュート" detail="音楽などを一時的に消音します"><Toggle checked={settings.muteOtherAudio} onChange={(muteOtherAudio) => setSettings((s) => ({ ...s, muteOtherAudio }))} /></SettingRow>}
+      {status?.modelState === "download-required" && <Button variant="outline" size="sm" className="secondary-button" onClick={onInstall} disabled={installing}>{installing ? "追加しています…" : "高精度モデルを追加"}</Button>}
+    </Card>
+    <SettingRow label="言語" detail="音声認識に使う言語">
+      <Select value={settings.locale} onValueChange={(locale) => setSettings((s) => ({ ...s, locale }))}>
+        <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+        <SelectContent>{locales.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent>
+      </Select>
+    </SettingRow>
+    {deviceStatus?.platform === "macos" && <SettingRow label="マイク" detail="音声入力に使うデバイス">
+      <Select value={settings.microphoneUID || "system"} onValueChange={(microphoneUID) => setSettings((s) => ({ ...s, microphoneUID: microphoneUID === "system" ? "" : microphoneUID }))}>
+        <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+        <SelectContent><SelectItem value="system">システムの既定</SelectItem>{deviceStatus.devices.map((device) => <SelectItem value={device.uid} key={device.uid}>{device.name}</SelectItem>)}</SelectContent>
+      </Select>
+    </SettingRow>}
+    {deviceStatus?.platform === "macos" && <SettingRow label="録音中は他の音声をミュート" detail="音楽などを一時的に消音します"><Switch checked={settings.muteOtherAudio} onCheckedChange={(muteOtherAudio) => setSettings((s) => ({ ...s, muteOtherAudio }))} /></SettingRow>}
     <p className="settings-note">音声はデバイス上で処理され、サーバーには送信されません。</p>
 
     <p className="settings-group-label">出力と整形</p>
-    <SettingRow label="カーソル位置へ自動入力" detail="オフの場合もクリップボードと履歴には残ります"><Toggle checked={settings.autoPaste} onChange={(autoPaste) => setSettings((s) => ({ ...s, autoPaste }))} /></SettingRow>
-    <SettingRow label="AI整形" detail="使えない場合はルール整形へ自動で切り替え"><Toggle checked={settings.refinement} onChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
+    <SettingRow label="カーソル位置へ自動入力" detail="オフの場合もクリップボードと履歴には残ります"><Switch checked={settings.autoPaste} onCheckedChange={(autoPaste) => setSettings((s) => ({ ...s, autoPaste }))} /></SettingRow>
+    <SettingRow label="AI整形" detail="使えない場合はルール整形へ自動で切り替え"><Switch checked={settings.refinement} onCheckedChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
 
     <p className="settings-group-label">起動</p>
-    <SettingRow label="ログイン時に起動" detail="PCへのログイン後、自動で待機します"><Toggle checked={launchAtLogin} onChange={(enabled) => void onLaunchAtLogin(enabled)} /></SettingRow>
+    <SettingRow label="ログイン時に起動" detail="PCへのログイン後、自動で待機します"><Switch checked={launchAtLogin} onCheckedChange={(enabled) => void onLaunchAtLogin(enabled)} /></SettingRow>
 
     {deviceStatus?.platform === "macos" && <>
       <p className="settings-group-label">権限</p>
-      <section className="glass-card permissions-card">
+      <Card className="glass-card permissions-card gap-0 py-0">
         <PermissionRow label="マイク" status={deviceStatus.microphonePermission} onAction={() => onRequestPermission("microphone")} />
         <PermissionRow label="音声認識" status={deviceStatus.speechPermission} onAction={() => onRequestPermission("speech")} />
         <PermissionRow label="アクセシビリティ" detail="カーソル位置への自動入力に使います" status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
-      </section>
+      </Card>
     </>}
   </div>;
 }
@@ -374,95 +453,144 @@ function PermissionRow({ label, detail, status, onAction }: {
 }) {
   const granted = status === "authorized" || status === "not-required";
   return <div className="permission-row">
-    <span className={`permission-mark ${granted ? "granted" : ""}`}>{granted ? "✓" : "!"}</span>
+    <span className={cn("permission-mark", granted && "granted")}>{granted ? <Check /> : <AlertCircle />}</span>
     <div><b>{label}</b>{detail && <small>{detail}</small>}</div>
-    {granted ? <span className="permission-state">許可済み</span> : <button className="secondary-button" onClick={() => void onAction()}>{status === "not-determined" ? "許可する" : "設定を開く"}</button>}
+    {granted ? <span className="permission-state">許可済み</span> : <Button variant="outline" size="xs" className="secondary-button" onClick={() => void onAction()}>{status === "not-determined" ? "許可する" : "設定を開く"}</Button>}
   </div>;
 }
 
 function VocabularyPage({ entries, setEntries }: { entries: VocabularyEntry[]; setEntries: React.Dispatch<React.SetStateAction<VocabularyEntry[]>> }) {
-  const [phrase, setPhrase] = useState("");
-  const [replacement, setReplacement] = useState("");
+  const [term, setTerm] = useState("");
+  const [aliases, setAliases] = useState<string[]>([]);
+  const [aliasDraft, setAliasDraft] = useState("");
+  const aliasInput = useRef<HTMLInputElement>(null);
+  const commitAliases = () => {
+    setAliases(parseVocabularyAliases([...aliases, aliasDraft].join(","), term));
+    setAliasDraft("");
+  };
   const add = () => {
-    if (!phrase.trim()) return;
-    setEntries((items) => [...items, { id: crypto.randomUUID(), phrase: phrase.trim(), replacement: replacement.trim() }]);
-    setPhrase(""); setReplacement("");
+    const normalizedTerm = term.trim();
+    if (!normalizedTerm) return;
+    const nextAliases = parseVocabularyAliases([...aliases, aliasDraft].join(","), normalizedTerm);
+    setEntries((items) => [...items, { id: crypto.randomUUID(), term: normalizedTerm, aliases: nextAliases }]);
+    setTerm(""); setAliases([]); setAliasDraft("");
   };
   return <div className="settings-stack">
-    <section className="glass-card add-word"><input value={phrase} onChange={(e) => setPhrase(e.target.value)} placeholder="認識される言葉" /><span>→</span><input value={replacement} onChange={(e) => setReplacement(e.target.value)} placeholder="置き換え後（任意）" /><button onClick={add}>追加</button></section>
-    <p className="helper">専門用語や固有名詞を認識候補に加え、必要なら表記も置き換えます。</p>
-    {entries.map((entry) => <div className="word-row" key={entry.id}><span>{entry.phrase}</span><span>→</span><b>{entry.replacement || entry.phrase}</b><button onClick={() => setEntries((items) => items.filter((item) => item.id !== entry.id))}>×</button></div>)}
+    <Card className="glass-card add-word gap-3 py-3">
+      <label className="dictionary-field"><span>正しい表記</span><Input value={term} maxLength={80} onChange={(e) => setTerm(e.target.value)} placeholder="例：音声入力" /></label>
+      <div className="dictionary-field"><span>読み・誤認識</span><div className="alias-input" onClick={() => aliasInput.current?.focus()}>
+        {aliases.map((alias) => <Badge variant="secondary" className="alias-tag" key={alias}>{alias}<button type="button" aria-label={`${alias}を削除`} onClick={(event) => { event.stopPropagation(); setAliases((items) => items.filter((item) => item !== alias)); }}><X /></button></Badge>)}
+        <Input ref={aliasInput} className="alias-editor" value={aliasDraft} maxLength={80} aria-label="読みや誤認識を追加" onChange={(event) => setAliasDraft(event.target.value)} onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Enter") { event.preventDefault(); commitAliases(); }
+          if (event.key === "Backspace" && !aliasDraft && aliases.length > 0) setAliases((items) => items.slice(0, -1));
+        }} placeholder={aliases.length > 0 ? "追加…" : "例：オンエー入力"} />
+      </div></div>
+      <Button size="sm" className="dictionary-add" onClick={add} disabled={!term.trim()}>追加</Button>
+    </Card>
+    <p className="helper">読みや間違って認識される表記を入力し、Enterで複数追加できます。</p>
+    <div className="dictionary-example"><span>例：</span><Badge variant="secondary">オンエー入力</Badge><Badge variant="secondary">音声入浴</Badge><Badge variant="secondary">音声入力機</Badge></div>
+    {entries.map((entry) => <Card className="word-row gap-2 py-0" key={entry.id}><div><b>{entry.term}</b>{entry.aliases.length > 0 ? <div className="word-aliases">{entry.aliases.map((alias) => <Badge variant="secondary" key={alias}>{alias}</Badge>)}</div> : <small>認識ヒントとして使用</small>}</div><Button variant="ghost" size="icon-xs" aria-label={`${entry.term}を削除`} onClick={() => setEntries((items) => items.filter((item) => item.id !== entry.id))}><Trash2 /></Button></Card>)}
   </div>;
 }
 
-function ShortcutPage({ settings, setSettings, error }: { settings: Settings; setSettings: React.Dispatch<React.SetStateAction<Settings>>; error: string }) {
+function ShortcutPage({ settings, setSettings, error, onCaptureChange }: {
+  settings: Settings;
+  setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+  error: string;
+  onCaptureChange: (capturing: boolean) => void;
+}) {
   return <div className="settings-stack">
-    <SettingRow label="録音の開始 / 停止" detail="もう一度押すと停止します"><ShortcutRecorder value={settings.toggleShortcut} onChange={(toggleShortcut) => setSettings((s) => ({ ...s, toggleShortcut }))} /></SettingRow>
-    <SettingRow label="押している間だけ入力" detail="キー単体または組み合わせを設定できます"><ShortcutRecorder value={settings.holdShortcut} onChange={(holdShortcut) => setSettings((s) => ({ ...s, holdShortcut }))} /></SettingRow>
-    <p className="helper">入力欄をクリックして、使いたいキーを押してください。初期設定は Control の長押しです。</p>
+    <SettingRow label="録音の開始 / 停止" detail="短く押すと開始し、もう一度押すと停止します"><ShortcutRecorder value={settings.toggleShortcut} onChange={(toggleShortcut) => setSettings((current) => ({ ...current, toggleShortcut }))} onCaptureChange={onCaptureChange} /></SettingRow>
+    <SettingRow label="押している間だけ入力" detail="長押し中に録音し、離すと確定します"><ShortcutRecorder value={settings.holdShortcut} onChange={(holdShortcut) => setSettings((current) => ({ ...current, holdShortcut }))} onCaptureChange={onCaptureChange} /></SettingRow>
+    <p className="helper">同じキーも設定できます。同じ場合は短押しと300ms以上の長押しを自動で判別します。</p>
     {error && <p className="inline-error">{error}</p>}
   </div>;
 }
 
-function ShortcutRecorder({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function ShortcutRecorder({ value, onChange, onCaptureChange }: { value: string; onChange: (value: string) => void; onCaptureChange: (capturing: boolean) => void }) {
   const [recording, setRecording] = useState(false);
   const modifierOnly = useRef("");
-  return <button className={`shortcut-recorder ${recording ? "recording" : ""}`} onClick={() => setRecording(true)} onKeyDown={(event) => {
+  useEffect(() => {
     if (!recording) return;
-    event.preventDefault(); event.stopPropagation();
-    if (["Control", "Alt", "Meta", "Shift"].includes(event.key)) {
-      modifierOnly.current = event.key === "Alt" ? "Option" : event.key === "Meta" ? "Command" : event.key;
-      return;
-    }
-    const shortcut = shortcutFromEvent(event);
-    if (shortcut) { onChange(shortcut); setRecording(false); }
-  }} onKeyUp={(event) => {
-    if (!recording || !modifierOnly.current) return;
-    event.preventDefault();
-    onChange(modifierOnly.current);
-    modifierOnly.current = "";
-    setRecording(false);
-  }}>{recording ? "キーを押してください" : prettyShortcut(value)}</button>;
+    const finish = (shortcut: string) => {
+      onCaptureChange(false);
+      onChange(shortcut);
+      setRecording(false);
+    };
+    const keyDown = (event: KeyboardEvent) => {
+      event.preventDefault(); event.stopPropagation();
+      if (["Control", "Alt", "Meta", "Shift"].includes(event.key)) {
+        modifierOnly.current = event.key === "Alt" ? "Option" : event.key === "Meta" ? "Command" : event.key;
+        return;
+      }
+      const shortcut = shortcutFromEvent(event);
+      if (shortcut) {
+        modifierOnly.current = "";
+        finish(shortcut);
+      }
+    };
+    const keyUp = (event: KeyboardEvent) => {
+      if (!modifierOnly.current) return;
+      event.preventDefault(); event.stopPropagation();
+      finish(modifierOnly.current);
+      modifierOnly.current = "";
+    };
+    window.addEventListener("keydown", keyDown, true);
+    window.addEventListener("keyup", keyUp, true);
+    return () => {
+      window.removeEventListener("keydown", keyDown, true);
+      window.removeEventListener("keyup", keyUp, true);
+      onCaptureChange(false);
+    };
+  }, [onCaptureChange, onChange, recording]);
+  return <Button variant="outline" size="sm" className={cn("shortcut-recorder", recording && "recording")} onClick={() => { modifierOnly.current = ""; onCaptureChange(true); setRecording(true); }}>{recording ? "キーを押してください" : prettyShortcut(value)}</Button>;
 }
 
 function AboutPage() {
-  return <section className="glass-card about"><div className="about-mark">◉</div><b>VoiceLatte</b><p>Mac / Windows対応の、無料で使えるオンデバイス音声入力。</p><small>Version 0.1.0 Tauri preview</small></section>;
+  return <Card className="glass-card about gap-0 py-0"><div className="about-mark"><Mic /></div><b>VoiceLatte</b><p>Mac / Windows対応の、無料で使えるオンデバイス音声入力。</p><small>Version 0.1.0 Tauri preview</small></Card>;
 }
 
 function PromptDialog({ settings, setSettings, onClose }: { settings: Settings; setSettings: React.Dispatch<React.SetStateAction<Settings>>; onClose: () => void }) {
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal prompt-modal" onMouseDown={(e) => e.stopPropagation()}>
-    <header><div><b>整形設定</b><span>用途ごとの指示を変更できます</span></div><button onClick={onClose}>×</button></header>
-    <PromptField label="デフォルト" value={settings.defaultPrompt} onChange={(defaultPrompt) => setSettings((s) => ({ ...s, defaultPrompt }))} />
-    <PromptField label="ChatGPT / チャット" value={settings.chatPrompt} onChange={(chatPrompt) => setSettings((s) => ({ ...s, chatPrompt }))} />
-    <PromptField label="Code / ターミナル" value={settings.codePrompt} onChange={(codePrompt) => setSettings((s) => ({ ...s, codePrompt }))} />
-    <footer><button className="primary-button" onClick={onClose}>完了</button></footer>
-  </section></div>;
+  return <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <DialogContent className="modal prompt-modal sm:max-w-[520px]">
+      <DialogHeader><DialogTitle>整形設定</DialogTitle><DialogDescription>用途ごとの指示を変更できます</DialogDescription></DialogHeader>
+      <div className="prompt-fields">
+        <PromptField label="デフォルト" value={settings.defaultPrompt} onChange={(defaultPrompt) => setSettings((s) => ({ ...s, defaultPrompt }))} />
+        <PromptField label="ChatGPT / チャット" value={settings.chatPrompt} onChange={(chatPrompt) => setSettings((s) => ({ ...s, chatPrompt }))} />
+        <PromptField label="Code / ターミナル" value={settings.codePrompt} onChange={(codePrompt) => setSettings((s) => ({ ...s, codePrompt }))} />
+      </div>
+      <DialogFooter className="dialog-actions"><Button onClick={onClose}>完了</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function PromptField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
-  return <div className={`prompt-field ${open ? "open" : ""}`}><button onClick={() => setOpen(!open)}><b>{label}</b><span>{open ? "⌃" : "⌄"}</span></button>{open && <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={4} />}</div>;
+  return <Collapsible open={open} onOpenChange={setOpen} className="prompt-field">
+    <CollapsibleTrigger asChild><Button variant="ghost" className="prompt-trigger h-auto"><b>{label}</b>{open ? <ChevronUp /> : <ChevronDown />}</Button></CollapsibleTrigger>
+    <CollapsibleContent><Textarea value={value} onChange={(e) => onChange(e.target.value)} rows={4} /></CollapsibleContent>
+  </Collapsible>;
 }
 
 function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () => void }) {
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="modal history-modal" onMouseDown={(e) => e.stopPropagation()}>
-    <header><div><b>入力内容</b><span>{new Date(entry.createdAt).toLocaleString()}</span></div><button onClick={onClose}>×</button></header>
-    <div className="history-full">{entry.text}</div>
-    {entry.raw !== entry.text && <details><summary>整形前を表示</summary><div className="history-raw">{entry.raw}</div></details>}
-    <footer><button className="secondary-button" onClick={() => void navigator.clipboard.writeText(entry.text)}>コピー</button><button className="primary-button" onClick={onClose}>閉じる</button></footer>
-  </section></div>;
+  return <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <DialogContent className="modal history-modal sm:max-w-[520px]">
+      <DialogHeader><DialogTitle>入力内容</DialogTitle><DialogDescription>{new Date(entry.createdAt).toLocaleString()}</DialogDescription></DialogHeader>
+      <div className="history-full">{entry.text}</div>
+      {entry.raw !== entry.text && <details><summary>整形前を表示</summary><div className="history-raw">{entry.raw}</div></details>}
+      <DialogFooter className="dialog-actions"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(entry.text)}><Copy />コピー</Button><Button onClick={onClose}>閉じる</Button></DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function SettingRow({ label, detail, children }: { label: string; detail: string; children: React.ReactNode }) {
   return <div className="setting-row"><div><b>{label}</b><span>{detail}</span></div>{children}</div>;
 }
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
-  return <button role="switch" aria-checked={checked} className={`toggle ${checked ? "on" : ""}`} onClick={() => onChange(!checked)}><span /></button>;
-}
-
 function Hud() {
   const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", level: 0, engine: "" });
+  const transcriptViewRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const hudWindow = getCurrentWindow();
     void (async () => {
@@ -480,20 +608,30 @@ function Hud() {
     void listen<HudState>("recording-state", (event) => setState(event.payload)).then((fn) => { unlisten = fn; });
     return () => unlisten?.();
   }, []);
+  useEffect(() => {
+    const view = transcriptViewRef.current;
+    if (!view) return;
+    if (!state.transcript) view.scrollLeft = 0;
+    else view.scrollTo({ left: view.scrollWidth, behavior: "smooth" });
+  }, [state.transcript]);
   return <main className={`hud ${state.phase}`} data-tauri-drag-region>
-    <div className="hud-orb"><span className="hud-pulse" style={{ transform: `scale(${1 + state.level * .28})` }} /><span className="hud-mic">●</span></div>
-    <div className="hud-copy"><small>{phaseLabel(state.phase)}</small><b>{state.transcript || state.message || "どうぞ"}</b></div>
-    <div className="hud-meter" aria-label="マイク音量">{Array.from({ length: 14 }, (_, i) => <i key={i} className={i / 14 < state.level ? "lit" : ""} />)}</div>
-    {(state.phase === "listening" || state.phase === "preparing") && <button className="hud-stop" onClick={() => void emitTo("main", "hud-stop")}>■ 停止</button>}
+    <div className="hud-orb"><span className="hud-pulse" /><span className="hud-mic">●</span></div>
+    <div className="hud-copy"><small>{phaseLabel(state.phase)}</small><b ref={transcriptViewRef} className={!state.transcript && state.phase === "listening" ? "placeholder" : undefined}>{state.transcript || (state.phase === "listening" ? "どうぞ" : state.message) || "どうぞ"}</b></div>
+    <div className="hud-meter" aria-label="マイク音量">{Array.from({ length: 7 }, (_, i) => <i key={i} className={i / 7 < state.level ? "lit" : ""} />)}</div>
+    {(state.phase === "listening" || state.phase === "preparing") && <Button variant="ghost" className="hud-stop h-9 rounded-none" onClick={() => void emitTo("main", "hud-stop")}><Square />停止</Button>}
   </main>;
 }
 
-function shortcutFromEvent(event: React.KeyboardEvent) {
+function shortcutFromEvent(event: Pick<KeyboardEvent, "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey">) {
   const modifierKey = ["Control", "Alt", "Meta", "Shift"].includes(event.key);
   if (modifierKey) return event.key === "Alt" ? "Option" : event.key === "Meta" ? "Command" : event.key;
   const parts = [event.metaKey && "CommandOrControl", event.ctrlKey && "Control", event.altKey && "Alt", event.shiftKey && "Shift"].filter(Boolean);
   const key = event.code === "Space" ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.key;
   return [...parts, key].join("+");
+}
+
+function isModifierOnlyShortcut(shortcut: string) {
+  return ["Control", "Option", "Command", "Shift"].includes(shortcut);
 }
 
 function prettyShortcut(shortcut: string) {
