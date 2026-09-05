@@ -286,18 +286,31 @@ sealed class Bridge
         try
         {
             using var languageModel = await LanguageModel.CreateAsync();
+            var japanese = (request.Locale ?? "ja-JP").StartsWith("ja", StringComparison.OrdinalIgnoreCase);
             var categoryHint = request.Category is "code" or "terminal"
-                ? "技術用語、識別子、コマンド、フラグ、パスは変更しないでください。"
+                ? japanese
+                    ? "技術用語、識別子、コマンド、フラグ、パスは変更しないでください。"
+                    : "Preserve technical terms, identifiers, commands, flags, and paths exactly."
                 : "";
-            var prompt = $"""
-                以下の音声文字起こしを整形してください。言い換え、要約、補足、文体変更、語順変更はせず、
-                フィラーを削除し、句読点と数字・金額・日付・単位だけを自然な表記に整えてください。
-                {categoryHint}
-                ユーザー指示: {request.Prompt ?? ""}
-                整形後の本文だけを返してください。
+            var prompt = japanese
+                ? $"""
+                    以下の音声文字起こしを整形してください。言い換え、要約、補足、文体変更、語順変更はせず、
+                    フィラーを削除し、句読点と数字・金額・日付・単位だけを自然な表記に整えてください。
+                    {categoryHint}
+                    ユーザー指示: {request.Prompt ?? ""}
+                    整形後の本文だけを返してください。
 
-                {original}
-                """;
+                    {original}
+                    """
+                : $"""
+                    Format this voice transcript without paraphrasing, summarizing, adding details, changing tone, or reordering words.
+                    Only remove filler words and format punctuation, numbers, money, dates, and units naturally.
+                    {categoryHint}
+                    User instruction: {request.Prompt ?? ""}
+                    Return only the refined transcript.
+
+                    {original}
+                    """;
             var response = await languageModel.GenerateResponseAsync(prompt);
             var refined = response.Text?.Trim() ?? "";
             return string.IsNullOrWhiteSpace(refined) ? SimpleRefine(original) : refined;

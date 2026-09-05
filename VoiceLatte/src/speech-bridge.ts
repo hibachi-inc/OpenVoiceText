@@ -121,8 +121,8 @@ export class SpeechBridgeClient {
     this.callbacks = undefined;
   }
 
-  async refine(text: string, category: string, prompt: string): Promise<string> {
-    const event = await this.request({ command: "refine", text, category, prompt }, ["refined"], 30000);
+  async refine(text: string, category: string, prompt: string, locale: string): Promise<string> {
+    const event = await this.request({ command: "refine", text, category, prompt, locale }, ["refined"], 30000);
     return event.text ?? text;
   }
 

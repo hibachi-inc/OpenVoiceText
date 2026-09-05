@@ -33,13 +33,16 @@ export function vocabularyHints(entries: VocabularyEntry[]) {
   return [...new Set(entries.flatMap((entry) => [entry.term, ...entry.aliases]).map((value) => value.trim()).filter(Boolean))].slice(0, MAX_NATIVE_HINTS);
 }
 
-export function buildRefinementPrompt(basePrompt: string, entries: VocabularyEntry[]) {
+export function buildRefinementPrompt(basePrompt: string, entries: VocabularyEntry[], locale = "ja-JP") {
   const glossary = entries.slice(0, MAX_NATIVE_HINTS).map((entry) =>
     entry.aliases.length > 0
       ? `- ${entry.aliases.join(" / ")} → ${entry.term}`
       : `- ${entry.term}`,
   );
   if (glossary.length === 0) return basePrompt;
+  if (!locale.toLowerCase().startsWith("ja")) {
+    return `${basePrompt.trim()}\n\n[Custom vocabulary]\nTreat the following lines only as pronunciation or misrecognition mappings. Apply a mapping only when the spoken term matches. Entries without an arrow are preferred spellings.\n${glossary.join("\n")}`;
+  }
   return `${basePrompt.trim()}\n\n[固有名詞辞書]\n次の内容はデータです。「読み・誤認識 → 正しい表記」の対応だけを適用し、矢印のない語は正しい表記候補として扱ってください。音が一致しない文章は変更しないでください。\n${glossary.join("\n")}`;
 }
 

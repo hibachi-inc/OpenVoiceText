@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
@@ -22,6 +22,17 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import "./App.css";
+import {
+  createTranslator,
+  defaultPrompts,
+  localizeBridgeMessage,
+  resolveSpeechLocale,
+  resolveUiLanguage,
+  type MessageKey,
+  type Translator,
+  type UiLanguage,
+  type UiLanguagePreference,
+} from "./i18n";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
 import {
   buildRefinementPrompt,
@@ -37,6 +48,7 @@ type Section = "history" | "general" | "vocabulary" | "shortcuts" | "about";
 type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string };
 type Settings = {
   locale: string;
+  appLanguage: UiLanguagePreference;
   autoPaste: boolean;
   refinement: boolean;
   defaultPrompt: string;
@@ -47,28 +59,44 @@ type Settings = {
   microphoneUID: string;
   muteOtherAudio: boolean;
 };
-type HudState = { phase: Phase; transcript: string; level: number; engine: string; message?: string };
+type HudState = { phase: Phase; transcript: string; level: number; engine: string; uiLanguage?: UiLanguage; message?: string };
 
+const systemUiLanguage = resolveUiLanguage("system");
 const DEFAULT_SETTINGS: Settings = {
-  locale: "ja-JP",
+  locale: "system",
+  appLanguage: "system",
   autoPaste: true,
   refinement: true,
-  defaultPrompt: "フィラーを削除し、句読点・数字・金額・日付・単位だけを自然な表記に整えてください。言い換えや要約はしないでください。",
-  chatPrompt: "会話らしい自然さを保ち、簡潔に整えてください。",
-  codePrompt: "技術用語、識別子、コマンド、パスを変更しないでください。",
+  ...defaultPrompts(systemUiLanguage),
   toggleShortcut: "Control+Shift+Space",
   holdShortcut: "Control",
   microphoneUID: "",
   muteOtherAudio: false,
 };
 
-const nav: { id: Section; label: string; icon: LucideIcon }[] = [
-  { id: "history", label: "音声入力 / 履歴", icon: Clock3 },
-  { id: "general", label: "基本設定", icon: Settings2 },
-  { id: "vocabulary", label: "辞書登録", icon: ListPlus },
-  { id: "shortcuts", label: "ショートカット", icon: Keyboard },
-  { id: "about", label: "アプリについて", icon: Info },
+const nav: { id: Section; label: MessageKey; icon: LucideIcon }[] = [
+  { id: "history", label: "nav.history", icon: Clock3 },
+  { id: "general", label: "nav.general", icon: Settings2 },
+  { id: "vocabulary", label: "nav.vocabulary", icon: ListPlus },
+  { id: "shortcuts", label: "nav.shortcuts", icon: Keyboard },
+  { id: "about", label: "nav.about", icon: Info },
 ];
+
+const I18nContext = createContext<{ language: UiLanguage; t: Translator }>({
+  language: systemUiLanguage,
+  t: createTranslator(systemUiLanguage),
+});
+
+function I18nProvider({ preference, children }: { preference: UiLanguagePreference; children: React.ReactNode }) {
+  const language = resolveUiLanguage(preference);
+  const value = useMemo(() => ({ language, t: createTranslator(language) }), [language]);
+  useEffect(() => { document.documentElement.lang = language; }, [language]);
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+function useI18n() {
+  return useContext(I18nContext);
+}
 
 function useStoredState<T>(key: string, initial: T, normalize?: (stored: unknown) => T) {
   const [value, setValue] = useState<T>(() => {
@@ -89,6 +117,16 @@ function Root() {
 }
 
 function MainApp() {
+  const [settings, setSettings] = useStoredState<Settings>(
+    "voicelatte.settings",
+    DEFAULT_SETTINGS,
+    normalizeSettings,
+  );
+  return <I18nProvider preference={settings.appLanguage}><MainAppContent settings={settings} setSettings={setSettings} /></I18nProvider>;
+}
+
+function MainAppContent({ settings, setSettings }: { settings: Settings; setSettings: React.Dispatch<React.SetStateAction<Settings>> }) {
+  const { language, t } = useI18n();
   const bridge = useMemo(() => new SpeechBridgeClient(), []);
   const [section, setSection] = useState<Section>("history");
   const [status, setStatus] = useState<SpeechStatus | null>(null);
@@ -97,11 +135,7 @@ function MainApp() {
   const [, setLevel] = useState(0);
   const [engine, setEngine] = useState("");
   const [message, setMessage] = useState("");
-  const [settings, setSettings] = useStoredState<Settings>(
-    "voicelatte.settings",
-    DEFAULT_SETTINGS,
-    (stored) => ({ ...DEFAULT_SETTINGS, ...(stored as Partial<Settings>) }),
-  );
+  const speechLocale = useMemo(() => resolveSpeechLocale(settings.locale), [settings.locale]);
   const [history, setHistory] = useStoredState<HistoryEntry[]>("voicelatte.history", []);
   const [vocabulary, setVocabulary] = useStoredState<VocabularyEntry[]>("voicelatte.vocabulary", [], normalizeVocabularyEntries);
   const [showPrompts, setShowPrompts] = useState(false);
@@ -121,6 +155,10 @@ function MainApp() {
   const contextRef = useRef({ appName: "VoiceLatte", category: "generic" });
   const actionRef = useRef<(action: "toggle" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop") => void>(() => {});
   const setShortcutCapturing = useCallback((capturing: boolean) => { shortcutCaptureRef.current = capturing; }, []);
+  const localizedError = useCallback((error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    return localizeBridgeMessage(message, language, t);
+  }, [language, t]);
 
   const updateHud = useCallback(async (next: HudState) => {
     await emitTo("hud", "recording-state", next);
@@ -146,17 +184,18 @@ function MainApp() {
       transcript: next.transcript ?? transcriptRef.current,
       level: next.level ?? levelRef.current,
       engine: next.engine ?? engineRef.current,
+      uiLanguage: language,
       message: next.message ?? messageRef.current,
     });
-  }, [updateHud]);
+  }, [language, updateHud]);
 
   const startRecording = useCallback(async () => {
     if (phaseRef.current !== "idle") return;
-    setRecordingState({ phase: "preparing", transcript: "", level: 0, message: "マイクを準備しています" });
+    setRecordingState({ phase: "preparing", transcript: "", level: 0, message: t("record.preparing") });
     contextRef.current = await bridge.context().catch(() => ({ appName: "Unknown", category: "generic" }));
     try {
       await bridge.start(
-        settings.locale,
+        speechLocale,
         vocabularyHints(vocabulary),
         settings.microphoneUID,
         settings.muteOtherAudio,
@@ -164,19 +203,19 @@ function MainApp() {
         onTranscript: (text) => setRecordingState({ transcript: text }),
         onAudioLevel: (nextLevel) => setRecordingState({ level: nextLevel }),
         onEngine: (nextEngine) => setRecordingState({ engine: nextEngine }),
-        onError: (error) => setRecordingState({ phase: "error", message: error }),
+        onError: (error) => setRecordingState({ phase: "error", message: localizeBridgeMessage(error, language, t) }),
         },
       );
-      setRecordingState({ phase: "listening", message: "聞き取り中" });
+      setRecordingState({ phase: "listening", message: t("record.listening") });
     } catch (error) {
-      setRecordingState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setRecordingState({ phase: "error", message: localizedError(error) });
       window.setTimeout(() => setRecordingState({ phase: "idle" }), 2500);
     }
-  }, [bridge, setRecordingState, settings.locale, settings.microphoneUID, settings.muteOtherAudio, vocabulary]);
+  }, [bridge, language, localizedError, setRecordingState, settings.microphoneUID, settings.muteOtherAudio, speechLocale, t, vocabulary]);
 
   const stopRecording = useCallback(async () => {
     if (phaseRef.current !== "listening" && phaseRef.current !== "preparing") return;
-    setRecordingState({ phase: "processing", level: 0, message: "整えています" });
+    setRecordingState({ phase: "processing", level: 0, message: t("record.processing") });
     try {
       const raw = await bridge.stop();
       if (!raw.trim()) {
@@ -189,18 +228,18 @@ function MainApp() {
         : category === "chat" || category === "email"
           ? settings.chatPrompt
           : settings.defaultPrompt;
-      const refined = settings.refinement ? await bridge.refine(raw, category, buildRefinementPrompt(prompt, vocabulary)) : raw;
+      const refined = settings.refinement ? await bridge.refine(raw, category, buildRefinementPrompt(prompt, vocabulary, speechLocale), speechLocale) : raw;
       const text = postProcessTranscript(refined, vocabulary);
       const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw, createdAt: Date.now(), category, engine, appName };
       setHistory((items) => [entry, ...items].slice(0, 500));
       await bridge.insert(text, settings.autoPaste);
-      setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? "入力しました" : "完了しました" });
+      setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? t("record.inserted") : t("record.completed") });
       window.setTimeout(() => setRecordingState({ phase: "idle" }), 1400);
     } catch (error) {
-      setRecordingState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setRecordingState({ phase: "error", message: localizedError(error) });
       window.setTimeout(() => setRecordingState({ phase: "idle" }), 2500);
     }
-  }, [bridge, engine, setHistory, setRecordingState, settings, vocabulary]);
+  }, [bridge, engine, localizedError, setHistory, setRecordingState, settings, speechLocale, t, vocabulary]);
 
   const cancelRecording = useCallback(async () => {
     await bridge.cancel().catch(() => undefined);
@@ -235,12 +274,13 @@ function MainApp() {
   }, [startRecording, stopRecording]);
 
   useEffect(() => {
-    void bridge.status(settings.locale).then(setStatus).catch((error) => setMessage(String(error)));
-    void bridge.warmUp(settings.locale).catch(() => undefined);
+    void bridge.status(speechLocale).then(setStatus).catch((error) => setMessage(localizedError(error)));
+    void bridge.warmUp(speechLocale).catch(() => undefined);
     void bridge.settingsStatus().then(setDeviceStatus).catch(() => undefined);
     void isAutostartEnabled().then(setLaunchAtLogin).catch(() => undefined);
-    return () => void bridge.close();
-  }, [bridge, settings.locale]);
+  }, [bridge, localizedError, speechLocale]);
+
+  useEffect(() => () => { void bridge.close(); }, [bridge]);
 
   useEffect(() => {
     if (section !== "general") return;
@@ -298,9 +338,9 @@ function MainApp() {
           }
         });
       }
-    })().catch((error) => alive && setShortcutError(`登録できません: ${String(error)}`));
+    })().catch((error) => alive && setShortcutError(t("error.shortcut", { message: localizedError(error) })));
     return () => { alive = false; void unregisterAll(); };
-  }, [bridge, settings.holdShortcut, settings.toggleShortcut]);
+  }, [bridge, localizedError, settings.holdShortcut, settings.toggleShortcut, t]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -311,7 +351,7 @@ function MainApp() {
   return (
     <main className="app-shell">
       <div className="window-drag-region" data-tauri-drag-region />
-      <aside className="sidebar" aria-label="設定カテゴリ">
+      <aside className="sidebar" aria-label={t("aria.settingsCategories")}>
         <nav>{nav.map((item) => {
           const Icon = item.icon;
           return <Button
@@ -320,7 +360,7 @@ function MainApp() {
             key={item.id}
             onClick={() => setSection(item.id)}
           >
-            <Icon aria-hidden="true" />{item.label}
+            <Icon aria-hidden="true" />{t(item.label)}
           </Button>;
         })}</nav>
       </aside>
@@ -345,8 +385,8 @@ function MainApp() {
           }}
           onInstall={() => void (async () => {
             setInstalling(true);
-            try { await bridge.installModel(settings.locale); setStatus(await bridge.status(settings.locale)); }
-            catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+            try { await bridge.installModel(speechLocale); setStatus(await bridge.status(speechLocale)); }
+            catch (error) { setMessage(localizedError(error)); }
             finally { setInstalling(false); }
           })()}
         />}
@@ -367,21 +407,22 @@ function HistoryPage(props: {
   onToggle: () => void; onCancel: () => void; onSelect: (entry: HistoryEntry) => void;
   onPrompts: () => void; onClear: () => void;
 }) {
+  const { language, t } = useI18n();
   const active = props.phase !== "idle" && props.phase !== "done" && props.phase !== "error";
   return <>
     <Button variant="ghost" className={cn("record-card h-auto", active && "active")} onClick={props.onToggle}>
       <span className="mic-orb">{active ? <Square /> : <Mic />}</span>
-      <span><b>{active ? phaseLabel(props.phase) : "タップして音声入力を開始"}</b>{props.transcript && <small>{props.transcript}</small>}</span>
+      <span><b>{active ? phaseLabel(props.phase, t) : t("history.start")}</b>{props.transcript && <small>{props.transcript}</small>}</span>
     </Button>
-    {active && <Button variant="ghost" size="xs" className="cancel-link" onClick={props.onCancel}>キャンセル</Button>}
+    {active && <Button variant="ghost" size="xs" className="cancel-link" onClick={props.onCancel}>{t("history.cancel")}</Button>}
     <Button variant="ghost" className="refine-strip h-auto" onClick={props.onPrompts}>
-      <span className="strip-icon"><SlidersHorizontal /></span><span><b>整形設定</b><small>デフォルト・アプリ別のプロンプト</small></span><ChevronRight className="chevron" />
+      <span className="strip-icon"><SlidersHorizontal /></span><span><b>{t("history.refinement")}</b><small>{t("history.refinementDetail")}</small></span><ChevronRight className="chevron" />
     </Button>
-    <div className="list-heading"><span>履歴</span>{props.history.length > 0 && <Button variant="ghost" size="xs" onClick={props.onClear}><Trash2 />すべてクリア</Button>}</div>
+    <div className="list-heading"><span>{t("history.heading")}</span>{props.history.length > 0 && <Button variant="ghost" size="xs" onClick={props.onClear}><Trash2 />{t("history.clear")}</Button>}</div>
     <div className="history-list">
-      {props.history.length === 0 && <div className="empty-state">音声入力した内容がここに残ります</div>}
+      {props.history.length === 0 && <div className="empty-state">{t("history.empty")}</div>}
       {props.history.map((entry) => <Button variant="ghost" className="history-card h-auto" key={entry.id} onClick={() => props.onSelect(entry)}>
-        <div className="tags"><Badge variant="secondary">{entry.appName || "VoiceLatte"}</Badge><Badge variant="secondary">{entry.category}</Badge><time>{relativeTime(entry.createdAt)}</time></div>
+        <div className="tags"><Badge variant="secondary">{entry.appName || "VoiceLatte"}</Badge><Badge variant="secondary">{categoryLabel(entry.category, t)}</Badge><time>{relativeTime(entry.createdAt, language, t)}</time></div>
         <p>{entry.text}</p>
       </Button>)}
     </div>
@@ -399,46 +440,59 @@ function GeneralPage({ status, settings, setSettings, installing, deviceStatus, 
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility") => Promise<void>;
   onInstall: () => void;
 }) {
+  const { t } = useI18n();
   const locales = [
-    ["ja-JP", "日本語"], ["en-US", "英語（US）"], ["en-GB", "英語（UK）"],
-    ["zh-Hans", "中国語（簡体字）"], ["zh-Hant", "中国語（繁体字）"], ["ko-KR", "韓国語"],
-    ["de-DE", "ドイツ語"], ["fr-FR", "フランス語"], ["es-ES", "スペイン語"],
+    ["system", "general.systemDefault"], ["ja-JP", "language.ja"], ["en-US", "language.enUS"], ["en-GB", "language.enGB"],
+    ["zh-Hans", "language.zhHans"], ["zh-Hant", "language.zhHant"], ["ko-KR", "language.ko"],
+    ["de-DE", "language.de"], ["fr-FR", "language.fr"], ["es-ES", "language.es"],
   ] as const;
   return <div className="settings-stack">
-    <p className="settings-group-label">音声認識</p>
-    <Card className="glass-card model-card gap-0 py-0">
-      <div><span className={`status-dot ${status?.modelState === "ready" ? "ready" : ""}`} /><b>{status ? engineLabel(status.backend) : "確認中"}</b></div>
-      <p>{status?.message ?? "音声認識モデルを確認しています…"}</p>
-      {status?.modelState === "download-required" && <Button variant="outline" size="sm" className="secondary-button" onClick={onInstall} disabled={installing}>{installing ? "追加しています…" : "高精度モデルを追加"}</Button>}
-    </Card>
-    <SettingRow label="言語" detail="音声認識に使う言語">
-      <Select value={settings.locale} onValueChange={(locale) => setSettings((s) => ({ ...s, locale }))}>
+    <p className="settings-group-label">{t("general.interface")}</p>
+    <SettingRow label={t("general.appLanguage")} detail={t("general.appLanguageDetail")}>
+      <Select value={settings.appLanguage} onValueChange={(value) => setSettings((current) => settingsWithAppLanguage(current, value as UiLanguagePreference))}>
         <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
-        <SelectContent>{locales.map(([value, label]) => <SelectItem value={value} key={value}>{label}</SelectItem>)}</SelectContent>
+        <SelectContent>
+          <SelectItem value="system">{t("general.systemDefault")}</SelectItem>
+          <SelectItem value="en">English</SelectItem>
+          <SelectItem value="ja">日本語</SelectItem>
+        </SelectContent>
       </Select>
     </SettingRow>
-    {deviceStatus?.platform === "macos" && <SettingRow label="マイク" detail="音声入力に使うデバイス">
+
+    <p className="settings-group-label">{t("general.speech")}</p>
+    <Card className="glass-card model-card gap-0 py-0">
+      <div><span className={`status-dot ${status?.modelState === "ready" ? "ready" : ""}`} /><b>{status ? engineLabel(status.backend, t) : t("general.checking")}</b></div>
+      <p>{modelStatusMessage(status, t)}</p>
+      {status?.modelState === "download-required" && <Button variant="outline" size="sm" className="secondary-button" onClick={onInstall} disabled={installing}>{installing ? t("general.addingModel") : t("general.addModel")}</Button>}
+    </Card>
+    <SettingRow label={t("general.speechLanguage")} detail={t("general.speechLanguageDetail")}>
+      <Select value={settings.locale} onValueChange={(locale) => setSettings((s) => ({ ...s, locale }))}>
+        <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+        <SelectContent>{locales.map(([value, label]) => <SelectItem value={value} key={value}>{t(label)}</SelectItem>)}</SelectContent>
+      </Select>
+    </SettingRow>
+    {deviceStatus?.platform === "macos" && <SettingRow label={t("general.microphone")} detail={t("general.microphoneDetail")}>
       <Select value={settings.microphoneUID || "system"} onValueChange={(microphoneUID) => setSettings((s) => ({ ...s, microphoneUID: microphoneUID === "system" ? "" : microphoneUID }))}>
         <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
-        <SelectContent><SelectItem value="system">システムの既定</SelectItem>{deviceStatus.devices.map((device) => <SelectItem value={device.uid} key={device.uid}>{device.name}</SelectItem>)}</SelectContent>
+        <SelectContent><SelectItem value="system">{t("general.systemDefault")}</SelectItem>{deviceStatus.devices.map((device) => <SelectItem value={device.uid} key={device.uid}>{device.name}</SelectItem>)}</SelectContent>
       </Select>
     </SettingRow>}
-    {deviceStatus?.platform === "macos" && <SettingRow label="録音中は他の音声をミュート" detail="音楽などを一時的に消音します"><Switch checked={settings.muteOtherAudio} onCheckedChange={(muteOtherAudio) => setSettings((s) => ({ ...s, muteOtherAudio }))} /></SettingRow>}
-    <p className="settings-note">音声はデバイス上で処理され、サーバーには送信されません。</p>
+    {deviceStatus?.platform === "macos" && <SettingRow label={t("general.muteAudio")} detail={t("general.muteAudioDetail")}><Switch checked={settings.muteOtherAudio} onCheckedChange={(muteOtherAudio) => setSettings((s) => ({ ...s, muteOtherAudio }))} /></SettingRow>}
+    <p className="settings-note">{t("general.onDevice")}</p>
 
-    <p className="settings-group-label">出力と整形</p>
-    <SettingRow label="カーソル位置へ自動入力" detail="オフの場合もクリップボードと履歴には残ります"><Switch checked={settings.autoPaste} onCheckedChange={(autoPaste) => setSettings((s) => ({ ...s, autoPaste }))} /></SettingRow>
-    <SettingRow label="AI整形" detail="使えない場合はルール整形へ自動で切り替え"><Switch checked={settings.refinement} onCheckedChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
+    <p className="settings-group-label">{t("general.output")}</p>
+    <SettingRow label={t("general.autoPaste")} detail={t("general.autoPasteDetail")}><Switch checked={settings.autoPaste} onCheckedChange={(autoPaste) => setSettings((s) => ({ ...s, autoPaste }))} /></SettingRow>
+    <SettingRow label={t("general.refinement")} detail={t("general.refinementDetail")}><Switch checked={settings.refinement} onCheckedChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
 
-    <p className="settings-group-label">起動</p>
-    <SettingRow label="ログイン時に起動" detail="PCへのログイン後、自動で待機します"><Switch checked={launchAtLogin} onCheckedChange={(enabled) => void onLaunchAtLogin(enabled)} /></SettingRow>
+    <p className="settings-group-label">{t("general.startup")}</p>
+    <SettingRow label={t("general.launchAtLogin")} detail={t("general.launchAtLoginDetail")}><Switch checked={launchAtLogin} onCheckedChange={(enabled) => void onLaunchAtLogin(enabled)} /></SettingRow>
 
     {deviceStatus?.platform === "macos" && <>
-      <p className="settings-group-label">権限</p>
+      <p className="settings-group-label">{t("general.permissions")}</p>
       <Card className="glass-card permissions-card gap-0 py-0">
-        <PermissionRow label="マイク" status={deviceStatus.microphonePermission} onAction={() => onRequestPermission("microphone")} />
-        <PermissionRow label="音声認識" status={deviceStatus.speechPermission} onAction={() => onRequestPermission("speech")} />
-        <PermissionRow label="アクセシビリティ" detail="カーソル位置への自動入力に使います" status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
+        <PermissionRow label={t("permission.microphone")} status={deviceStatus.microphonePermission} onAction={() => onRequestPermission("microphone")} />
+        <PermissionRow label={t("permission.speech")} status={deviceStatus.speechPermission} onAction={() => onRequestPermission("speech")} />
+        <PermissionRow label={t("permission.accessibility")} detail={t("permission.accessibilityDetail")} status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
       </Card>
     </>}
   </div>;
@@ -450,15 +504,17 @@ function PermissionRow({ label, detail, status, onAction }: {
   status: DeviceSettingsStatus["microphonePermission"] | DeviceSettingsStatus["accessibilityPermission"];
   onAction: () => Promise<void>;
 }) {
+  const { t } = useI18n();
   const granted = status === "authorized" || status === "not-required";
   return <div className="permission-row">
     <span className={cn("permission-mark", granted && "granted")}>{granted ? <Check /> : <AlertCircle />}</span>
     <div><b>{label}</b>{detail && <small>{detail}</small>}</div>
-    {granted ? <span className="permission-state">許可済み</span> : <Button variant="outline" size="xs" className="secondary-button" onClick={() => void onAction()}>{status === "not-determined" ? "許可する" : "設定を開く"}</Button>}
+    {granted ? <span className="permission-state">{t("permission.granted")}</span> : <Button variant="outline" size="xs" className="secondary-button" onClick={() => void onAction()}>{status === "not-determined" ? t("permission.allow") : t("permission.openSettings")}</Button>}
   </div>;
 }
 
 function VocabularyPage({ entries, setEntries }: { entries: VocabularyEntry[]; setEntries: React.Dispatch<React.SetStateAction<VocabularyEntry[]>> }) {
+  const { t } = useI18n();
   const [term, setTerm] = useState("");
   const [aliases, setAliases] = useState<string[]>([]);
   const [aliasDraft, setAliasDraft] = useState("");
@@ -476,20 +532,20 @@ function VocabularyPage({ entries, setEntries }: { entries: VocabularyEntry[]; s
   };
   return <div className="settings-stack">
     <Card className="glass-card add-word gap-3 py-3">
-      <label className="dictionary-field"><span>正しい表記</span><Input value={term} maxLength={80} onChange={(e) => setTerm(e.target.value)} placeholder="例：音声入力" /></label>
-      <div className="dictionary-field"><span>読み・誤認識</span><div className="alias-input" onClick={() => aliasInput.current?.focus()}>
-        {aliases.map((alias) => <Badge variant="secondary" className="alias-tag" key={alias}>{alias}<button type="button" aria-label={`${alias}を削除`} onClick={(event) => { event.stopPropagation(); setAliases((items) => items.filter((item) => item !== alias)); }}><X /></button></Badge>)}
-        <Input ref={aliasInput} className="alias-editor" value={aliasDraft} maxLength={80} aria-label="読みや誤認識を追加" onChange={(event) => setAliasDraft(event.target.value)} onKeyDown={(event) => {
+      <label className="dictionary-field"><span>{t("vocabulary.term")}</span><Input value={term} maxLength={80} onChange={(e) => setTerm(e.target.value)} placeholder={t("vocabulary.termPlaceholder")} /></label>
+      <div className="dictionary-field"><span>{t("vocabulary.aliases")}</span><div className="alias-input" onClick={() => aliasInput.current?.focus()}>
+        {aliases.map((alias) => <Badge variant="secondary" className="alias-tag" key={alias}>{alias}<button type="button" aria-label={t("vocabulary.remove", { term: alias })} onClick={(event) => { event.stopPropagation(); setAliases((items) => items.filter((item) => item !== alias)); }}><X /></button></Badge>)}
+        <Input ref={aliasInput} className="alias-editor" value={aliasDraft} maxLength={80} aria-label={t("vocabulary.aliasAria")} onChange={(event) => setAliasDraft(event.target.value)} onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
           if (event.key === "Enter") { event.preventDefault(); commitAliases(); }
           if (event.key === "Backspace" && !aliasDraft && aliases.length > 0) setAliases((items) => items.slice(0, -1));
-        }} placeholder={aliases.length > 0 ? "追加…" : "例：オンエー入力"} />
+        }} placeholder={aliases.length > 0 ? t("vocabulary.addMore") : t("vocabulary.aliasPlaceholder")} />
       </div></div>
-      <Button size="sm" className="dictionary-add" onClick={add} disabled={!term.trim()}>追加</Button>
+      <Button size="sm" className="dictionary-add" onClick={add} disabled={!term.trim()}>{t("vocabulary.add")}</Button>
     </Card>
-    <p className="helper">読みや間違って認識される表記を入力し、Enterで複数追加できます。</p>
-    <div className="dictionary-example"><span>例：</span><Badge variant="secondary">オンエー入力</Badge><Badge variant="secondary">音声入浴</Badge><Badge variant="secondary">音声入力機</Badge></div>
-    {entries.map((entry) => <Card className="word-row gap-2 py-0" key={entry.id}><div><b>{entry.term}</b>{entry.aliases.length > 0 ? <div className="word-aliases">{entry.aliases.map((alias) => <Badge variant="secondary" key={alias}>{alias}</Badge>)}</div> : <small>認識ヒントとして使用</small>}</div><Button variant="ghost" size="icon-xs" aria-label={`${entry.term}を削除`} onClick={() => setEntries((items) => items.filter((item) => item.id !== entry.id))}><Trash2 /></Button></Card>)}
+    <p className="helper">{t("vocabulary.helper")}</p>
+    <div className="dictionary-example"><span>{t("vocabulary.example")}</span><Badge variant="secondary">{t("vocabulary.exampleOne")}</Badge><Badge variant="secondary">{t("vocabulary.exampleTwo")}</Badge><Badge variant="secondary">{t("vocabulary.exampleThree")}</Badge></div>
+    {entries.map((entry) => <Card className="word-row gap-2 py-0" key={entry.id}><div><b>{entry.term}</b>{entry.aliases.length > 0 ? <div className="word-aliases">{entry.aliases.map((alias) => <Badge variant="secondary" key={alias}>{alias}</Badge>)}</div> : <small>{t("vocabulary.hintOnly")}</small>}</div><Button variant="ghost" size="icon-xs" aria-label={t("vocabulary.remove", { term: entry.term })} onClick={() => setEntries((items) => items.filter((item) => item.id !== entry.id))}><Trash2 /></Button></Card>)}
   </div>;
 }
 
@@ -499,6 +555,7 @@ function ShortcutPage({ settings, setSettings, error, onCaptureChange }: {
   error: string;
   onCaptureChange: (capturing: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [capturing, setCapturing] = useState<"toggle" | "hold" | null>(null);
   const setToggleShortcut = useCallback((toggleShortcut: string) => {
     setSettings((current) => ({ ...current, toggleShortcut }));
@@ -514,14 +571,15 @@ function ShortcutPage({ settings, setSettings, error, onCaptureChange }: {
   }, [capturing, onCaptureChange]);
 
   return <div className="settings-stack">
-    <SettingRow label="録音の開始 / 停止" detail="短く押すと開始し、もう一度押すと停止します"><ShortcutRecorder value={settings.toggleShortcut} active={capturing === "toggle"} onStart={() => setCapturing("toggle")} onChange={setToggleShortcut} /></SettingRow>
-    <SettingRow label="押している間だけ入力" detail="長押し中に録音し、離すと確定します"><ShortcutRecorder value={settings.holdShortcut} active={capturing === "hold"} onStart={() => setCapturing("hold")} onChange={setHoldShortcut} /></SettingRow>
-    <p className="helper">同じキーも設定できます。同じ場合は短押しと300ms以上の長押しを自動で判別します。</p>
+    <SettingRow label={t("shortcuts.toggle")} detail={t("shortcuts.toggleDetail")}><ShortcutRecorder value={settings.toggleShortcut} active={capturing === "toggle"} onStart={() => setCapturing("toggle")} onChange={setToggleShortcut} /></SettingRow>
+    <SettingRow label={t("shortcuts.hold")} detail={t("shortcuts.holdDetail")}><ShortcutRecorder value={settings.holdShortcut} active={capturing === "hold"} onStart={() => setCapturing("hold")} onChange={setHoldShortcut} /></SettingRow>
+    <p className="helper">{t("shortcuts.helper")}</p>
     {error && <p className="inline-error">{error}</p>}
   </div>;
 }
 
 function ShortcutRecorder({ value, active, onStart, onChange }: { value: string; active: boolean; onStart: () => void; onChange: (value: string) => void }) {
+  const { t } = useI18n();
   const modifierOnly = useRef("");
   useEffect(() => {
     if (!active) return;
@@ -553,23 +611,25 @@ function ShortcutRecorder({ value, active, onStart, onChange }: { value: string;
       window.removeEventListener("keyup", keyUp, true);
     };
   }, [active, onChange]);
-  return <Button variant="outline" size="sm" className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? "キーを押してください" : prettyShortcut(value)}</Button>;
+  return <Button variant="outline" size="sm" className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? t("shortcuts.press") : prettyShortcut(value)}</Button>;
 }
 
 function AboutPage() {
-  return <Card className="glass-card about gap-0 py-0"><div className="about-mark"><Mic /></div><b>VoiceLatte</b><p>Mac / Windows対応の、無料で使えるオンデバイス音声入力。</p><small>Version 0.1.0 Tauri preview</small></Card>;
+  const { t } = useI18n();
+  return <Card className="glass-card about gap-0 py-0"><div className="about-mark"><Mic /></div><b>VoiceLatte</b><p>{t("about.tagline")}</p><small>{t("about.version")}</small></Card>;
 }
 
 function PromptDialog({ settings, setSettings, onClose }: { settings: Settings; setSettings: React.Dispatch<React.SetStateAction<Settings>>; onClose: () => void }) {
+  const { t } = useI18n();
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="modal prompt-modal sm:max-w-[520px]">
-      <DialogHeader><DialogTitle>整形設定</DialogTitle><DialogDescription>用途ごとの指示を変更できます</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>{t("prompt.title")}</DialogTitle><DialogDescription>{t("prompt.description")}</DialogDescription></DialogHeader>
       <div className="prompt-fields">
-        <PromptField label="デフォルト" value={settings.defaultPrompt} onChange={(defaultPrompt) => setSettings((s) => ({ ...s, defaultPrompt }))} />
-        <PromptField label="ChatGPT / チャット" value={settings.chatPrompt} onChange={(chatPrompt) => setSettings((s) => ({ ...s, chatPrompt }))} />
-        <PromptField label="Code / ターミナル" value={settings.codePrompt} onChange={(codePrompt) => setSettings((s) => ({ ...s, codePrompt }))} />
+        <PromptField label={t("prompt.default")} value={settings.defaultPrompt} onChange={(defaultPrompt) => setSettings((s) => ({ ...s, defaultPrompt }))} />
+        <PromptField label={t("prompt.chat")} value={settings.chatPrompt} onChange={(chatPrompt) => setSettings((s) => ({ ...s, chatPrompt }))} />
+        <PromptField label={t("prompt.code")} value={settings.codePrompt} onChange={(codePrompt) => setSettings((s) => ({ ...s, codePrompt }))} />
       </div>
-      <DialogFooter className="dialog-actions"><Button onClick={onClose}>完了</Button></DialogFooter>
+      <DialogFooter className="dialog-actions"><Button onClick={onClose}>{t("action.done")}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
@@ -583,12 +643,13 @@ function PromptField({ label, value, onChange }: { label: string; value: string;
 }
 
 function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () => void }) {
+  const { language, t } = useI18n();
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="modal history-modal sm:max-w-[520px]">
-      <DialogHeader><DialogTitle>入力内容</DialogTitle><DialogDescription>{new Date(entry.createdAt).toLocaleString()}</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>{t("historyDialog.title")}</DialogTitle><DialogDescription>{new Date(entry.createdAt).toLocaleString(language)}</DialogDescription></DialogHeader>
       <div className="history-full">{entry.text}</div>
-      {entry.raw !== entry.text && <details><summary>整形前を表示</summary><div className="history-raw">{entry.raw}</div></details>}
-      <DialogFooter className="dialog-actions"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(entry.text)}><Copy />コピー</Button><Button onClick={onClose}>閉じる</Button></DialogFooter>
+      {entry.raw !== entry.text && <details><summary>{t("historyDialog.showRaw")}</summary><div className="history-raw">{entry.raw}</div></details>}
+      <DialogFooter className="dialog-actions"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(entry.text)}><Copy />{t("action.copy")}</Button><Button onClick={onClose}>{t("action.close")}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
@@ -598,7 +659,8 @@ function SettingRow({ label, detail, children }: { label: string; detail: string
 }
 
 function Hud() {
-  const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", level: 0, engine: "" });
+  const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", level: 0, engine: "", uiLanguage: systemUiLanguage });
+  const t = useMemo(() => createTranslator(state.uiLanguage ?? systemUiLanguage), [state.uiLanguage]);
   const transcriptViewRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const hudWindow = getCurrentWindow();
@@ -625,9 +687,9 @@ function Hud() {
   }, [state.transcript]);
   return <main className={`hud ${state.phase}`} data-tauri-drag-region>
     <div className="hud-orb"><span className="hud-pulse" /><span className="hud-mic">●</span></div>
-    <div className="hud-copy"><small>{phaseLabel(state.phase)}</small><b ref={transcriptViewRef} className={!state.transcript && state.phase === "listening" ? "placeholder" : undefined}>{state.transcript || (state.phase === "listening" ? "どうぞ" : state.message) || "どうぞ"}</b></div>
-    <div className="hud-meter" aria-label="マイク音量">{Array.from({ length: 7 }, (_, i) => <i key={i} className={i / 7 < state.level ? "lit" : ""} />)}</div>
-    {(state.phase === "listening" || state.phase === "preparing") && <Button variant="ghost" className="hud-stop h-9 rounded-none" onClick={() => void emitTo("main", "hud-stop")}><Square />停止</Button>}
+    <div className="hud-copy"><small>{phaseLabel(state.phase, t)}</small><b ref={transcriptViewRef} className={!state.transcript && state.phase === "listening" ? "placeholder" : undefined}>{state.transcript || (state.phase === "listening" ? t("hud.prompt") : state.message) || t("hud.prompt")}</b></div>
+    <div className="hud-meter" aria-label={t("hud.audioLevel")}>{Array.from({ length: 7 }, (_, i) => <i key={i} className={i / 7 < state.level ? "lit" : ""} />)}</div>
+    {(state.phase === "listening" || state.phase === "preparing") && <Button variant="ghost" className="hud-stop h-9 rounded-none" onClick={() => void emitTo("main", "hud-stop")}><Square />{t("hud.stop")}</Button>}
   </main>;
 }
 
@@ -647,28 +709,68 @@ function prettyShortcut(shortcut: string) {
   return shortcut.replace("CommandOrControl", "⌘/Ctrl").replace("Control", "⌃").replace("Option", "⌥").replace("Command", "⌘").split("+").join(" ");
 }
 
-function phaseLabel(phase: Phase) {
-  if (phase === "preparing") return "準備中";
-  if (phase === "listening") return "聞き取り中";
-  if (phase === "processing") return "整形中";
-  if (phase === "done") return "完了";
-  if (phase === "error") return "エラー";
-  return "待機中";
+function phaseLabel(phase: Phase, t: Translator) {
+  if (phase === "preparing") return t("state.preparing");
+  if (phase === "listening") return t("state.listening");
+  if (phase === "processing") return t("state.processing");
+  if (phase === "done") return t("state.done");
+  if (phase === "error") return t("state.error");
+  return t("state.idle");
 }
 
-function relativeTime(time: number) {
+function relativeTime(time: number, language: UiLanguage, t: Translator) {
   const minutes = Math.floor((Date.now() - time) / 60000);
-  if (minutes < 1) return "たった今";
-  if (minutes < 60) return `${minutes}分前`;
-  if (minutes < 1440) return `${Math.floor(minutes / 60)}時間前`;
-  return new Date(time).toLocaleDateString();
+  if (minutes < 1) return t("relative.justNow");
+  if (minutes < 60) return t("relative.minutes", { count: minutes });
+  if (minutes < 1440) return t("relative.hours", { count: Math.floor(minutes / 60) });
+  return new Date(time).toLocaleDateString(language);
 }
 
-function engineLabel(backend: string) {
-  if (backend === "apple-speech-analyzer") return "Apple高精度モデル";
-  if (backend === "apple-speech-classic") return "Apple標準モデル（自動フォールバック）";
-  if (backend === "windows-speech-classic") return "Windows標準モデル（自動フォールバック）";
-  return "Microsoft Windows AI Speech";
+function engineLabel(backend: string, t: Translator) {
+  if (backend === "apple-speech-analyzer") return t("engine.appleEnhanced");
+  if (backend === "apple-speech-classic") return t("engine.appleClassic");
+  if (backend === "windows-speech-classic") return t("engine.windowsClassic");
+  return t("engine.windowsAI");
+}
+
+function modelStatusMessage(status: SpeechStatus | null, t: Translator) {
+  if (!status || status.modelState === "unknown") return t("general.modelChecking");
+  if (status.modelState === "download-required") return t("general.modelDownload");
+  if (status.modelState === "unsupported") return t("general.modelUnsupported");
+  if (status.backend === "apple-speech-classic") return t("general.modelReadyAppleClassic");
+  return status.platform === "windows" ? t("general.modelReadyWindows") : t("general.modelReadyApple");
+}
+
+function categoryLabel(category: string, t: Translator) {
+  const key = `category.${category}` as MessageKey;
+  return ["chat", "email", "code", "terminal", "notes", "browser", "generic"].includes(category) ? t(key) : category;
+}
+
+function settingsWithAppLanguage(settings: Settings, appLanguage: UiLanguagePreference): Settings {
+  const nextDefaults = defaultPrompts(resolveUiLanguage(appLanguage));
+  const jaDefaults = defaultPrompts("ja");
+  const enDefaults = defaultPrompts("en");
+  const builtIn = (key: keyof ReturnType<typeof defaultPrompts>) => settings[key] === jaDefaults[key] || settings[key] === enDefaults[key];
+  return {
+    ...settings,
+    appLanguage,
+    defaultPrompt: builtIn("defaultPrompt") ? nextDefaults.defaultPrompt : settings.defaultPrompt,
+    chatPrompt: builtIn("chatPrompt") ? nextDefaults.chatPrompt : settings.chatPrompt,
+    codePrompt: builtIn("codePrompt") ? nextDefaults.codePrompt : settings.codePrompt,
+  };
+}
+
+function normalizeSettings(stored: unknown): Settings {
+  if (!stored || typeof stored !== "object") return DEFAULT_SETTINGS;
+  const legacy = stored as Partial<Settings>;
+  const appLanguage: UiLanguagePreference = ["system", "ja", "en"].includes(legacy.appLanguage ?? "")
+    ? legacy.appLanguage as UiLanguagePreference
+    : "system";
+  const settings = { ...DEFAULT_SETTINGS, ...legacy, appLanguage };
+  if (legacy.appLanguage === undefined) {
+    return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
+  }
+  return settings;
 }
 
 export default Root;

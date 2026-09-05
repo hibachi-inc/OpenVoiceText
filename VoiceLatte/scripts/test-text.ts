@@ -6,6 +6,7 @@ import {
   postProcessTranscript,
   vocabularyHints,
 } from "../src/text-processing.ts";
+import { createTranslator, defaultPrompts, resolveSpeechLocale, resolveUiLanguage } from "../src/i18n.ts";
 
 assert.equal(
   postProcessTranscript("100,000円のお金が200,000円になった", []),
@@ -46,4 +47,14 @@ assert.match(
   buildRefinementPrompt("句読点を整える", [{ id: "1", term: "VoiceLatte", aliases: ["ボイスラテ"] }]),
   /ボイスラテ → VoiceLatte/,
 );
+assert.match(
+  buildRefinementPrompt("Keep wording", [{ id: "1", term: "VoiceLatte", aliases: ["Voice Latte"] }], "en-US"),
+  /Custom vocabulary/,
+);
+assert.equal(createTranslator("en")("nav.general"), "Preferences");
+assert.match(defaultPrompts("en").defaultPrompt, /Do not paraphrase/);
+assert.equal(resolveUiLanguage("system", "ja-JP"), "ja");
+assert.equal(resolveUiLanguage("system", "fr-FR"), "en");
+assert.equal(resolveSpeechLocale("system", ["de-DE", "en-US"]), "de-DE");
+assert.equal(resolveSpeechLocale("ja-JP", ["en-US"]), "ja-JP");
 console.log("text processing: ok");
