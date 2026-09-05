@@ -30,7 +30,7 @@ export function parseVocabularyAliases(value: string, term: string) {
 }
 
 export function vocabularyHints(entries: VocabularyEntry[]) {
-  return [...new Set(entries.map((entry) => entry.term.trim()).filter(Boolean))].slice(0, MAX_NATIVE_HINTS);
+  return [...new Set(entries.flatMap((entry) => [entry.term, ...entry.aliases]).map((value) => value.trim()).filter(Boolean))].slice(0, MAX_NATIVE_HINTS);
 }
 
 export function buildRefinementPrompt(basePrompt: string, entries: VocabularyEntry[]) {
@@ -54,10 +54,9 @@ export function postProcessTranscript(text: string, entries: VocabularyEntry[]) 
   }
 
   const aliases = [...replacements.keys()].sort((a, b) => b.length - a.length);
-  const normalized = aliases.length > 0 ? text.normalize("NFKC") : text;
   const corrected = aliases.length > 0
-    ? normalized.replace(new RegExp(aliases.map(escapeRegExp).join("|"), "gu"), (match) => replacements.get(match) ?? match)
-    : normalized;
+    ? text.replace(new RegExp(aliases.map(escapeRegExp).join("|"), "gu"), (match) => replacements.get(match) ?? match)
+    : text;
 
   return corrected
     .replace(/(?<![\d,])(\d{1,3}(?:,\d{3})+|\d+)円/g, (match, raw: string) => {
@@ -70,13 +69,20 @@ export function postProcessTranscript(text: string, entries: VocabularyEntry[]) 
 }
 
 function uniqueAliases(values: string[], term: string) {
-  const normalizedTerm = term.normalize("NFKC");
-  return [...new Set(values.map((value) => value.trim()).filter((value) => value && value.normalize("NFKC") !== normalizedTerm))].slice(0, 8);
+  const exactTerm = term.trim();
+  return [...new Set(values.map((value) => value.trim()).filter((value) => value && value !== exactTerm))].slice(0, 8);
 }
 
 function kanaVariants(value: string) {
   const normalized = value.normalize("NFKC");
-  return new Set([normalized, convertKana(normalized, -0x60), convertKana(normalized, 0x60)]);
+  return new Set([
+    value,
+    normalized,
+    convertKana(value, -0x60),
+    convertKana(value, 0x60),
+    convertKana(normalized, -0x60),
+    convertKana(normalized, 0x60),
+  ]);
 }
 
 function convertKana(value: string, offset: number) {

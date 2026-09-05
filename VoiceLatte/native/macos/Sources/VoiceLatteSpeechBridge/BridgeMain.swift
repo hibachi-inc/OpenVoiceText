@@ -14,6 +14,7 @@ private struct BridgeRequest: Decodable {
     let category: String?
     let prompt: String?
     let shortcut: String?
+    let shortcuts: [String]?
     let deviceUID: String?
     let muteOtherAudio: Bool?
     let permission: String?
@@ -39,6 +40,7 @@ private struct BridgeResponse: Encodable {
     var bundleID: String? = nil
     var category: String? = nil
     var promptKey: String? = nil
+    var shortcut: String? = nil
     var devices: [AudioDeviceResponse]? = nil
     var microphonePermission: String? = nil
     var speechPermission: String? = nil
@@ -105,16 +107,17 @@ private final class Bridge: @unchecked Sendable {
             output.send(.init(id: request.id, type: "inserted", text: request.text ?? ""))
         case "configure_shortcut":
             await MainActor.run {
-                if (request.shortcut ?? "").isEmpty {
+                let shortcuts = request.shortcuts ?? request.shortcut.map { [$0] } ?? []
+                if shortcuts.isEmpty {
                     hotkey?.disable()
                     return
                 }
                 if hotkey == nil {
-                    hotkey = ModifierHotkey { [weak self] state in
-                        self?.output.send(.init(id: 0, type: "shortcut", message: state))
+                    hotkey = ModifierHotkey { [weak self] shortcut, state in
+                        self?.output.send(.init(id: 0, type: "shortcut", message: state, shortcut: shortcut))
                     }
                 }
-                hotkey?.configure(request.shortcut ?? "Control")
+                hotkey?.configure(shortcuts)
             }
             output.send(.init(id: request.id, type: "ready", message: "ショートカットを設定しました"))
         default:
@@ -418,42 +421,44 @@ private enum AudioOutput {
 
 @MainActor
 private final class ModifierHotkey {
-    private let emit: @Sendable (String) -> Void
+    private let emit: @Sendable (String, String) -> Void
     private var timer: Timer?
-    private var target: NSEvent.ModifierFlags = .control
-    private var pressed = false
+    private var targets: [String: NSEvent.ModifierFlags] = [:]
+    private var pressed: Set<String> = []
 
-    init(emit: @escaping @Sendable (String) -> Void) {
+    init(emit: @escaping @Sendable (String, String) -> Void) {
         self.emit = emit
     }
 
-    func configure(_ shortcut: String) {
+    func configure(_ shortcuts: [String]) {
         disable()
-        target = switch shortcut {
-        case "Option": .option
-        case "Command": .command
-        case "Shift": .shift
-        default: .control
+        for shortcut in Set(shortcuts) {
+            targets[shortcut] = switch shortcut {
+            case "Option": .option
+            case "Command": .command
+            case "Shift": .shift
+            default: .control
+            }
         }
-        let monitoredTarget = target
+        let monitoredTargets = targets
         timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
-            let isPressed = NSEvent.modifierFlags
-                .intersection(.deviceIndependentFlagsMask)
-                .contains(monitoredTarget)
-            Task { @MainActor in self?.handle(isPressed) }
+            let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let states = monitoredTargets.map { ($0.key, flags.contains($0.value)) }
+            Task { @MainActor [weak self] in states.forEach { self?.handle($0.0, pressed: $0.1) } }
         }
     }
 
     func disable() {
         timer?.invalidate()
         timer = nil
-        pressed = false
+        pressed.removeAll()
+        targets.removeAll()
     }
 
-    private func handle(_ nowPressed: Bool) {
-        guard nowPressed != pressed else { return }
-        pressed = nowPressed
-        emit(nowPressed ? "Pressed" : "Released")
+    private func handle(_ shortcut: String, pressed nowPressed: Bool) {
+        guard nowPressed != pressed.contains(shortcut) else { return }
+        if nowPressed { pressed.insert(shortcut) } else { pressed.remove(shortcut) }
+        emit(shortcut, nowPressed ? "Pressed" : "Released")
     }
 }
 

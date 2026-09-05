@@ -36,9 +36,15 @@ if (response.id !== 1 || response.type !== "status" || response.platform !== exp
 }
 
 const settings = await request({ id: 2, command: "settings_status" });
-child.stdin.end();
 if (settings.id !== 2 || settings.type !== "settings" || !Array.isArray(settings.devices)) {
   throw new Error(`Unexpected settings response: ${JSON.stringify(settings)}`);
 }
+
+const shortcuts = await request({ id: 3, command: "configure_shortcut", shortcuts: ["Control", "Shift"] });
+if (shortcuts.id !== 3 || shortcuts.type !== "ready") {
+  throw new Error(`Unexpected shortcut response: ${JSON.stringify(shortcuts)}`);
+}
+await request({ id: 4, command: "configure_shortcut", shortcuts: [] });
+child.stdin.end();
 
 console.log(`${response.backend}: ${response.modelState}`);

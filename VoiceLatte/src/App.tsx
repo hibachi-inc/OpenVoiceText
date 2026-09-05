@@ -255,7 +255,7 @@ function MainApp() {
     setShortcutError("");
     void (async () => {
       await unregisterAll();
-      await bridge.configureModifierShortcut("", () => undefined);
+      await bridge.configureModifierShortcuts([], () => undefined);
       const toggleModifierOnly = isModifierOnlyShortcut(settings.toggleShortcut);
       const holdModifierOnly = isModifierOnlyShortcut(settings.holdShortcut);
       const sharedShortcut = settings.toggleShortcut === settings.holdShortcut;
@@ -273,11 +273,10 @@ function MainApp() {
         }
       };
       if (sharedShortcut) {
-        if (toggleModifierOnly) await bridge.configureModifierShortcut(settings.toggleShortcut, handleSharedShortcut);
+        if (toggleModifierOnly) await bridge.configureModifierShortcuts([settings.toggleShortcut], (_shortcut, state) => handleSharedShortcut(state));
         else await register(settings.toggleShortcut, (event) => handleSharedShortcut(event.state));
         return;
       }
-      if (toggleModifierOnly && holdModifierOnly) throw new Error("修飾キー単体を両方に使う場合は、同じキーを設定してください");
       if (!toggleModifierOnly) {
         await register(settings.toggleShortcut, (event) => {
           if (!shortcutCaptureRef.current && event.state === "Pressed") actionRef.current("toggle");
@@ -288,13 +287,13 @@ function MainApp() {
           if (!shortcutCaptureRef.current) actionRef.current(event.state === "Pressed" ? "hold-start" : "hold-stop");
         });
       }
-      const modifierShortcut = toggleModifierOnly ? settings.toggleShortcut : holdModifierOnly ? settings.holdShortcut : "";
-      if (modifierShortcut) {
-        await bridge.configureModifierShortcut(modifierShortcut, (state) => {
+      const modifierShortcuts = [toggleModifierOnly && settings.toggleShortcut, holdModifierOnly && settings.holdShortcut].filter((shortcut): shortcut is string => Boolean(shortcut));
+      if (modifierShortcuts.length > 0) {
+        await bridge.configureModifierShortcuts(modifierShortcuts, (shortcut, state) => {
           if (shortcutCaptureRef.current) return;
-          if (toggleModifierOnly) {
+          if (shortcut === settings.toggleShortcut) {
             if (state === "Pressed") actionRef.current("toggle");
-          } else {
+          } else if (shortcut === settings.holdShortcut) {
             actionRef.current(state === "Pressed" ? "hold-start" : "hold-stop");
           }
         });
@@ -500,23 +499,34 @@ function ShortcutPage({ settings, setSettings, error, onCaptureChange }: {
   error: string;
   onCaptureChange: (capturing: boolean) => void;
 }) {
+  const [capturing, setCapturing] = useState<"toggle" | "hold" | null>(null);
+  const setToggleShortcut = useCallback((toggleShortcut: string) => {
+    setSettings((current) => ({ ...current, toggleShortcut }));
+    setCapturing(null);
+  }, [setSettings]);
+  const setHoldShortcut = useCallback((holdShortcut: string) => {
+    setSettings((current) => ({ ...current, holdShortcut }));
+    setCapturing(null);
+  }, [setSettings]);
+  useEffect(() => {
+    onCaptureChange(capturing !== null);
+    return () => onCaptureChange(false);
+  }, [capturing, onCaptureChange]);
+
   return <div className="settings-stack">
-    <SettingRow label="録音の開始 / 停止" detail="短く押すと開始し、もう一度押すと停止します"><ShortcutRecorder value={settings.toggleShortcut} onChange={(toggleShortcut) => setSettings((current) => ({ ...current, toggleShortcut }))} onCaptureChange={onCaptureChange} /></SettingRow>
-    <SettingRow label="押している間だけ入力" detail="長押し中に録音し、離すと確定します"><ShortcutRecorder value={settings.holdShortcut} onChange={(holdShortcut) => setSettings((current) => ({ ...current, holdShortcut }))} onCaptureChange={onCaptureChange} /></SettingRow>
+    <SettingRow label="録音の開始 / 停止" detail="短く押すと開始し、もう一度押すと停止します"><ShortcutRecorder value={settings.toggleShortcut} active={capturing === "toggle"} onStart={() => setCapturing("toggle")} onChange={setToggleShortcut} /></SettingRow>
+    <SettingRow label="押している間だけ入力" detail="長押し中に録音し、離すと確定します"><ShortcutRecorder value={settings.holdShortcut} active={capturing === "hold"} onStart={() => setCapturing("hold")} onChange={setHoldShortcut} /></SettingRow>
     <p className="helper">同じキーも設定できます。同じ場合は短押しと300ms以上の長押しを自動で判別します。</p>
     {error && <p className="inline-error">{error}</p>}
   </div>;
 }
 
-function ShortcutRecorder({ value, onChange, onCaptureChange }: { value: string; onChange: (value: string) => void; onCaptureChange: (capturing: boolean) => void }) {
-  const [recording, setRecording] = useState(false);
+function ShortcutRecorder({ value, active, onStart, onChange }: { value: string; active: boolean; onStart: () => void; onChange: (value: string) => void }) {
   const modifierOnly = useRef("");
   useEffect(() => {
-    if (!recording) return;
+    if (!active) return;
     const finish = (shortcut: string) => {
-      onCaptureChange(false);
       onChange(shortcut);
-      setRecording(false);
     };
     const keyDown = (event: KeyboardEvent) => {
       event.preventDefault(); event.stopPropagation();
@@ -541,10 +551,9 @@ function ShortcutRecorder({ value, onChange, onCaptureChange }: { value: string;
     return () => {
       window.removeEventListener("keydown", keyDown, true);
       window.removeEventListener("keyup", keyUp, true);
-      onCaptureChange(false);
     };
-  }, [onCaptureChange, onChange, recording]);
-  return <Button variant="outline" size="sm" className={cn("shortcut-recorder", recording && "recording")} onClick={() => { modifierOnly.current = ""; onCaptureChange(true); setRecording(true); }}>{recording ? "キーを押してください" : prettyShortcut(value)}</Button>;
+  }, [active, onChange]);
+  return <Button variant="outline" size="sm" className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? "キーを押してください" : prettyShortcut(value)}</Button>;
 }
 
 function AboutPage() {

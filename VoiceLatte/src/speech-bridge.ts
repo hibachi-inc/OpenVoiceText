@@ -20,6 +20,7 @@ type BridgeEvent = Omit<Partial<SpeechStatus>, "id" | "type"> & {
   bundleID?: string;
   category?: string;
   promptKey?: string;
+  shortcut?: string;
   devices?: { uid: string; name: string }[];
   microphonePermission?: DeviceSettingsStatus["microphonePermission"];
   speechPermission?: DeviceSettingsStatus["speechPermission"];
@@ -47,7 +48,7 @@ export class SpeechBridgeClient {
   private nextId = 1;
   private recordingId?: number;
   private callbacks?: RecordingCallbacks;
-  private shortcutListener?: (state: "Pressed" | "Released") => void;
+  private shortcutListener?: (shortcut: string, state: "Pressed" | "Released") => void;
   private pending = new Map<number, {
     accept: (event: BridgeEvent) => boolean;
     resolve: (event: BridgeEvent) => void;
@@ -129,9 +130,9 @@ export class SpeechBridgeClient {
     await this.request({ command: "insert", text, autoPaste }, ["inserted"], 5000);
   }
 
-  async configureModifierShortcut(shortcut: string, listener: (state: "Pressed" | "Released") => void) {
+  async configureModifierShortcuts(shortcuts: string[], listener: (shortcut: string, state: "Pressed" | "Released") => void) {
     this.shortcutListener = listener;
-    await this.request({ command: "configure_shortcut", shortcut }, ["ready"], 5000);
+    await this.request({ command: "configure_shortcut", shortcuts }, ["ready"], 5000);
   }
 
   async close() {
@@ -206,7 +207,7 @@ export class SpeechBridgeClient {
     }
 
     if (event.type === "shortcut") {
-      this.shortcutListener?.(event.message === "Pressed" ? "Pressed" : "Released");
+      this.shortcutListener?.(event.shortcut ?? "", event.message === "Pressed" ? "Pressed" : "Released");
       return;
     }
 

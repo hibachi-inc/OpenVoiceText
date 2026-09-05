@@ -18,6 +18,7 @@ record BridgeRequest(
     string? Category,
     string? Prompt,
     string? Shortcut,
+    string[]? Shortcuts,
     string? DeviceUID,
     bool? MuteOtherAudio,
     string? Permission,
@@ -40,6 +41,7 @@ record BridgeResponse(
     string? BundleID = null,
     string? Category = null,
     string? PromptKey = null,
+    string? Shortcut = null,
     AudioDeviceResponse[]? Devices = null,
     string? MicrophonePermission = null,
     string? SpeechPermission = null,
@@ -94,7 +96,7 @@ sealed class Bridge
             case "cancel": Stop(request.Id); break;
             case "refine": Emit(new(request.Id, "refined", Text: await Refine(request))); break;
             case "insert": Insert(request.Text ?? "", request.AutoPaste != false); Emit(new(request.Id, "inserted", Text: request.Text ?? "")); break;
-            case "configure_shortcut": ConfigureShortcut(request.Shortcut ?? "Control"); Emit(new(request.Id, "ready")); break;
+            case "configure_shortcut": ConfigureShortcuts(request.Shortcuts ?? (string.IsNullOrEmpty(request.Shortcut) ? [] : [request.Shortcut])); Emit(new(request.Id, "ready")); break;
             default: Emit(new(request.Id, "error", Message: $"Unsupported command: {request.Command}")); break;
         }
     }
@@ -262,12 +264,12 @@ sealed class Bridge
         return $"{left} {right}";
     }
 
-    void ConfigureShortcut(string shortcut)
+    void ConfigureShortcuts(string[] shortcuts)
     {
         hotkey?.Dispose();
-        hotkey = string.IsNullOrEmpty(shortcut)
+        hotkey = shortcuts.Length == 0
             ? null
-            : new ModifierKeyboardHook(shortcut, state => Emit(new(0, "shortcut", Message: state)));
+            : new ModifierKeyboardHook(shortcuts, (shortcut, state) => Emit(new(0, "shortcut", Message: state, Shortcut: shortcut)));
     }
 
     static string SimpleRefine(string text) => Regex.Replace(
@@ -346,17 +348,20 @@ sealed class ModifierKeyboardHook : IDisposable
     const int WH_KEYBOARD_LL = 13;
     const int WM_KEYDOWN = 0x0100;
     const int WM_KEYUP = 0x0101;
-    readonly Action<string> emit;
-    readonly int virtualKey;
+    const int WM_SYSKEYDOWN = 0x0104;
+    const int WM_SYSKEYUP = 0x0105;
+    readonly Action<string, string> emit;
+    readonly HashSet<string> shortcuts;
+    readonly HashSet<int> pressedKeys = [];
     readonly Thread thread;
     readonly HookProc callback;
     IntPtr hook;
     uint threadId;
 
-    public ModifierKeyboardHook(string shortcut, Action<string> emit)
+    public ModifierKeyboardHook(IEnumerable<string> shortcuts, Action<string, string> emit)
     {
         this.emit = emit;
-        virtualKey = shortcut switch { "Option" => 0x12, "Command" => 0x5B, "Shift" => 0x10, _ => 0x11 };
+        this.shortcuts = shortcuts.ToHashSet();
         callback = OnKeyboard;
         thread = new Thread(Run) { IsBackground = true };
         thread.Start();
@@ -375,13 +380,35 @@ sealed class ModifierKeyboardHook : IDisposable
 
     IntPtr OnKeyboard(int code, IntPtr wParam, IntPtr lParam)
     {
-        if (code >= 0 && Marshal.ReadInt32(lParam) == virtualKey)
+        if (code < 0) return CallNextHookEx(hook, code, wParam, lParam);
+        var key = Marshal.ReadInt32(lParam);
+        var shortcut = ShortcutForKey(key);
+        if (shortcut is not null && shortcuts.Contains(shortcut))
         {
-            if (wParam == (IntPtr)WM_KEYDOWN) emit("Pressed");
-            if (wParam == (IntPtr)WM_KEYUP) emit("Released");
+            if ((wParam == (IntPtr)WM_KEYDOWN || wParam == (IntPtr)WM_SYSKEYDOWN)
+                && pressedKeys.Add(key)
+                && pressedKeys.Count(pressedKey => ShortcutForKey(pressedKey) == shortcut) == 1)
+            {
+                emit(shortcut, "Pressed");
+            }
+            if ((wParam == (IntPtr)WM_KEYUP || wParam == (IntPtr)WM_SYSKEYUP)
+                && pressedKeys.Remove(key)
+                && !pressedKeys.Any(pressedKey => ShortcutForKey(pressedKey) == shortcut))
+            {
+                emit(shortcut, "Released");
+            }
         }
         return CallNextHookEx(hook, code, wParam, lParam);
     }
+
+    static string? ShortcutForKey(int key) => key switch
+    {
+        0x10 or 0xA0 or 0xA1 => "Shift",
+        0x11 or 0xA2 or 0xA3 => "Control",
+        0x12 or 0xA4 or 0xA5 => "Option",
+        0x5B or 0x5C => "Command",
+        _ => null,
+    };
 
     public void Dispose()
     {
