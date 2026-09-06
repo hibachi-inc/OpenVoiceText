@@ -5,9 +5,12 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, LogicalPosition, monitorFromPoint, PhysicalPosition } from "@tauri-apps/api/window";
 import { register, unregister, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   AlertCircle, ArrowDown, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
-  Info, Keyboard, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
+  Download, Info, Keyboard, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -924,13 +927,63 @@ function ShortcutRecorder({ value, active, disabled = false, onStart, onChange }
 
 function AboutPage({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   const { t } = useI18n();
+  const [version, setVersion] = useState("");
+  const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
+  useEffect(() => { void getVersion().then(setVersion).catch(() => undefined); }, []);
+  useEffect(() => { void runUpdateCheck(setUpdate, false); }, []);
   return <Card className="glass-card about gap-0 py-0">
     <div className="about-mark"><Mic /></div>
     <b>VoiceLatte</b>
     <p>{t("about.tagline")}</p>
-    <small>{t("about.version")}</small>
+    <small>{version ? t("about.version", { version }) : ""}</small>
+    <UpdateRow state={update} onCheck={() => void runUpdateCheck(setUpdate, true)} onInstall={() => void installUpdate(update, setUpdate)} />
     <Button variant="outline" size="sm" className="about-setup" onClick={onOpenOnboarding}><Settings2 />{t("about.openOnboarding")}</Button>
   </Card>;
+}
+
+type UpdateState =
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "current" }
+  | { status: "available"; version: string; update: Awaited<ReturnType<typeof checkUpdate>> }
+  | { status: "downloading"; version: string }
+  | { status: "ready" }
+  | { status: "error"; message: string };
+
+async function runUpdateCheck(setState: (state: UpdateState) => void, manual: boolean) {
+  if (manual) setState({ status: "checking" });
+  try {
+    const update = await checkUpdate();
+    if (update) setState({ status: "available", version: update.version, update });
+    else if (manual) setState({ status: "current" });
+  } catch (error) {
+    if (manual) setState({ status: "error", message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function installUpdate(state: UpdateState, setState: (state: UpdateState) => void) {
+  if (state.status !== "available" || !state.update) return;
+  setState({ status: "downloading", version: state.version });
+  try {
+    await state.update.downloadAndInstall();
+    setState({ status: "ready" });
+    await relaunch();
+  } catch (error) {
+    setState({ status: "error", message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+function UpdateRow({ state, onCheck, onInstall }: { state: UpdateState; onCheck: () => void; onInstall: () => void }) {
+  const { t } = useI18n();
+  const busy = state.status === "checking" || state.status === "downloading";
+  return <div className="about-update">
+    {state.status === "available" && <Button size="sm" className="about-setup" onClick={onInstall}><Download />{t("update.install", { version: state.version })}</Button>}
+    {state.status !== "available" && <Button variant="ghost" size="sm" className="about-setup" disabled={busy} onClick={onCheck}>{busy ? t("update.checking") : t("update.check")}</Button>}
+    {state.status === "current" && <small>{t("update.current")}</small>}
+    {state.status === "downloading" && <small>{t("update.downloading")}</small>}
+    {state.status === "ready" && <small>{t("update.ready")}</small>}
+    {state.status === "error" && <small className="api-key-error">{t("update.error")}</small>}
+  </div>;
 }
 
 function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, deviceStatus, shortcutChosen, testPassed, shortcutError, onRequestPermission, onShortcutCaptureChange, onShortcutChange, onComplete, onClose }: {
