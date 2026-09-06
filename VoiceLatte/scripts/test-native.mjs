@@ -48,7 +48,9 @@ await request({ id: 4, command: "configure_shortcut", shortcuts: [] });
 
 const context = await request({ id: 5, command: "context" });
 if (context.id !== 5 || context.type !== "context" || typeof context.appName !== "string"
-  || (context.screenContext !== undefined && Array.from(context.screenContext).length > 1500)) {
+  || (context.screenContext !== undefined && Array.from(context.screenContext).length > 1500)
+  || (context.displayX === undefined) !== (context.displayY === undefined)
+  || (context.displayX !== undefined && (!Number.isFinite(context.displayX) || !Number.isFinite(context.displayY)))) {
   throw new Error("Unexpected app context response");
 }
 child.stdin.end();

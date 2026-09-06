@@ -17,10 +17,10 @@ pub fn run() {
             cloud::prepare_capture,
             cloud::discard_capture,
             cloud::set_api_key,
-            cloud::has_api_key,
+            cloud::api_key_hint,
             cloud::clear_api_key,
             cloud::cloud_transcribe,
-            cloud::groq_refine,
+            cloud::cloud_refine,
         ])
         .setup(|app| {
             cloud::clear_stale_captures(app.handle())?;

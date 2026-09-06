@@ -2,11 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { currentMonitor, getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
-import { register, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
+import { currentMonitor, getCurrentWindow, LogicalPosition, monitorFromPoint, PhysicalPosition } from "@tauri-apps/api/window";
+import { register, unregister, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import {
-  AlertCircle, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
+  AlertCircle, ArrowDown, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
   Info, Keyboard, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
   type LucideIcon,
 } from "lucide-react";
@@ -54,7 +54,7 @@ import {
 type Phase = "idle" | "preparing" | "listening" | "processing" | "done" | "error";
 type Section = "history" | "general" | "ai" | "vocabulary" | "shortcuts" | "about";
 type TranscriptionProvider = "local" | "groq" | "gemini";
-type RefinementProvider = "groq" | "local";
+type RefinementProvider = "groq" | "gemini" | "local";
 type CaptureMode = "live" | "deferred";
 type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string };
 type Settings = {
@@ -77,6 +77,7 @@ type CloudResult = { text: string; model: string };
 type CloudTranscript = { text: string; model: string };
 
 const systemUiLanguage = resolveUiLanguage("system");
+const DEFAULT_VOCABULARY: VocabularyEntry[] = [{ id: "default-ok", term: "OK", aliases: ["オーケー"] }];
 const DEFAULT_SETTINGS: Settings = {
   locale: "system",
   appLanguage: "system",
@@ -86,7 +87,7 @@ const DEFAULT_SETTINGS: Settings = {
   toggleShortcut: "Control+Shift+Space",
   holdShortcut: "Control",
   microphoneUID: "",
-  muteOtherAudio: false,
+  muteOtherAudio: true,
   transcriptionProvider: "local",
   refinementProvider: "groq",
   promptDefaultsVersion: 1,
@@ -157,16 +158,18 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const [message, setMessage] = useState("");
   const speechLocale = useMemo(() => resolveSpeechLocale(settings.locale), [settings.locale]);
   const [history, setHistory] = useStoredState<HistoryEntry[]>("voicelatte.history", []);
-  const [vocabulary, setVocabulary] = useStoredState<VocabularyEntry[]>("voicelatte.vocabulary", [], normalizeVocabularyEntries);
+  const [vocabulary, setVocabulary] = useStoredState<VocabularyEntry[]>("voicelatte.vocabulary", DEFAULT_VOCABULARY, normalizeVocabularyEntries);
   const [showPrompts, setShowPrompts] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useStoredState("voicelatte.onboardingComplete", false, (stored) => stored === true);
   const [showOnboarding, setShowOnboarding] = useState(!onboardingComplete);
+  const [onboardingShortcutChosen, setOnboardingShortcutChosen] = useState(false);
+  const [onboardingTestPassed, setOnboardingTestPassed] = useState(false);
   const [selected, setSelected] = useState<HistoryEntry | null>(null);
   const [shortcutError, setShortcutError] = useState("");
   const [installing, setInstalling] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceSettingsStatus | null>(null);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
-  const [apiKeys, setApiKeys] = useState({ groq: false, gemini: false });
+  const [apiKeyHints, setApiKeyHints] = useState<{ groq: string | null; gemini: string | null }>({ groq: null, gemini: null });
   const transcriptRef = useRef("");
   const phaseRef = useRef<Phase>("idle");
   const levelRef = useRef(0);
@@ -178,10 +181,10 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const holdTimer = useRef<number | undefined>(undefined);
   const holdActive = useRef(false);
   const shortcutCaptureRef = useRef(false);
-  const contextRef = useRef<{ appName: string; category: string; promptKey?: string; screenContext?: string }>({ appName: "VoiceLatte", category: "generic" });
+  const contextRef = useRef<{ appName: string; category: string; promptKey?: string; screenContext?: string; displayX?: number; displayY?: number }>({ appName: "VoiceLatte", category: "generic" });
   const captureRef = useRef<string | undefined>(undefined);
   const recordingProviderRef = useRef<TranscriptionProvider>("local");
-  const actionRef = useRef<(action: "toggle" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop") => void>(() => {});
+  const actionRef = useRef<(action: "toggle" | "refine-stop" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop") => void>(() => {});
   const setShortcutCapturing = useCallback((capturing: boolean) => { shortcutCaptureRef.current = capturing; }, []);
   const localizedError = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -189,10 +192,10 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   }, [language, t]);
   const refreshApiKeys = useCallback(async () => {
     const [groq, gemini] = await Promise.all([
-      invoke<boolean>("has_api_key", { provider: "groq" }),
-      invoke<boolean>("has_api_key", { provider: "gemini" }),
+      invoke<string | null>("api_key_hint", { provider: "groq" }),
+      invoke<string | null>("api_key_hint", { provider: "gemini" }),
     ]);
-    setApiKeys({ groq, gemini });
+    setApiKeyHints({ groq, gemini });
   }, []);
 
   const updateHud = useCallback(async (next: HudState) => {
@@ -234,8 +237,14 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
 
   const startRecording = useCallback(async (onboardingTest = false) => {
     if (phaseRef.current !== "idle") return;
+    if (onboardingTest && !onboardingShortcutChosen) return;
+    phaseRef.current = "preparing";
     onboardingTestRef.current = onboardingTest;
+    if (onboardingTest) setOnboardingTestPassed(false);
     const provider = onboardingTest ? "local" : settings.transcriptionProvider;
+    const context = await bridge.context().catch(() => ({ appName: "Unknown", category: "generic", platform: undefined, displayX: undefined, displayY: undefined }));
+    if (!onboardingTest) contextRef.current = context;
+    await positionHud(context.platform, context.displayX, context.displayY).catch(() => undefined);
     setRecordingState({
       phase: "preparing",
       transcript: "",
@@ -243,9 +252,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       captureMode: provider === "local" ? "live" : "deferred",
       message: t("record.preparing"),
     });
-    if (!onboardingTest) contextRef.current = await bridge.context().catch(() => ({ appName: "Unknown", category: "generic" }));
     try {
-      if (provider !== "local" && !apiKeys[provider]) throw new Error("cloud.key_missing");
+      if (provider !== "local" && !apiKeyHints[provider]) throw new Error("cloud.key_missing");
       recordingProviderRef.current = provider;
       const cloudProvider = provider === "local" ? undefined : provider;
       const capture = cloudProvider ? await invoke<PreparedCapture>("prepare_capture") : undefined;
@@ -288,29 +296,33 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         onboardingTestRef.current = false;
       }, 2500);
     }
-  }, [apiKeys, bridge, language, localizedError, setRecordingState, settings.microphoneUID, settings.muteOtherAudio, settings.transcriptionProvider, speechLocale, t, vocabulary]);
+  }, [apiKeyHints, bridge, language, localizedError, onboardingShortcutChosen, setRecordingState, settings.microphoneUID, settings.muteOtherAudio, settings.transcriptionProvider, speechLocale, t, vocabulary]);
 
-  const stopRecording = useCallback(async () => {
+  const stopRecording = useCallback(async (withAiRefinement = false) => {
     if (phaseRef.current !== "listening" && phaseRef.current !== "preparing") return;
     setRecordingState({ phase: "processing", level: 0, message: recordingProviderRef.current === "local" ? t("record.processing") : t("record.cloudProcessing") });
     try {
       const raw = await bridge.stop();
       if (onboardingTestRef.current) {
+        setOnboardingTestPassed(Boolean(raw.trim()));
         setRecordingState({ phase: "idle", transcript: raw, level: 0, message: "" });
         onboardingTestRef.current = false;
         return;
       }
       const { category, appName, promptKey } = contextRef.current;
-      const screenContext = settings.refinement ? contextRef.current.screenContext ?? "" : "";
+      const shouldRefine = withAiRefinement && settings.refinement;
+      const screenContext = shouldRefine ? contextRef.current.screenContext ?? "" : "";
       const customPrompt = resolveCustomPrompt(settings.customPrompts, contextRef.current);
-      const refinementPrompt = settings.refinement
+      const refinementPrompt = shouldRefine
         ? buildRefinementPrompt(customPrompt, vocabulary, speechLocale)
         : "";
       const provider = recordingProviderRef.current;
       const captureId = captureRef.current;
       if (provider !== "local" && !captureId) throw new Error("cloud.capture_missing");
-      const useGroqRefinement = settings.refinement && settings.refinementProvider === "groq" && apiKeys.groq;
-      const useGeminiCombined = provider === "gemini" && settings.refinement && !useGroqRefinement;
+      const cloudRefinementProvider = shouldRefine && settings.refinementProvider !== "local" && Boolean(apiKeyHints[settings.refinementProvider])
+        ? settings.refinementProvider
+        : undefined;
+      const useGeminiCombined = provider === "gemini" && cloudRefinementProvider === "gemini";
       const cloud = provider === "local" ? undefined : await invoke<CloudResult>("cloud_transcribe", {
         captureId,
         provider,
@@ -328,10 +340,10 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       }
       if (cloud) setRecordingState({ transcript: source, engine: cloud.model });
       let refined = source;
-      if (settings.refinement && !useGeminiCombined) {
-        if (useGroqRefinement) {
+      if (shouldRefine && !useGeminiCombined) {
+        if (cloudRefinementProvider) {
           try {
-            const result = await invoke<CloudResult>("groq_refine", { text: source, prompt: refinementPrompt, screenContext });
+            const result = await invoke<CloudResult>("cloud_refine", { provider: cloudRefinementProvider, text: source, prompt: refinementPrompt, screenContext });
             refined = result.text;
             setRecordingState({ transcript: refined, engine: result.model });
           } catch {
@@ -370,6 +382,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     }
     recordingProviderRef.current = "local";
     setRecordingState({ phase: "idle", transcript: "", level: 0 });
+    if (onboardingTestRef.current) setOnboardingTestPassed(false);
     onboardingTestRef.current = false;
   }, [bridge, setRecordingState]);
 
@@ -380,7 +393,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         holdActive.current = false;
         holdTimer.current = window.setTimeout(() => {
           holdActive.current = true;
-          void startRecording().then(() => {
+          void startRecording(showOnboarding).then(() => {
             if (!holdActive.current && phaseRef.current === "listening") void stopRecording();
           });
         }, delay);
@@ -390,15 +403,16 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         const wasHold = holdActive.current;
         if (wasHold && phaseRef.current === "listening") void stopRecording();
         holdActive.current = false;
-        if (toggleOnTap && !wasHold) void (phaseRef.current === "idle" ? startRecording() : stopRecording());
+        if (toggleOnTap && !wasHold) void (phaseRef.current === "idle" ? startRecording(showOnboarding) : stopRecording());
       };
-      if (action === "toggle") void (phaseRef.current === "idle" ? startRecording() : stopRecording());
+      if (action === "toggle") void (phaseRef.current === "idle" ? startRecording(showOnboarding) : stopRecording());
+      if (action === "refine-stop" && phaseRef.current === "listening") void stopRecording(true);
       if (action === "hold-start") beginHold(150);
       if (action === "hold-stop") endHold(false);
       if (action === "shared-start") beginHold(300);
       if (action === "shared-stop") endHold(true);
     };
-  }, [startRecording, stopRecording]);
+  }, [showOnboarding, startRecording, stopRecording]);
 
   useEffect(() => {
     void bridge.status(speechLocale).then(setStatus).catch((error) => setMessage(localizedError(error)));
@@ -479,6 +493,19 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   }, [bridge, localizedError, settings.holdShortcut, settings.toggleShortcut, t]);
 
   useEffect(() => {
+    if (phase !== "listening" || showOnboarding || !settings.refinement
+      || settings.toggleShortcut === "Space" || settings.holdShortcut === "Space") return;
+    let active = true;
+    void register("Space", (event) => {
+      if (active && event.state === "Pressed" && !shortcutCaptureRef.current) actionRef.current("refine-stop");
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+      void unregister("Space").catch(() => undefined);
+    };
+  }, [phase, settings.holdShortcut, settings.refinement, settings.toggleShortcut, showOnboarding]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listen("hud-stop", () => actionRef.current("toggle")).then((fn) => { unlisten = fn; });
     return () => unlisten?.();
@@ -520,7 +547,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         />}
         {section === "ai" && <AiPage
           status={status} settings={settings} setSettings={setSettings} installing={installing}
-          deviceStatus={deviceStatus} apiKeys={apiKeys}
+          deviceStatus={deviceStatus} apiKeyHints={apiKeyHints}
           onPrompts={() => setShowPrompts(true)}
           onInstall={() => void (async () => {
             setInstalling(true);
@@ -539,7 +566,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         />}
         {section === "vocabulary" && <VocabularyPage entries={vocabulary} setEntries={setVocabulary} />}
         {section === "shortcuts" && <ShortcutPage settings={settings} setSettings={setSettings} error={shortcutError} onCaptureChange={setShortcutCapturing} />}
-        {section === "about" && <AboutPage onOpenOnboarding={() => setShowOnboarding(true)} />}
+        {section === "about" && <AboutPage onOpenOnboarding={() => {
+          setOnboardingShortcutChosen(false);
+          setOnboardingTestPassed(false);
+          setShowOnboarding(true);
+        }} />}
       </section>
 
       {showOnboarding && <OnboardingDialog
@@ -551,11 +582,19 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         settings={settings}
         setSettings={setSettings}
         deviceStatus={deviceStatus}
+        shortcutChosen={onboardingShortcutChosen}
+        testPassed={onboardingTestPassed}
+        shortcutError={shortcutError}
         onRequestPermission={async (permission) => {
           await bridge.requestPermission(permission);
           setDeviceStatus(await bridge.settingsStatus());
         }}
-        onToggleTest={() => void (phaseRef.current === "idle" ? startRecording(true) : stopRecording())}
+        onShortcutCaptureChange={setShortcutCapturing}
+        onShortcutChange={(shortcut) => {
+          setOnboardingShortcutChosen(true);
+          setOnboardingTestPassed(false);
+          setSettings((current) => ({ ...current, toggleShortcut: shortcut, holdShortcut: shortcut }));
+        }}
         onComplete={() => {
           setOnboardingComplete(true);
           setShowOnboarding(false);
@@ -654,13 +693,13 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
   </div>;
 }
 
-function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKeys, onPrompts, onInstall, onSaveApiKey, onClearApiKey }: {
+function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKeyHints, onPrompts, onInstall, onSaveApiKey, onClearApiKey }: {
   status: SpeechStatus | null;
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   installing: boolean;
   deviceStatus: DeviceSettingsStatus | null;
-  apiKeys: { groq: boolean; gemini: boolean };
+  apiKeyHints: { groq: string | null; gemini: string | null };
   onPrompts: () => void;
   onInstall: () => void;
   onSaveApiKey: (provider: "groq" | "gemini", key: string) => Promise<void>;
@@ -687,7 +726,7 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
       </div> : <ApiKeyRow
         provider={settings.transcriptionProvider}
         label={settings.transcriptionProvider === "groq" ? "Groq API Key" : "Gemini API Key"}
-        configured={apiKeys[settings.transcriptionProvider]}
+        keyHint={apiKeyHints[settings.transcriptionProvider]}
         onSave={onSaveApiKey}
         onClear={onClearApiKey}
       />}
@@ -698,30 +737,32 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
 
     <p className="settings-group-label">{t("ai.refinement")}</p>
     <SettingRow label={t("general.refinement")} detail={t("general.refinementDetail")}><Switch checked={settings.refinement} onCheckedChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
-    {settings.refinement && <SettingRow label={t("ai.refinementModel")} detail={settings.refinementProvider === "groq" ? t("ai.refinementGroqDetail") : t("ai.refinementLocalDetail")}>
+    {settings.refinement && <SettingRow label={t("ai.refinementModel")} detail={settings.refinementProvider === "groq" ? t("ai.refinementGroqDetail") : settings.refinementProvider === "gemini" ? t("ai.refinementGeminiDetail") : t("ai.refinementLocalDetail")}>
       <Select value={settings.refinementProvider} onValueChange={(refinementProvider) => setSettings((s) => ({ ...s, refinementProvider: refinementProvider as RefinementProvider }))}>
         <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="groq">Groq Cloud</SelectItem>
+          <SelectItem value="gemini">Gemini</SelectItem>
           <SelectItem value="local">{t("provider.local")}</SelectItem>
         </SelectContent>
       </Select>
     </SettingRow>}
-    {settings.refinement && settings.refinementProvider === "groq" && settings.transcriptionProvider !== "groq" && <ApiKeyRow provider="groq" label="Groq API Key" configured={apiKeys.groq} onSave={onSaveApiKey} onClear={onClearApiKey} />}
+    {settings.refinement && settings.refinementProvider !== "local" && settings.transcriptionProvider !== settings.refinementProvider && <ApiKeyRow provider={settings.refinementProvider} label={`${settings.refinementProvider === "groq" ? "Groq" : "Gemini"} API Key`} keyHint={apiKeyHints[settings.refinementProvider]} onSave={onSaveApiKey} onClear={onClearApiKey} />}
     <Button variant="ghost" className="refine-strip ai-refine-strip h-auto" onClick={onPrompts}>
       <span className="strip-icon"><SlidersHorizontal /></span><span><b>{t("history.refinement")}</b><small>{t("history.refinementDetail")}</small></span><ChevronRight className="chevron" />
     </Button>
   </div>;
 }
 
-function ApiKeyRow({ provider, label, configured, onSave, onClear }: {
+function ApiKeyRow({ provider, label, keyHint, onSave, onClear }: {
   provider: "groq" | "gemini";
   label: string;
-  configured: boolean;
+  keyHint: string | null;
   onSave: (provider: "groq" | "gemini", key: string) => Promise<void>;
   onClear: (provider: "groq" | "gemini") => Promise<void>;
 }) {
   const { language, t } = useI18n();
+  const configured = keyHint !== null;
   const [key, setKey] = useState("");
   const [error, setError] = useState("");
   const run = async (action: () => Promise<void>) => {
@@ -732,7 +773,7 @@ function ApiKeyRow({ provider, label, configured, onSave, onClear }: {
   return <div className="setting-row api-key-row">
     <div><b>{label}</b><span>{provider === "gemini" && `${t("apiKey.geminiDetail")} · `}{configured ? t("apiKey.configured") : t("apiKey.notConfigured")}</span>{error && <small className="api-key-error">{error}</small>}</div>
     <div className="api-key-actions">
-      <Input type="password" value={key} autoComplete="off" spellCheck={false} onChange={(event) => setKey(event.target.value)} placeholder={configured ? t("apiKey.replacePlaceholder") : t("apiKey.placeholder")} />
+      <Input type="password" value={key} autoComplete="off" spellCheck={false} onChange={(event) => setKey(event.target.value)} placeholder={keyHint ?? t("apiKey.placeholder")} />
       <Button size="sm" disabled={!key.trim()} onClick={() => void run(async () => { await onSave(provider, key); setKey(""); })}>{configured ? t("apiKey.update") : t("apiKey.save")}</Button>
       {configured && <Button variant="ghost" size="sm" onClick={() => void run(() => onClear(provider))}>{t("apiKey.remove")}</Button>}
     </div>
@@ -819,7 +860,7 @@ function ShortcutPage({ settings, setSettings, error, onCaptureChange }: {
   </div>;
 }
 
-function ShortcutRecorder({ value, active, onStart, onChange }: { value: string; active: boolean; onStart: () => void; onChange: (value: string) => void }) {
+function ShortcutRecorder({ value, active, disabled = false, onStart, onChange }: { value: string; active: boolean; disabled?: boolean; onStart: () => void; onChange: (value: string) => void }) {
   const { t } = useI18n();
   const modifierOnly = useRef("");
   useEffect(() => {
@@ -852,7 +893,7 @@ function ShortcutRecorder({ value, active, onStart, onChange }: { value: string;
       window.removeEventListener("keyup", keyUp, true);
     };
   }, [active, onChange]);
-  return <Button variant="outline" size="sm" className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? t("shortcuts.press") : prettyShortcut(value)}</Button>;
+  return <Button variant="outline" size="sm" disabled={disabled} className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? t("shortcuts.press") : prettyShortcut(value)}</Button>;
 }
 
 function AboutPage({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
@@ -866,7 +907,7 @@ function AboutPage({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   </Card>;
 }
 
-function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, deviceStatus, onRequestPermission, onToggleTest, onComplete, onClose }: {
+function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, deviceStatus, shortcutChosen, testPassed, shortcutError, onRequestPermission, onShortcutCaptureChange, onShortcutChange, onComplete, onClose }: {
   dismissible: boolean;
   phase: Phase;
   transcript: string;
@@ -875,12 +916,17 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   deviceStatus: DeviceSettingsStatus | null;
+  shortcutChosen: boolean;
+  testPassed: boolean;
+  shortcutError: string;
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility") => Promise<void>;
-  onToggleTest: () => void;
+  onShortcutCaptureChange: (capturing: boolean) => void;
+  onShortcutChange: (shortcut: string) => void;
   onComplete: () => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const [capturingShortcut, setCapturingShortcut] = useState(false);
   const permissionReady = (status?: string) => status === "authorized" || status === "system-managed" || status === "not-required";
   const permissionsReady = permissionReady(deviceStatus?.microphonePermission)
     && permissionReady(deviceStatus?.speechPermission)
@@ -888,6 +934,11 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
   const testActive = phase === "listening";
   const testBusy = phase === "preparing" || phase === "processing";
   const devices = deviceStatus?.devices ?? [];
+  const shortcut = prettyShortcut(settings.toggleShortcut);
+  useEffect(() => {
+    onShortcutCaptureChange(capturingShortcut);
+    return () => onShortcutCaptureChange(false);
+  }, [capturingShortcut, onShortcutCaptureChange]);
 
   return <Dialog open onOpenChange={(open) => { if (!open && dismissible) onClose(); }}>
     <DialogContent
@@ -923,18 +974,36 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
         </Card>
 
         <Card className="onboarding-section gap-0 py-0">
+          <b className="onboarding-step-title">{t("onboarding.shortcut")}</b>
+          <div className="onboarding-shortcut-row">
+            <div><b>{t("onboarding.shortcutLabel")}</b><span>{t("onboarding.shortcutHint")}</span></div>
+            <ShortcutRecorder
+              value={settings.toggleShortcut}
+              active={capturingShortcut}
+              disabled={testActive || testBusy}
+              onStart={() => setCapturingShortcut(true)}
+              onChange={(value) => {
+                setCapturingShortcut(false);
+                onShortcutChange(value);
+              }}
+            />
+          </div>
+          {shortcutError && <p className="inline-error">{shortcutError}</p>}
+        </Card>
+
+        <Card className="onboarding-section gap-0 py-0">
           <b className="onboarding-step-title">{t("onboarding.test")}</b>
           <div className="onboarding-level" aria-label={t("hud.audioLevel")}><span style={{ width: `${Math.round(Math.min(1, level) * 100)}%` }} /></div>
           <div className="onboarding-test-row">
-            <Button variant="outline" size="sm" onClick={onToggleTest} disabled={!permissionsReady || testBusy}>{testActive ? t("onboarding.stopTest") : testBusy ? phaseLabel(phase, t) : t("onboarding.startTest")}</Button>
-            <span>{testActive ? t("onboarding.listening") : t("onboarding.testHint")}</span>
+            <kbd>{shortcut}</kbd>
+            <span>{!shortcutChosen ? t("onboarding.chooseShortcutFirst") : testActive ? t("onboarding.testActive", { shortcut }) : testBusy ? phaseLabel(phase, t) : testPassed ? t("onboarding.testPassed") : t("onboarding.testHint", { shortcut })}</span>
           </div>
-          {transcript && <div className="onboarding-result"><Check />{transcript}</div>}
+          {transcript && shortcutChosen && <div className={cn("onboarding-result", testPassed && "passed")}>{testPassed ? <Check /> : <Mic />}{transcript}</div>}
           {phase === "error" && message && <p className="inline-error">{message}</p>}
         </Card>
       </div>
 
-      <DialogFooter className="dialog-actions"><Button onClick={onComplete} disabled={!permissionsReady || testActive || testBusy}>{t("onboarding.complete")}</Button></DialogFooter>
+      <DialogFooter className="dialog-actions"><Button onClick={onComplete} disabled={!permissionsReady || !shortcutChosen || !testPassed || testActive || testBusy}>{t("onboarding.complete")}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }
@@ -1036,17 +1105,27 @@ function PromptField({ label, value, defaultOpen, onChange, onRemove }: {
 
 function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () => void }) {
   const { language, t } = useI18n();
+  const [copied, setCopied] = useState<"original" | "refined" | null>(null);
+  const copyTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(copyTimer.current), []);
+  const copy = async (text: string, version: "original" | "refined") => {
+    try { await navigator.clipboard.writeText(text); } catch { return; }
+    setCopied(version);
+    window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => setCopied(null), 1600);
+  };
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="modal history-modal sm:max-w-[520px]">
       <DialogHeader><DialogTitle>{t("historyDialog.title")}</DialogTitle><DialogDescription>{new Date(entry.createdAt).toLocaleString(language)}</DialogDescription></DialogHeader>
       <div className="history-versions">
         <section className="history-version">
-          <div className="history-version-header"><b>{t("historyDialog.refined")}</b><Button variant="ghost" size="xs" onClick={() => void navigator.clipboard.writeText(entry.text)}><Copy />{t("action.copy")}</Button></div>
-          <div className="history-full">{entry.text}</div>
-        </section>
-        <section className="history-version">
-          <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" onClick={() => void navigator.clipboard.writeText(entry.raw)}><Copy />{t("action.copy")}</Button></div>
+          <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.raw, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
           <div className="history-full original">{entry.raw}</div>
+        </section>
+        <div className="history-flow-arrow" aria-hidden="true"><ArrowDown /></div>
+        <section className="history-version">
+          <div className="history-version-header"><b>{t("historyDialog.refined")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.text, "refined")}>{copied === "refined" ? <Check /> : <Copy />}{copied === "refined" ? t("action.copied") : t("action.copy")}</Button></div>
+          <div className="history-full">{entry.text}</div>
         </section>
       </div>
     </DialogContent>
@@ -1065,14 +1144,6 @@ function Hud() {
     const hudWindow = getCurrentWindow();
     void (async () => {
       await hudWindow.setBackgroundColor([0, 0, 0, 0]);
-      const monitor = await currentMonitor();
-      if (!monitor) return;
-      const windowSize = await hudWindow.outerSize();
-      const area = monitor.workArea;
-      await hudWindow.setPosition(new PhysicalPosition(
-        Math.round(area.position.x + (area.size.width - windowSize.width) / 2),
-        Math.round(area.position.y + area.size.height - windowSize.height - 34 * monitor.scaleFactor),
-      ));
     })();
     let unlisten: (() => void) | undefined;
     void listen<HudState>("recording-state", (event) => setState(event.payload)).then((fn) => { unlisten = fn; });
@@ -1093,6 +1164,31 @@ function Hud() {
     <div className="hud-meter" aria-label={t("hud.audioLevel")}>{Array.from({ length: 7 }, (_, i) => <i key={i} className={i / 7 < state.level ? "lit" : ""} />)}</div>
     {(state.phase === "listening" || state.phase === "preparing") && <Button variant="ghost" className="hud-stop h-9 rounded-none" onClick={() => void emitTo("main", "hud-stop")}><Square />{t("hud.stop")}</Button>}
   </main>;
+}
+
+async function positionHud(platform?: "macos" | "windows", displayX?: number, displayY?: number) {
+  const hud = await WebviewWindow.getByLabel("hud");
+  if (!hud) return;
+  const monitor = displayX !== undefined && displayY !== undefined
+    ? await monitorFromPoint(displayX, displayY) ?? await currentMonitor()
+    : await currentMonitor();
+  if (!monitor) return;
+  const windowSize = await hud.outerSize();
+  const windowScale = await hud.scaleFactor();
+  const area = monitor.workArea;
+  const width = windowSize.width / windowScale;
+  const height = windowSize.height / windowScale;
+  if (platform === "macos" && displayX !== undefined && displayY !== undefined) {
+    await hud.setPosition(new LogicalPosition(
+      area.position.x / monitor.scaleFactor + (area.size.width / monitor.scaleFactor - width) / 2,
+      area.position.y / monitor.scaleFactor + area.size.height / monitor.scaleFactor - height - 34,
+    ));
+    return;
+  }
+  await hud.setPosition(new PhysicalPosition(
+    Math.round(area.position.x + (area.size.width - width * monitor.scaleFactor) / 2),
+    Math.round(area.position.y + area.size.height - (height + 34) * monitor.scaleFactor),
+  ));
 }
 
 function shortcutFromEvent(event: Pick<KeyboardEvent, "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey">) {
@@ -1167,7 +1263,7 @@ function normalizeSettings(stored: unknown): Settings {
   const appLanguage: UiLanguagePreference = ["system", "ja", "en"].includes(legacy.appLanguage ?? "")
     ? legacy.appLanguage as UiLanguagePreference
     : "system";
-  const refinementProvider: RefinementProvider = ["groq", "local"].includes(legacy.refinementProvider ?? "")
+  const refinementProvider: RefinementProvider = ["groq", "gemini", "local"].includes(legacy.refinementProvider ?? "")
     ? legacy.refinementProvider as RefinementProvider
     : DEFAULT_SETTINGS.refinementProvider;
   const jaDefaults = legacyDefaultPrompts("ja");

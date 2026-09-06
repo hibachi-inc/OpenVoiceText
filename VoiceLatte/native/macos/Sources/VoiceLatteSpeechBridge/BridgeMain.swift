@@ -44,6 +44,8 @@ private struct BridgeResponse: Encodable {
     var category: String? = nil
     var promptKey: String? = nil
     var screenContext: String? = nil
+    var displayX: Double? = nil
+    var displayY: Double? = nil
     var shortcut: String? = nil
     var devices: [AudioDeviceResponse]? = nil
     var microphonePermission: String? = nil
@@ -90,7 +92,9 @@ private final class Bridge: @unchecked Sendable {
                 bundleID: context?.bundleIdentifier,
                 category: context?.effectiveCategory.rawValue ?? "generic",
                 promptKey: context?.promptKey,
-                screenContext: context?.screenContext
+                screenContext: context?.screenContext,
+                displayX: context?.displayX,
+                displayY: context?.displayY
             ))
         case "settings_status":
             emitSettingsStatus(id: request.id)

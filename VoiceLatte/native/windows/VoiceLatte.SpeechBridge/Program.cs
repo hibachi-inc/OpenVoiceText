@@ -46,6 +46,8 @@ record BridgeResponse(
     string? Category = null,
     string? PromptKey = null,
     string? ScreenContext = null,
+    double? DisplayX = null,
+    double? DisplayY = null,
     string? Shortcut = null,
     AudioDeviceResponse[]? Devices = null,
     string? MicrophonePermission = null,
@@ -134,6 +136,13 @@ sealed class Bridge
     void EmitContext(int id)
     {
         var window = GetForegroundWindow();
+        double? displayX = null;
+        double? displayY = null;
+        if (GetWindowRect(window, out var rect))
+        {
+            displayX = rect.Left + (rect.Right - rect.Left) / 2.0;
+            displayY = rect.Top + (rect.Bottom - rect.Top) / 2.0;
+        }
         GetWindowThreadProcessId(window, out var processId);
         var name = processId == 0 ? "Unknown" : Process.GetProcessById((int)processId).ProcessName;
         var lower = name.ToLowerInvariant();
@@ -144,7 +153,7 @@ sealed class Bridge
             : lower.Contains("note") || lower.Contains("obsidian") ? "notes"
             : lower.Contains("chrome") || lower.Contains("edge") || lower.Contains("firefox") ? "browser"
             : "generic";
-        Emit(new(id, "context", AppName: name, Category: category, PromptKey: name));
+        Emit(new(id, "context", AppName: name, Category: category, PromptKey: name, DisplayX: displayX, DisplayY: displayY));
     }
 
     async Task<bool> EnsureModel(int id, bool emitReady = false, bool emitInstalled = false, bool emitErrors = true)
@@ -399,7 +408,11 @@ sealed class Bridge
         }
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    struct RECT { public int Left, Top, Right, Bottom; }
+
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out RECT rect);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 }
 

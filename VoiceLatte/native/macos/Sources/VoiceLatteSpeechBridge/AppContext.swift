@@ -14,6 +14,8 @@ struct AppContext: Sendable {
     let category: Category
     let siteDomain: String?
     let screenContext: String?
+    let displayX: Double?
+    let displayY: Double?
 
     /// Display key for prompt lookup: "gmail.com" for browser sites, "Safari" for browsers without domain, "Slack" for native apps.
     var promptKey: String {
@@ -33,6 +35,7 @@ struct AppContext: Sendable {
               let appName = app.localizedName else { return nil }
         let category = classify(appName: appName, bundleID: app.bundleIdentifier)
         let domain = shouldCaptureSiteDomain(for: category) ? siteKey(pid: app.processIdentifier) : nil
+        let displayPoint = activeDisplayPoint(pid: app.processIdentifier)
         return AppContext(
             appName: appName,
             bundleIdentifier: app.bundleIdentifier,
@@ -42,7 +45,9 @@ struct AppContext: Sendable {
                 pid: app.processIdentifier,
                 bundleID: app.bundleIdentifier,
                 category: category
-            )
+            ),
+            displayX: displayPoint.map { Double($0.x) },
+            displayY: displayPoint.map { Double($0.y) }
         )
     }
 
@@ -52,7 +57,9 @@ struct AppContext: Sendable {
             bundleIdentifier: bundleID,
             category: classify(appName: appName, bundleID: bundleID),
             siteDomain: siteDomain,
-            screenContext: nil
+            screenContext: nil,
+            displayX: nil,
+            displayY: nil
         )
     }
 
@@ -68,6 +75,21 @@ struct AppContext: Sendable {
         "com.apple.keychainaccess",
     ]
     private static let contextRoles: Set<String> = ["AXStaticText", "AXHeading", "AXTextArea", "AXTextField"]
+
+    private static func activeDisplayPoint(pid: pid_t) -> CGPoint? {
+        if AXIsProcessTrusted() {
+            let app = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(app, 0.1)
+            if let window = elementAttribute(app, kAXFocusedWindowAttribute),
+               let windowFrame = frame(of: window) {
+                return CGPoint(x: windowFrame.midX, y: windowFrame.midY)
+            }
+        }
+        guard let screen = NSScreen.main,
+              let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+        let bounds = CGDisplayBounds(CGDirectDisplayID(number.uint32Value))
+        return CGPoint(x: bounds.midX, y: bounds.midY)
+    }
 
     private struct ContextBudget {
         let deadline = CFAbsoluteTimeGetCurrent() + 0.2

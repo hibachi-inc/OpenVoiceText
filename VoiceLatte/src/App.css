@@ -145,11 +145,17 @@ body {
 .onboarding-permissions { margin: -5px 0; }
 .onboarding-hint { margin: 0; color: #85888d; font-size: 10px; }
 .onboarding-microphone { width: min(100%, 260px); border-color: rgba(40,43,49,.09); background: rgba(247,248,249,.86); font-size: 11px; }
+.onboarding-shortcut-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.onboarding-shortcut-row b, .onboarding-shortcut-row span { display: block; }
+.onboarding-shortcut-row b { font-size: 11px; }
+.onboarding-shortcut-row span { margin-top: 3px; color: #85888d; font-size: 9px; }
 .onboarding-level { height: 5px; overflow: hidden; border-radius: 99px; background: #e5e7ea; }
 .onboarding-level span { display: block; height: 100%; border-radius: inherit; background: #555960; transition: width 80ms linear; }
 .onboarding-test-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.onboarding-test-row kbd { flex: 0 0 auto; min-width: 48px; padding: 5px 8px; border: 1px solid rgba(42,45,50,.11); border-radius: 7px; background: rgba(255,255,255,.86); box-shadow: 0 1px 0 rgba(42,45,50,.08); color: #505359; text-align: center; font: 600 10px/1 GeistVariable, sans-serif; }
 .onboarding-test-row span { color: #85888d; font-size: 10px; }
-.onboarding-result { display: flex; align-items: flex-start; gap: 7px; margin-top: 10px; padding: 9px 10px; border-radius: 10px; background: #edf6f0; color: #347650; font-size: 11px; line-height: 1.45; }
+.onboarding-result { display: flex; align-items: flex-start; gap: 7px; margin-top: 10px; padding: 9px 10px; border-radius: 10px; background: #f0f1f3; color: #5f6369; font-size: 11px; line-height: 1.45; }
+.onboarding-result.passed { background: #edf6f0; color: #347650; }
 .onboarding-result svg { flex: 0 0 13px; width: 13px; height: 13px; margin-top: 1px; }
 
 .modal { width: min(520px, calc(100% - 32px)); max-height: calc(100vh - 44px); overflow: auto; padding: 18px; border: 1px solid rgba(255,255,255,.94); border-radius: 20px; background: rgba(249,249,250,.94); box-shadow: 0 30px 80px rgba(30,33,39,.24), inset 0 1px 0 white; backdrop-filter: blur(28px) saturate(130%); }
@@ -166,12 +172,14 @@ body {
 .prompt-trigger { display: flex; justify-content: space-between; width: 100%; padding: 11px 12px; background: transparent; font-size: 11px; }
 .prompt-trigger svg, .prompt-field-header > button svg { width: 14px; height: 14px; color: #85888d; }
 .prompt-field textarea { width: calc(100% - 20px); margin: 0 10px 10px; padding: 9px; border-radius: 9px; background: rgba(242,243,245,.8); resize: vertical; font-size: 11px; line-height: 1.5; }
-.history-versions { display: grid; gap: 12px; }
+.history-versions { display: grid; gap: 7px; }
 .history-version { display: grid; gap: 6px; }
 .history-version-header { display: flex; align-items: center; justify-content: space-between; padding-left: 2px; }
 .history-version-header b { color: #66696e; font-size: 10px; }
 .history-version-header button { height: 26px; color: #64676c; font-size: 10px; }
 .history-version-header button svg { width: 12px; height: 12px; }
+.history-flow-arrow { display: grid; width: 24px; height: 24px; margin: -1px auto; place-items: center; border: 1px solid rgba(42,45,50,.08); border-radius: 50%; background: rgba(255,255,255,.8); color: #777a7f; }
+.history-flow-arrow svg { width: 13px; height: 13px; }
 .history-full { max-height: 28vh; overflow: auto; padding: 13px; border-radius: 12px; background: white; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.65; }
 .history-full.original { background: #eff1f3; color: #54575b; }
 .toast { position: fixed; z-index: 120; right: 18px; bottom: 18px; max-width: 360px; padding: 10px 13px; border-radius: 12px; background: rgba(255,255,255,.95); box-shadow: 0 12px 35px rgba(30,33,39,.16); font-size: 11px; }

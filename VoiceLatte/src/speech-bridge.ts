@@ -21,6 +21,8 @@ type BridgeEvent = Omit<Partial<SpeechStatus>, "id" | "type"> & {
   category?: string;
   promptKey?: string;
   screenContext?: string;
+  displayX?: number;
+  displayY?: number;
   shortcut?: string;
   devices?: { uid: string; name: string }[];
   microphonePermission?: DeviceSettingsStatus["microphonePermission"];
@@ -73,11 +75,14 @@ export class SpeechBridgeClient {
   async context() {
     const event = await this.request({ command: "context" }, ["context"], 3000);
     return {
+      platform: event.platform,
       appName: event.appName ?? "Unknown",
       bundleID: event.bundleID,
       category: event.category ?? "generic",
       promptKey: event.promptKey,
       screenContext: event.screenContext,
+      displayX: event.displayX,
+      displayY: event.displayY,
     };
   }
 
