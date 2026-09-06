@@ -169,7 +169,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const [installing, setInstalling] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceSettingsStatus | null>(null);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
-  const [apiKeyHints, setApiKeyHints] = useState<{ groq: string | null; gemini: string | null }>({ groq: null, gemini: null });
+  const [apiKeyHints, setApiKeyHints] = useStoredState<{ groq: string | null; gemini: string | null }>("voicelatte.apiKeyHints", { groq: null, gemini: null });
+  // Keychainに項目は残っているが読み出しを拒否された状態。存在確認だけでは判別できないため保持する。
+  const [apiKeyDenied, setApiKeyDenied] = useStoredState<{ groq: boolean; gemini: boolean }>("voicelatte.apiKeyDenied", { groq: false, gemini: false });
+  const apiKeyDeniedRef = useRef(apiKeyDenied);
+  apiKeyDeniedRef.current = apiKeyDenied;
   const transcriptRef = useRef("");
   const phaseRef = useRef<Phase>("idle");
   const levelRef = useRef(0);
@@ -192,11 +196,19 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   }, [language, t]);
   const refreshApiKeys = useCallback(async () => {
     const [groq, gemini] = await Promise.all([
-      invoke<string | null>("api_key_hint", { provider: "groq" }),
-      invoke<string | null>("api_key_hint", { provider: "gemini" }),
+      invoke<boolean>("api_key_present", { provider: "groq" }),
+      invoke<boolean>("api_key_present", { provider: "gemini" }),
     ]);
-    setApiKeyHints({ groq, gemini });
-  }, []);
+    setApiKeyHints((current) => ({
+      groq: groq && !apiKeyDeniedRef.current.groq ? current.groq ?? "••••" : null,
+      gemini: gemini && !apiKeyDeniedRef.current.gemini ? current.gemini ?? "••••" : null,
+    }));
+  }, [setApiKeyHints]);
+
+  const markKeyDenied = useCallback((provider: "groq" | "gemini") => {
+    setApiKeyHints((current) => ({ ...current, [provider]: null }));
+    setApiKeyDenied((current) => ({ ...current, [provider]: true }));
+  }, [setApiKeyDenied, setApiKeyHints]);
 
   const updateHud = useCallback(async (next: HudState) => {
     const shouldShow = next.phase !== "idle";
@@ -330,6 +342,9 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         locale: speechLocale,
         vocabulary: vocabularyHints(vocabulary),
         screenContext,
+      }).catch((error) => {
+        if (bridgeMessageCode(error) === "cloud.key_denied") markKeyDenied(provider);
+        throw error;
       });
       captureRef.current = undefined;
       const source = cloud?.text ?? raw;
@@ -346,7 +361,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             const result = await invoke<CloudResult>("cloud_refine", { provider: cloudRefinementProvider, text: source, prompt: refinementPrompt, screenContext });
             refined = result.text;
             setRecordingState({ transcript: refined, engine: result.model });
-          } catch {
+          } catch (error) {
+            if (bridgeMessageCode(error) === "cloud.key_denied") {
+              markKeyDenied(cloudRefinementProvider);
+              throw error;
+            }
             refined = await bridge.refine(source, category, refinementPrompt, speechLocale, screenContext).catch(() => source);
           }
         } else {
@@ -372,7 +391,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         onboardingTestRef.current = false;
       }, 2500);
     }
-  }, [bridge, localizedError, setHistory, setRecordingState, settings, speechLocale, t, vocabulary]);
+  }, [bridge, localizedError, markKeyDenied, setHistory, setRecordingState, settings, speechLocale, t, vocabulary]);
 
   const cancelRecording = useCallback(async () => {
     await bridge.cancel().catch(() => undefined);
@@ -556,12 +575,14 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             finally { setInstalling(false); }
           })()}
           onSaveApiKey={async (provider, key) => {
-            await invoke("set_api_key", { provider, key });
-            await refreshApiKeys();
+            const mask = await invoke<string>("set_api_key", { provider, key });
+            setApiKeyHints((current) => ({ ...current, [provider]: mask }));
+            setApiKeyDenied((current) => ({ ...current, [provider]: false }));
           }}
           onClearApiKey={async (provider) => {
             await invoke("clear_api_key", { provider });
-            await refreshApiKeys();
+            setApiKeyHints((current) => ({ ...current, [provider]: null }));
+            setApiKeyDenied((current) => ({ ...current, [provider]: false }));
           }}
         />}
         {section === "vocabulary" && <VocabularyPage entries={vocabulary} setEntries={setVocabulary} />}
@@ -771,13 +792,18 @@ function ApiKeyRow({ provider, label, keyHint, onSave, onClear }: {
     catch (reason) { setError(localizeBridgeMessage(reason instanceof Error ? reason.message : String(reason), language, t)); }
   };
   return <div className="setting-row api-key-row">
-    <div><b>{label}</b><span>{provider === "gemini" && `${t("apiKey.geminiDetail")} · `}{configured ? t("apiKey.configured") : t("apiKey.notConfigured")}</span>{error && <small className="api-key-error">{error}</small>}</div>
+    <div><b>{label}</b><span>{provider === "gemini" && `${t("apiKey.geminiDetail")} · `}{configured ? t("apiKey.configured") : t("apiKey.notConfigured")}</span><small>{t("apiKey.keychainNotice")}</small>{error && <small className="api-key-error">{error}</small>}</div>
     <div className="api-key-actions">
       <Input type="password" value={key} autoComplete="off" spellCheck={false} onChange={(event) => setKey(event.target.value)} placeholder={keyHint ?? t("apiKey.placeholder")} />
       <Button size="sm" disabled={!key.trim()} onClick={() => void run(async () => { await onSave(provider, key); setKey(""); })}>{configured ? t("apiKey.update") : t("apiKey.save")}</Button>
       {configured && <Button variant="ghost" size="sm" onClick={() => void run(() => onClear(provider))}>{t("apiKey.remove")}</Button>}
     </div>
   </div>;
+}
+
+function bridgeMessageCode(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.split(":", 2)[0];
 }
 
 function PermissionRow({ label, detail, status, onAction }: {

@@ -17,7 +17,7 @@ pub fn run() {
             cloud::prepare_capture,
             cloud::discard_capture,
             cloud::set_api_key,
-            cloud::api_key_hint,
+            cloud::api_key_present,
             cloud::clear_api_key,
             cloud::cloud_transcribe,
             cloud::cloud_refine,
