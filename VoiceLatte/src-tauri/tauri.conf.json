@@ -51,6 +51,7 @@
     "macOS": {
       "entitlements": "Entitlements.plist",
       "infoPlist": "Info.plist",
+      "minimumSystemVersion": "14.0",
       "signingIdentity": "Developer ID Application: HIBACHI inc. (TYX92DB6TA)"
     },
     "icon": [
