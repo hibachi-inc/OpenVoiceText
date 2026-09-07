@@ -89,6 +89,7 @@ sealed class Bridge
     int recordingId;
     string confirmed = "";
     string provisional = "";
+    IntPtr pasteTargetWindow;
 
     public async Task Handle(BridgeRequest request)
     {
@@ -182,12 +183,14 @@ sealed class Bridge
 
     async Task Start(BridgeRequest request)
     {
+        pasteTargetWindow = GetForegroundWindow();
         if (!string.IsNullOrWhiteSpace(request.AudioPath))
         {
             StartCloud(request);
             return;
         }
-        if (!await EnsureModel(request.Id, emitErrors: false))
+        if (SpeechRecognitionModel.GetReadyState() != AIFeatureReadyState.Ready
+            || !await EnsureModel(request.Id, emitErrors: false))
         {
             StartClassic(request);
             return;
@@ -387,12 +390,20 @@ sealed class Bridge
         }
     }
 
-    static void Insert(string text, bool autoPaste)
+    void Insert(string text, bool autoPaste)
     {
         var thread = new Thread(() =>
         {
             System.Windows.Forms.Clipboard.SetText(text);
-            if (autoPaste) System.Windows.Forms.SendKeys.SendWait("^v");
+            if (!autoPaste) return;
+            // 録音開始時に前面だったウィンドウへ戻してからペーストする
+            var window = pasteTargetWindow;
+            if (window != IntPtr.Zero && window != GetForegroundWindow())
+            {
+                SetForegroundWindow(window);
+                Thread.Sleep(150);
+            }
+            System.Windows.Forms.SendKeys.SendWait("^v");
         });
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
@@ -412,6 +423,7 @@ sealed class Bridge
     struct RECT { public int Left, Top, Right, Bottom; }
 
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out RECT rect);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 }

@@ -92,7 +92,7 @@ struct AppContext: Sendable {
     }
 
     private struct ContextBudget {
-        let deadline = CFAbsoluteTimeGetCurrent() + 0.2
+        let deadline = CFAbsoluteTimeGetCurrent() + 0.5
         var visited = 0
         var chunks: [String] = []
         var seen: Set<String> = []
@@ -117,8 +117,62 @@ struct AppContext: Sendable {
         )
 
         let joined = budget.chunks.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !joined.isEmpty else { return nil }
-        return maskSensitiveText(String(joined.suffix(1_500)))
+        var blocks: [String] = []
+        if !joined.isEmpty { blocks.append(joined) }
+        // 入力中の欄は走査対象から外す代わり、カーソル前後だけを別枠で渡す
+        if let caret = caretContext(focused) { blocks.append(caret) }
+        // 選択中テキストがあれば挿入位置の参考として渡す(置換ではない)
+        if let selected = selectedTextContext(focused) { blocks.append(selected) }
+        guard !blocks.isEmpty else { return nil }
+        return maskSensitiveText(String(blocks.joined(separator: "\n").suffix(10_000)))
+    }
+
+    private static func caretContext(_ focused: AXUIElement?) -> String? {
+        guard let focused else { return nil }
+        let role = stringAttribute(focused, kAXRoleAttribute) ?? ""
+        guard role == "AXTextField" || role == "AXTextArea" || role == "AXComboBox" else { return nil }
+        guard let value = stringAttribute(focused, kAXValueAttribute), !value.isEmpty else { return nil }
+        let text = value as NSString
+        let before: String
+        let after: String
+        var note = ""
+        if let range = selectedRange(of: focused), range.location != kCFNotFound, range.location <= text.length {
+            let caret = min(range.location, text.length)
+            let selectionEnd = min(caret + max(range.length, 0), text.length)
+            before = String(text.substring(to: caret).suffix(1000))
+            after = String(text.substring(from: selectionEnd).prefix(1000))
+        } else {
+            before = String(text.substring(from: max(text.length - 1000, 0)))
+            after = ""
+            note = "(カーソル位置不明のため末尾を表示)"
+        }
+        let flatten = { (part: String) in
+            part.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return "[入力中のカーソル前後]\nカーソル前: \(flatten(before))\(note)\nカーソル後: \(flatten(after))"
+    }
+
+    private static func selectedRange(of element: AXUIElement) -> CFRange? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, "AXSelectedTextRange" as CFString, &raw) == .success,
+              let raw, CFGetTypeID(raw) == AXValueGetTypeID() else { return nil }
+        var range = CFRange(location: kCFNotFound, length: 0)
+        guard AXValueGetValue(raw as! AXValue, .cfRange, &range) else { return nil }
+        return range
+    }
+
+    private static func selectedTextContext(_ focused: AXUIElement?) -> String? {
+        guard let focused else { return nil }
+        let role = stringAttribute(focused, kAXRoleAttribute) ?? ""
+        guard role == "AXTextField" || role == "AXTextArea" || role == "AXComboBox" else { return nil }
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused, "AXSelectedText" as CFString, &raw) == .success,
+              let selected = raw as? String else { return nil }
+        let flattened = selected.replacingOccurrences(of: #"\\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !flattened.isEmpty else { return nil }
+        return "[選択中のテキスト]\n(発話はこの位置への挿入文として整え、選択文の言い換え・要約にしない)\n\(String(flattened.prefix(500)))"
     }
 
     private static func collectVisibleText(

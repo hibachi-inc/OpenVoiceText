@@ -39,6 +39,7 @@ import {
   type UiLanguagePreference,
 } from "./i18n";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
+import voicelatteCow from "./assets/voicelatte-cow.png";
 import {
   DEFAULT_PROMPT_KEY,
   appPromptKey,
@@ -49,6 +50,7 @@ import {
   parseVocabularyAliases,
   postProcessTranscript,
   resolveCustomPrompt,
+  shouldDiscardRefinement,
   vocabularyHints,
   type CustomPrompts,
   type VocabularyEntry,
@@ -87,7 +89,7 @@ const DEFAULT_SETTINGS: Settings = {
   autoPaste: true,
   refinement: true,
   customPrompts: { [DEFAULT_PROMPT_KEY]: defaultRefinementPrompt(systemUiLanguage) },
-  toggleShortcut: "Control+Shift+Space",
+  toggleShortcut: "Control",
   holdShortcut: "Control",
   microphoneUID: "",
   muteOtherAudio: true,
@@ -165,7 +167,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const [showPrompts, setShowPrompts] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useStoredState("voicelatte.onboardingComplete", false, (stored) => stored === true);
   const [showOnboarding, setShowOnboarding] = useState(!onboardingComplete);
-  const [onboardingShortcutChosen, setOnboardingShortcutChosen] = useState(false);
+  const [onboardingShortcutChosen, setOnboardingShortcutChosen] = useState(Boolean(settings.toggleShortcut));
   const [onboardingTestPassed, setOnboardingTestPassed] = useState(false);
   const [selected, setSelected] = useState<HistoryEntry | null>(null);
   const [shortcutError, setShortcutError] = useState("");
@@ -191,7 +193,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const contextRef = useRef<{ appName: string; category: string; promptKey?: string; screenContext?: string; displayX?: number; displayY?: number }>({ appName: "VoiceLatte", category: "generic" });
   const captureRef = useRef<string | undefined>(undefined);
   const recordingProviderRef = useRef<TranscriptionProvider>("local");
-  const actionRef = useRef<(action: "toggle" | "refine-stop" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop") => void>(() => {});
+  const actionRef = useRef<(action: "toggle" | "refine-stop" | "cancel" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop") => void>(() => {});
   const setShortcutCapturing = useCallback((capturing: boolean) => { shortcutCaptureRef.current = capturing; }, []);
   const localizedError = useCallback((error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
@@ -211,6 +213,25 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const markKeyDenied = useCallback((provider: "groq" | "gemini") => {
     setApiKeyHints((current) => ({ ...current, [provider]: null }));
     setApiKeyDenied((current) => ({ ...current, [provider]: true }));
+  }, [setApiKeyDenied, setApiKeyHints]);
+
+  const installSpeechModel = useCallback(async () => {
+    setInstalling(true);
+    try { await bridge.installModel(speechLocale); setStatus(await bridge.status(speechLocale)); }
+    catch (error) { setMessage(localizedError(error)); }
+    finally { setInstalling(false); }
+  }, [bridge, localizedError, speechLocale]);
+
+  const saveApiKey = useCallback(async (provider: "groq" | "gemini", key: string) => {
+    const mask = await invoke<string>("set_api_key", { provider, key });
+    setApiKeyHints((current) => ({ ...current, [provider]: mask }));
+    setApiKeyDenied((current) => ({ ...current, [provider]: false }));
+  }, [setApiKeyDenied, setApiKeyHints]);
+
+  const clearApiKey = useCallback(async (provider: "groq" | "gemini") => {
+    await invoke("clear_api_key", { provider });
+    setApiKeyHints((current) => ({ ...current, [provider]: null }));
+    setApiKeyDenied((current) => ({ ...current, [provider]: false }));
   }, [setApiKeyDenied, setApiKeyHints]);
 
   const updateHud = useCallback(async (next: HudState) => {
@@ -256,7 +277,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     phaseRef.current = "preparing";
     onboardingTestRef.current = onboardingTest;
     if (onboardingTest) setOnboardingTestPassed(false);
-    const provider = onboardingTest ? "local" : settings.transcriptionProvider;
+    const provider = settings.transcriptionProvider;
     const context = await bridge.context().catch(() => ({ appName: "Unknown", category: "generic", platform: undefined, displayX: undefined, displayY: undefined }));
     if (!onboardingTest) contextRef.current = context;
     await positionHud(context.platform, context.displayX, context.displayY).catch(() => undefined);
@@ -319,8 +340,24 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     try {
       const raw = await bridge.stop();
       if (onboardingTestRef.current) {
-        setOnboardingTestPassed(Boolean(raw.trim()));
-        setRecordingState({ phase: "idle", transcript: raw, level: 0, message: "" });
+        const provider = recordingProviderRef.current;
+        const captureId = captureRef.current;
+        const cloud = provider !== "local" && captureId ? await invoke<CloudResult>("cloud_transcribe", {
+          captureId,
+          provider,
+          prompt: "",
+          locale: speechLocale,
+          vocabulary: vocabularyHints(vocabulary),
+          screenContext: "",
+        }).catch((error) => {
+          if (bridgeMessageCode(error) === "cloud.key_denied") markKeyDenied(provider);
+          throw error;
+        }) : undefined;
+        captureRef.current = undefined;
+        const result = cloud?.text ?? raw;
+        setOnboardingTestPassed(Boolean(result.trim()));
+        setRecordingState({ phase: "idle", transcript: result, level: 0, engine: cloud?.model, message: "" });
+        recordingProviderRef.current = "local";
         onboardingTestRef.current = false;
         return;
       }
@@ -375,7 +412,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
           refined = await bridge.refine(source, category, refinementPrompt, speechLocale, screenContext).catch(() => source);
         }
       }
-      const text = postProcessTranscript(refined, vocabulary);
+      // 整形結果がプロンプトや文脈のコピーになっていたら生テキストに戻す
+      const text = postProcessTranscript(shouldDiscardRefinement(refined, source, screenContext) ? source : refined, vocabulary);
       const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: cloud?.model ?? engineRef.current, appName, promptKey: promptKey ?? appName };
       setHistory((items) => [entry, ...items].slice(0, 500));
       await bridge.insert(text, settings.autoPaste);
@@ -429,16 +467,19 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       };
       if (action === "toggle") void (phaseRef.current === "idle" ? startRecording(showOnboarding) : stopRecording());
       if (action === "refine-stop" && phaseRef.current === "listening") void stopRecording(true);
+      if (action === "cancel" && (phaseRef.current === "listening" || phaseRef.current === "preparing")) void cancelRecording();
       if (action === "hold-start") beginHold(150);
       if (action === "hold-stop") endHold(false);
       if (action === "shared-start") beginHold(300);
       if (action === "shared-stop") endHold(true);
     };
-  }, [showOnboarding, startRecording, stopRecording]);
+  }, [cancelRecording, showOnboarding, startRecording, stopRecording]);
 
   useEffect(() => {
-    void bridge.status(speechLocale).then(setStatus).catch((error) => setMessage(localizedError(error)));
-    void bridge.warmUp(speechLocale).catch(() => undefined);
+    void bridge.status(speechLocale).then((next) => {
+      setStatus(next);
+      if (next.modelState === "ready") void bridge.warmUp(speechLocale).catch(() => undefined);
+    }).catch((error) => setMessage(localizedError(error)));
     void bridge.settingsStatus().then(setDeviceStatus).catch(() => undefined);
     void isAutostartEnabled().then(setLaunchAtLogin).catch(() => undefined);
     void refreshApiKeys().catch(() => undefined);
@@ -528,6 +569,19 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   }, [phase, settings.holdShortcut, settings.refinement, settings.toggleShortcut, showOnboarding]);
 
   useEffect(() => {
+    if ((phase !== "listening" && phase !== "preparing")
+      || settings.toggleShortcut === "Escape" || settings.holdShortcut === "Escape") return;
+    let active = true;
+    void register("Escape", (event) => {
+      if (active && event.state === "Pressed" && !shortcutCaptureRef.current) actionRef.current("cancel");
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+      void unregister("Escape").catch(() => undefined);
+    };
+  }, [phase, settings.holdShortcut, settings.toggleShortcut]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listen("hud-stop", () => actionRef.current("toggle")).then((fn) => { unlisten = fn; });
     return () => unlisten?.();
@@ -537,6 +591,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     <main className="app-shell">
       <div className="window-drag-region" data-tauri-drag-region />
       <aside className="sidebar" aria-label={t("aria.settingsCategories")}>
+        <div className="sidebar-brand">Voice Latte</div>
         <nav>{nav.map((item) => {
           const Icon = item.icon;
           return <Button
@@ -571,22 +626,9 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
           status={status} settings={settings} setSettings={setSettings} installing={installing}
           deviceStatus={deviceStatus} apiKeyHints={apiKeyHints}
           onPrompts={() => setShowPrompts(true)}
-          onInstall={() => void (async () => {
-            setInstalling(true);
-            try { await bridge.installModel(speechLocale); setStatus(await bridge.status(speechLocale)); }
-            catch (error) { setMessage(localizedError(error)); }
-            finally { setInstalling(false); }
-          })()}
-          onSaveApiKey={async (provider, key) => {
-            const mask = await invoke<string>("set_api_key", { provider, key });
-            setApiKeyHints((current) => ({ ...current, [provider]: mask }));
-            setApiKeyDenied((current) => ({ ...current, [provider]: false }));
-          }}
-          onClearApiKey={async (provider) => {
-            await invoke("clear_api_key", { provider });
-            setApiKeyHints((current) => ({ ...current, [provider]: null }));
-            setApiKeyDenied((current) => ({ ...current, [provider]: false }));
-          }}
+          onInstall={() => void installSpeechModel()}
+          onSaveApiKey={saveApiKey}
+          onClearApiKey={clearApiKey}
         />}
         {section === "vocabulary" && <VocabularyPage entries={vocabulary} setEntries={setVocabulary} />}
         {section === "shortcuts" && <ShortcutPage settings={settings} setSettings={setSettings} error={shortcutError} onCaptureChange={setShortcutCapturing} />}
@@ -605,7 +647,10 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         message={message}
         settings={settings}
         setSettings={setSettings}
+        status={status}
         deviceStatus={deviceStatus}
+        installing={installing}
+        apiKeyHints={apiKeyHints}
         shortcutChosen={onboardingShortcutChosen}
         testPassed={onboardingTestPassed}
         shortcutError={shortcutError}
@@ -613,6 +658,9 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
           await bridge.requestPermission(permission);
           setDeviceStatus(await bridge.settingsStatus());
         }}
+        onInstall={() => void installSpeechModel()}
+        onSaveApiKey={saveApiKey}
+        onClearApiKey={clearApiKey}
         onShortcutCaptureChange={setShortcutCapturing}
         onShortcutChange={(shortcut) => {
           setOnboardingShortcutChosen(true);
@@ -932,8 +980,8 @@ function AboutPage({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
   useEffect(() => { void getVersion().then(setVersion).catch(() => undefined); }, []);
   useEffect(() => { void runUpdateCheck(setUpdate, false); }, []);
   return <Card className="glass-card about gap-0 py-0">
-    <div className="about-mark"><Mic /></div>
-    <b>VoiceLatte</b>
+    <img className="about-character" src={voicelatteCow} alt="" />
+    <b>Voice Latte</b>
     <p>{t("about.tagline")}</p>
     <small>{version ? t("about.version", { version }) : ""}</small>
     <UpdateRow state={update} onCheck={() => void runUpdateCheck(setUpdate, true)} onInstall={() => void installUpdate(update, setUpdate)} />
@@ -986,7 +1034,7 @@ function UpdateRow({ state, onCheck, onInstall }: { state: UpdateState; onCheck:
   </div>;
 }
 
-function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, deviceStatus, shortcutChosen, testPassed, shortcutError, onRequestPermission, onShortcutCaptureChange, onShortcutChange, onComplete, onClose }: {
+function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, status, deviceStatus, installing, apiKeyHints, shortcutChosen, testPassed, shortcutError, onRequestPermission, onInstall, onSaveApiKey, onClearApiKey, onShortcutCaptureChange, onShortcutChange, onComplete, onClose }: {
   dismissible: boolean;
   phase: Phase;
   transcript: string;
@@ -994,11 +1042,17 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
   message: string;
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
+  status: SpeechStatus | null;
   deviceStatus: DeviceSettingsStatus | null;
+  installing: boolean;
+  apiKeyHints: { groq: string | null; gemini: string | null };
   shortcutChosen: boolean;
   testPassed: boolean;
   shortcutError: string;
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility") => Promise<void>;
+  onInstall: () => void;
+  onSaveApiKey: (provider: "groq" | "gemini", key: string) => Promise<void>;
+  onClearApiKey: (provider: "groq" | "gemini") => Promise<void>;
   onShortcutCaptureChange: (capturing: boolean) => void;
   onShortcutChange: (shortcut: string) => void;
   onComplete: () => void;
@@ -1006,18 +1060,24 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
 }) {
   const { t } = useI18n();
   const [capturingShortcut, setCapturingShortcut] = useState(false);
-  const permissionReady = (status?: string) => status === "authorized" || status === "system-managed" || status === "not-required";
-  const permissionsReady = permissionReady(deviceStatus?.microphonePermission)
-    && permissionReady(deviceStatus?.speechPermission)
-    && permissionReady(deviceStatus?.accessibilityPermission);
+  const [microphoneConfirmed, setMicrophoneConfirmed] = useState(false);
   const testActive = phase === "listening";
   const testBusy = phase === "preparing" || phase === "processing";
   const devices = deviceStatus?.devices ?? [];
   const shortcut = prettyShortcut(settings.toggleShortcut);
+  const platform = status?.platform ?? deviceStatus?.platform ?? "macos";
+  const providerReady = settings.transcriptionProvider === "local"
+    ? status?.modelState === "ready"
+    : Boolean(apiKeyHints[settings.transcriptionProvider]);
+  const spaceKeyMissing = settings.refinement && settings.refinementProvider !== "local"
+    && !apiKeyHints[settings.refinementProvider];
   useEffect(() => {
     onShortcutCaptureChange(capturingShortcut);
     return () => onShortcutCaptureChange(false);
   }, [capturingShortcut, onShortcutCaptureChange]);
+  useEffect(() => {
+    if (level >= 0.015 || testPassed) setMicrophoneConfirmed(true);
+  }, [level, testPassed]);
 
   return <Dialog open onOpenChange={(open) => { if (!open && dismissible) onClose(); }}>
     <DialogContent
@@ -1039,6 +1099,31 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
             <PermissionRow label={t("permission.speech")} status={deviceStatus.speechPermission} onAction={() => onRequestPermission("speech")} />
             <PermissionRow label={t("permission.accessibility")} detail={t("permission.accessibilityDetail")} status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
           </div> : <p className="onboarding-hint">{t("onboarding.checkingPermissions")}</p>}
+        </Card>
+
+        <Card className="onboarding-section gap-0 py-0">
+          <b className="onboarding-step-title">{t("onboarding.recognition")}</b>
+          <div className="onboarding-method-row">
+            <div><b>{t("general.processingMethod")}</b><span>{t("onboarding.recognitionHint")}</span></div>
+            <Select value={settings.transcriptionProvider} onValueChange={(transcriptionProvider) => setSettings((current) => ({ ...current, transcriptionProvider: transcriptionProvider as TranscriptionProvider }))}>
+              <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">{t(platform === "windows" ? "onboarding.localWindows" : "onboarding.localApple")}</SelectItem>
+                <SelectItem value="groq">Groq Cloud</SelectItem>
+                <SelectItem value="gemini">Gemini</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {settings.transcriptionProvider === "local" ? <div className="onboarding-model-status">
+            <div><span className={`status-dot ${status?.modelState === "ready" ? "ready" : ""}`} /><span>{modelStatusMessage(status, t)}</span></div>
+            {status?.modelState === "download-required" && <Button variant="outline" size="sm" onClick={onInstall} disabled={installing}>{installing ? t("general.addingModel") : t("general.addModel")}</Button>}
+          </div> : <ApiKeyRow
+            provider={settings.transcriptionProvider}
+            label={`${settings.transcriptionProvider === "groq" ? "Groq" : "Gemini"} API Key`}
+            keyHint={apiKeyHints[settings.transcriptionProvider]}
+            onSave={onSaveApiKey}
+            onClear={onClearApiKey}
+          />}
         </Card>
 
         <Card className="onboarding-section gap-0 py-0">
@@ -1075,14 +1160,16 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
           <div className="onboarding-level" aria-label={t("hud.audioLevel")}><span style={{ width: `${Math.round(Math.min(1, level) * 100)}%` }} /></div>
           <div className="onboarding-test-row">
             <kbd>{shortcut}</kbd>
-            <span>{!shortcutChosen ? t("onboarding.chooseShortcutFirst") : testActive ? t("onboarding.testActive", { shortcut }) : testBusy ? phaseLabel(phase, t) : testPassed ? t("onboarding.testPassed") : t("onboarding.testHint", { shortcut })}</span>
+            <span>{!shortcutChosen ? t("onboarding.chooseShortcutFirst") : testActive ? t("onboarding.testActive", { shortcut }) : testBusy ? phaseLabel(phase, t) : testPassed ? t("onboarding.testPassed") : !providerReady ? t("onboarding.recognitionRequired", { shortcut }) : t("onboarding.testHint", { shortcut })}</span>
           </div>
+          {shortcutChosen && <p className="onboarding-hint">{t("onboarding.stopHint", { shortcut })}{settings.refinement ? t("onboarding.spaceHint") : ""}{spaceKeyMissing ? t("onboarding.spaceKeyNote") : ""}</p>}
+          {microphoneConfirmed && <div className="onboarding-mic-confirmed"><Check />{t("onboarding.microphoneConfirmed")}</div>}
           {transcript && shortcutChosen && <div className={cn("onboarding-result", testPassed && "passed")}>{testPassed ? <Check /> : <Mic />}{transcript}</div>}
           {phase === "error" && message && <p className="inline-error">{message}</p>}
         </Card>
       </div>
 
-      <DialogFooter className="dialog-actions"><Button onClick={onComplete} disabled={!permissionsReady || !shortcutChosen || !testPassed || testActive || testBusy}>{t("onboarding.complete")}</Button></DialogFooter>
+      <DialogFooter className="dialog-actions"><Button onClick={onComplete} disabled={!microphoneConfirmed || testActive || testBusy}>{t("onboarding.complete")}</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }

@@ -73,6 +73,7 @@ private final class Bridge: @unchecked Sendable {
     private let lock = NSLock()
     private var recordingID = 0
     private var mutedOutputDeviceID: AudioDeviceID?
+    private var pasteTargetPID: pid_t?
 
     func handle(_ request: BridgeRequest) async {
         switch request.command {
@@ -136,6 +137,7 @@ private final class Bridge: @unchecked Sendable {
     }
 
     private func start(_ request: BridgeRequest) async {
+        pasteTargetPID = await MainActor.run { NSWorkspace.shared.frontmostApplication?.processIdentifier }
         let microphoneAllowed = await AVCaptureDevice.requestAccess(for: .audio)
         let isCloud = request.audioPath?.isEmpty == false
         let speechAllowed = isCloud ? true : await requestSpeechPermission()
@@ -339,6 +341,16 @@ private final class Bridge: @unchecked Sendable {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         guard autoPaste, AXIsProcessTrusted() else { return }
+        // 録音開始時に前面だったアプリへ戻してからペーストする
+        if let pid = pasteTargetPID, pid != getpid(),
+           let target = NSRunningApplication(processIdentifier: pid), !target.isTerminated {
+            if Thread.isMainThread {
+                _ = target.activate()
+            } else {
+                DispatchQueue.main.sync { _ = target.activate() }
+            }
+            Thread.sleep(forTimeInterval: 0.15)
+        }
         let source = CGEventSource(stateID: .hidSystemState)
         let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true)
         let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false)

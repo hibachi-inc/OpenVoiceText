@@ -96,6 +96,7 @@ enum FoundationModelsRefiner {
         }
         return """
         以下の音声文字起こしを整形して。言い換え、要約、補足、文体変更、語順変更、推測による修正はしないで。フィラーを削除し、句読点を補い、数字・金額・日付・単位を文脈に合う表記へ整えるだけにして。\(hint)
+        カーソル前後の文脈があれば、前後の繰り返しを含めず発話部分だけ返す。
         整形後の本文だけを返して。
         """
     }
@@ -110,6 +111,7 @@ enum FoundationModelsRefiner {
         }
         return """
         Format the following voice transcript only. Do not paraphrase, summarize, add details, change tone, reorder wording, or make inferred corrections. Only remove filler words, add punctuation, and format numbers, money, dates, and units appropriately for the context. \(hint)
+        When cursor surroundings are present, return only the dictated part without repeating them.
         Return only the refined text.
         """
     }
@@ -120,7 +122,8 @@ enum FoundationModelsRefiner {
 
         let lower = trimmed.lowercased()
         let originalLower = original.lowercased()
-        let leakedInputTag = lower.contains("<input>") && !originalLower.contains("<input>")
+        let leakedTags = ["[untrusted", "[transcript", "<transcript>", "<input>", "共通ルール", "shared rules", "個別の整形方針", "custom formatting"]
+        let leakedPromptTag = leakedTags.contains { lower.contains($0) && !originalLower.contains($0) }
         let looksLikeExplanation = [
             "テキストは以下の通り",
             "以下の通りです",
@@ -130,7 +133,7 @@ enum FoundationModelsRefiner {
             "the transcript is as follows",
         ].contains { lower.contains($0) }
 
-        if leakedInputTag || looksLikeExplanation {
+        if leakedPromptTag || looksLikeExplanation {
             logger.warning("Model returned prompt/meta text; falling back to simple cleanup")
             return SimpleRefiner.clean(original)
         }

@@ -7,9 +7,11 @@ import {
   migrateLegacyCustomPrompts,
   normalizeCustomPrompts,
   normalizeVocabularyEntries,
+  outputLeaksContext,
   parseVocabularyAliases,
   postProcessTranscript,
   resolveCustomPrompt,
+  shouldDiscardRefinement,
   vocabularyHints,
 } from "../src/text-processing.ts";
 import { createTranslator, defaultRefinementPrompt, legacyDefaultPrompts, resolveSpeechLocale, resolveUiLanguage } from "../src/i18n.ts";
@@ -98,4 +100,9 @@ assert.equal(resolveUiLanguage("system", "ja-JP"), "ja");
 assert.equal(resolveUiLanguage("system", "fr-FR"), "en");
 assert.equal(resolveSpeechLocale("system", ["de-DE", "en-US"]), "de-DE");
 assert.equal(resolveSpeechLocale("ja-JP", ["en-US"]), "ja-JP");
+assert.equal(outputLeaksContext("これはカーソル前の長い文章であってテスト用の文脈です、と続けます", "これはカーソル前の長い文章であってテスト用の文脈です"), true);
+assert.equal(outputLeaksContext("全く別の文章です", "これはカーソル前の長い文章であってテスト用の文脈です"), false);
+assert.equal(outputLeaksContext("短い", "これはカーソル前の長い文章であってテスト用の文脈です"), false);
+assert.equal(shouldDiscardRefinement("[TRANSCRIPT TO FORMAT]そのまま", "そのまま", ""), true);
+assert.equal(shouldDiscardRefinement("そのまま", "そのまま", "カーソル前の長い文章がここにあります"), false);
 console.log("text processing: ok");
