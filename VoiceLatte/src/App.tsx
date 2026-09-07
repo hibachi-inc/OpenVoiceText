@@ -76,7 +76,7 @@ type Settings = {
   refinementProvider: RefinementProvider;
   promptDefaultsVersion: number;
 };
-type HudState = { phase: Phase; transcript: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string };
+type HudState = { phase: Phase; transcript: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refined?: boolean };
 type PreparedCapture = { captureId: string; audioPath: string };
 type CloudResult = { text: string; model: string };
 type CloudTranscript = { text: string; model: string };
@@ -165,6 +165,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const [history, setHistory] = useStoredState<HistoryEntry[]>("voicelatte.history", []);
   const [vocabulary, setVocabulary] = useStoredState<VocabularyEntry[]>("voicelatte.vocabulary", DEFAULT_VOCABULARY, normalizeVocabularyEntries);
   const [showPrompts, setShowPrompts] = useState(false);
+  const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
   const [onboardingComplete, setOnboardingComplete] = useStoredState("voicelatte.onboardingComplete", false, (stored) => stored === true);
   const [showOnboarding, setShowOnboarding] = useState(!onboardingComplete);
   const [onboardingShortcutChosen, setOnboardingShortcutChosen] = useState(Boolean(settings.toggleShortcut));
@@ -185,6 +186,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const engineRef = useRef("");
   const captureModeRef = useRef<CaptureMode>("live");
   const messageRef = useRef("");
+  const spaceHintRef = useRef(false);
+  const refinedRef = useRef(false);
   const hudVisibleRef = useRef(false);
   const onboardingTestRef = useRef(false);
   const holdTimer = useRef<number | undefined>(undefined);
@@ -258,6 +261,9 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     if (next.engine !== undefined) engineRef.current = next.engine;
     if (next.captureMode !== undefined) captureModeRef.current = next.captureMode;
     if (next.message !== undefined) { messageRef.current = next.message; setMessage(next.message); }
+    if (next.spaceHint !== undefined) spaceHintRef.current = next.spaceHint;
+    if (next.refined !== undefined) refinedRef.current = next.refined;
+    if (next.phase === "idle") { spaceHintRef.current = false; refinedRef.current = false; }
     if (!onboardingTestRef.current) {
       void updateHud({
         phase: nextPhase,
@@ -267,6 +273,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         captureMode: next.captureMode ?? captureModeRef.current,
         uiLanguage: language,
         message: next.message ?? messageRef.current,
+        spaceHint: spaceHintRef.current,
+        refined: refinedRef.current,
       });
     }
   }, [language, updateHud]);
@@ -319,7 +327,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         },
         capture && cloudProvider ? { audioPath: capture.audioPath, provider: cloudProvider } : undefined,
       );
-      setRecordingState({ phase: "listening", message: t("record.listening") });
+      setRecordingState({ phase: "listening", message: t("record.listening"), spaceHint: settings.refinement && settings.toggleShortcut !== "Space" && settings.holdShortcut !== "Space" });
     } catch (error) {
       if (captureRef.current) {
         void invoke("discard_capture", { captureId: captureRef.current });
@@ -418,7 +426,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       setHistory((items) => [entry, ...items].slice(0, 500));
       await bridge.insert(text, settings.autoPaste);
       recordingProviderRef.current = "local";
-      setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? t("record.inserted") : t("record.completed") });
+      setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? t("record.inserted") : t("record.completed"), refined: shouldRefine });
       window.setTimeout(() => setRecordingState({ phase: "idle" }), 1400);
     } catch (error) {
       if (captureRef.current) {
@@ -484,6 +492,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     void isAutostartEnabled().then(setLaunchAtLogin).catch(() => undefined);
     void refreshApiKeys().catch(() => undefined);
   }, [bridge, localizedError, refreshApiKeys, speechLocale]);
+
+  useEffect(() => { void runUpdateCheck(setUpdate, false); }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -603,6 +613,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             <Icon aria-hidden="true" />{t(item.label)}
           </Button>;
         })}</nav>
+        {update.status === "available" ? <Button size="sm" className="sidebar-update" onClick={() => void installUpdate(update, setUpdate)}>
+          <Download />{t("update.install", { version: update.version })}
+        </Button> : <Button variant="ghost" size="sm" className="sidebar-update-check" disabled={update.status === "checking" || update.status === "downloading"} onClick={() => void runUpdateCheck(setUpdate, true)}>
+          {update.status === "checking" || update.status === "downloading" ? t("update.checking") : t("update.check")}
+        </Button>}
       </aside>
 
       <section className="content">
@@ -632,7 +647,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         />}
         {section === "vocabulary" && <VocabularyPage entries={vocabulary} setEntries={setVocabulary} />}
         {section === "shortcuts" && <ShortcutPage settings={settings} setSettings={setSettings} error={shortcutError} onCaptureChange={setShortcutCapturing} />}
-        {section === "about" && <AboutPage onOpenOnboarding={() => {
+        {section === "about" && <AboutPage update={update} setUpdate={setUpdate} onOpenOnboarding={() => {
           setOnboardingShortcutChosen(false);
           setOnboardingTestPassed(false);
           setShowOnboarding(true);
@@ -973,12 +988,10 @@ function ShortcutRecorder({ value, active, disabled = false, onStart, onChange }
   return <Button variant="outline" size="sm" disabled={disabled} className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? t("shortcuts.press") : prettyShortcut(value)}</Button>;
 }
 
-function AboutPage({ onOpenOnboarding }: { onOpenOnboarding: () => void }) {
+function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void }) {
   const { t } = useI18n();
   const [version, setVersion] = useState("");
-  const [update, setUpdate] = useState<UpdateState>({ status: "idle" });
   useEffect(() => { void getVersion().then(setVersion).catch(() => undefined); }, []);
-  useEffect(() => { void runUpdateCheck(setUpdate, false); }, []);
   return <Card className="glass-card about gap-0 py-0">
     <img className="about-character" src={voicelatteCow} alt="" />
     <b>Voice Latte</b>
@@ -1306,27 +1319,107 @@ function Hud() {
   const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", level: 0, engine: "", captureMode: "live", uiLanguage: systemUiLanguage });
   const t = useMemo(() => createTranslator(state.uiLanguage ?? systemUiLanguage), [state.uiLanguage]);
   const transcriptViewRef = useRef<HTMLElement>(null);
+  const copyRef = useRef<HTMLDivElement>(null);
+  const hudHeightRef = useRef(64);
+  const [refinedFlash, setRefinedFlash] = useState(false);
+  // 録音開始時に一度だけ記録するHUDの下辺(論理座標)。以後はこの下辺を固定して上へ伸びる。
+  const hudBottomRef = useRef<number | null>(null);
   useEffect(() => {
     const hudWindow = getCurrentWindow();
     void (async () => {
       await hudWindow.setBackgroundColor([0, 0, 0, 0]);
     })();
+    // ドラッグで移動したときに下辺を更新し、そこを基準に上へ伸びるようにする
+    let unlistenMoved: (() => void) | undefined;
+    void hudWindow.onMoved(({ payload }) => {
+      void (async () => {
+        const scale = await hudWindow.scaleFactor().catch(() => 1);
+        const size = await hudWindow.outerSize().catch(() => undefined);
+        if (size) {
+          hudBottomRef.current = payload.y / scale + size.height / scale;
+        }
+      })();
+    }).then((fn) => { unlistenMoved = fn; });
     let unlisten: (() => void) | undefined;
     void listen<HudState>("recording-state", (event) => setState(event.payload)).then((fn) => { unlisten = fn; });
-    return () => unlisten?.();
+    return () => { unlisten?.(); unlistenMoved?.(); };
   }, []);
   useEffect(() => {
     const view = transcriptViewRef.current;
     if (!view) return;
     if (!state.transcript) view.scrollLeft = 0;
-    else view.scrollTo({ left: view.scrollWidth, behavior: "smooth" });
   }, [state.transcript]);
+  // AI整形で確定したときに、テキストが光って書き換わる演出を入れる
+  useEffect(() => {
+    if (state.phase !== "done" || !state.refined) return;
+    setRefinedFlash(true);
+    const timer = window.setTimeout(() => setRefinedFlash(false), 1100);
+    return () => window.clearTimeout(timer);
+  }, [state.phase, state.refined]);
+  // 録音開始時(またはリセット時)に下辺を記録する
+  useEffect(() => {
+    if (state.phase === "idle") {
+      hudBottomRef.current = null;
+      // 前回拡大したままのときだけ実ウィンドウを 64 に戻す
+      if (hudHeightRef.current !== 64) {
+        hudHeightRef.current = 64;
+        void (async () => {
+          const hudWindow = getCurrentWindow();
+          const scale = await hudWindow.scaleFactor().catch(() => 1);
+          const position = await hudWindow.outerPosition().catch(() => undefined);
+          const size = await hudWindow.outerSize().catch(() => undefined);
+          if (position && size) {
+            const bottom = position.y / scale + size.height / scale;
+            await invoke("hud_resize", { height: 64, bottom }).catch(() => undefined);
+          }
+        })();
+      }
+      return;
+    }
+    if (hudBottomRef.current !== null) return;
+    void (async () => {
+      const hudWindow = getCurrentWindow();
+      const scale = await hudWindow.scaleFactor().catch(() => 1);
+      const position = await hudWindow.outerPosition().catch(() => undefined);
+      const size = await hudWindow.outerSize().catch(() => undefined);
+      if (position && size) {
+        hudBottomRef.current = position.y / scale + size.height / scale;
+      }
+    })();
+  }, [state.phase]);
+  useEffect(() => {
+    const copy = copyRef.current;
+    const view = transcriptViewRef.current;
+    if (!copy || !view) return;
+    // 折り返し行数が変わったときだけリサイズし、下辺を固定して上方向へ伸ばす
+    // 判定は本文の自然な高さ(view.scrollHeightはmax-heightの影響を受けない)+ラベル・余白で、
+    // 表示上の高さ制限から独立させる
+    const label = copy.querySelector("small") as HTMLElement | null;
+    const hint = copy.querySelector(".hud-space-hint") as HTMLElement | null;
+    const chrome = 20 + (label?.offsetHeight ?? 14) + (hint?.offsetHeight ?? 0);
+    const capped = view.scrollHeight + chrome > 320;
+    view.classList.toggle("capped", capped);
+    // 上限時は本文の最大高さをウィンドウ内に収まる値に合わせる
+    if (capped) view.style.maxHeight = `${320 - chrome}px`;
+    else view.style.removeProperty("max-height");
+    // 上限到達後はテキスト領域だけを末尾へ自動スクロールさせる
+    if (capped) view.scrollTop = view.scrollHeight;
+    const logicalHeight = Math.max(64, Math.min(view.scrollHeight + chrome, 320));
+    if (logicalHeight === hudHeightRef.current) return;
+    void (async () => {
+      const bottom = hudBottomRef.current;
+      if (bottom === null) return;
+      await invoke("hud_resize", { height: logicalHeight, bottom }).catch(() => undefined);
+      hudHeightRef.current = logicalHeight;
+    })();
+  }, [state.transcript, state.phase, state.spaceHint]);
   const deferred = state.captureMode === "deferred";
   const placeholder = !state.transcript && state.phase === "listening";
   const displayText = state.transcript || (placeholder ? t(deferred ? "hud.deferredPrompt" : "hud.prompt") : state.message) || t("hud.prompt");
-  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}`} data-tauri-drag-region>
+  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}`}>
+    <div className="hud-drag-layer" data-tauri-drag-region />
     <div className="hud-orb"><span className="hud-pulse" /><span className="hud-mic">●</span></div>
-    <div className="hud-copy"><small>{phaseLabel(state.phase, t, deferred)}</small><b ref={transcriptViewRef} className={placeholder ? "placeholder" : undefined}>{displayText}</b></div>
+    <div className={"hud-copy" + (refinedFlash ? " refining" : "")} ref={copyRef}><small>{phaseLabel(state.phase, t, deferred)}</small><b ref={transcriptViewRef} className={placeholder ? "placeholder" : undefined}>{displayText}</b>{state.phase === "listening" && state.spaceHint && <i className="hud-space-hint">{t("hud.spaceHint")}</i>}</div>
     <div className="hud-meter" aria-label={t("hud.audioLevel")}>{Array.from({ length: 7 }, (_, i) => <i key={i} className={i / 7 < state.level ? "lit" : ""} />)}</div>
     {(state.phase === "listening" || state.phase === "preparing") && <Button variant="ghost" className="hud-stop h-9 rounded-none" onClick={() => void emitTo("main", "hud-stop")}><Square />{t("hud.stop")}</Button>}
   </main>;

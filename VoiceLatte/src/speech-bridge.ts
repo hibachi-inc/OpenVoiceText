@@ -52,6 +52,9 @@ export class SpeechBridgeClient {
   private recordingId?: number;
   private callbacks?: RecordingCallbacks;
   private shortcutListener?: (shortcut: string, state: "Pressed" | "Released") => void;
+  private modifierShortcuts: string[] = [];
+  // 子プロセスの世代。旧プロセスの close 通知が新プロセスの状態を壊さないための識別子。
+  private generation = 0;
   private pending = new Map<number, {
     accept: (event: BridgeEvent) => boolean;
     resolve: (event: BridgeEvent) => void;
@@ -155,13 +158,40 @@ export class SpeechBridgeClient {
 
   async configureModifierShortcuts(shortcuts: string[], listener: (shortcut: string, state: "Pressed" | "Released") => void) {
     this.shortcutListener = listener;
+    this.modifierShortcuts = shortcuts;
     await this.request({ command: "configure_shortcut", shortcuts }, ["ready"], 5000);
   }
 
   async close() {
     await this.starting;
+    this.generation++;
     await this.child?.kill();
     this.child = undefined;
+  }
+
+  // 起動処理の完了を待たずに子プロセスを捨てる。waitFor のタイムアウト専用。
+  // close() は starting を待つため、起動中のタイムアウトから呼ぶと自己デッドロックする。
+  private async hardReset() {
+    // 先に世代を進め、旧プロセスの close 通知が新プロセスを壊さないようにする
+    this.generation++;
+    const child = this.child;
+    this.child = undefined;
+    this.recordingId = undefined;
+    const callbacks = this.callbacks;
+    this.callbacks = undefined;
+    // 子プロセスを失う以上、待機中の要求は成立しないのですべて棄却する
+    const pendings = [...this.pending.values()];
+    this.pending.clear();
+    for (const { reject, timer } of pendings) {
+      window.clearTimeout(timer);
+      reject(new Error("音声認識ブリッジから応答がありません"));
+    }
+    try {
+      await child?.kill();
+    } catch {
+      // 終了済み・起動失敗時は無視する
+    }
+    callbacks?.onError("音声認識ブリッジから応答がありません");
   }
 
   private async request(
@@ -184,8 +214,12 @@ export class SpeechBridgeClient {
     send: () => void,
   ): Promise<BridgeEvent> {
     return new Promise((resolve, reject) => {
+      // タイムアウト時点で世代が進んでいたら、既に別のタイムアウトが復旧済みのため何もしない
+      const generation = this.generation;
       const timer = window.setTimeout(() => {
         this.pending.delete(id);
+        // 同世代のまま＝自分が最初のタイムアウトのときだけ復旧処理を行う
+        if (generation === this.generation) void this.hardReset();
         reject(new Error("音声認識ブリッジから応答がありません"));
       }, timeout);
       this.pending.set(id, {
@@ -202,10 +236,13 @@ export class SpeechBridgeClient {
     if (this.child) return;
     if (this.starting) return this.starting;
     this.starting = (async () => {
+      const generation = ++this.generation;
       const command = Command.sidecar("binaries/voicelatte-speech");
       command.stdout.on("data", (line) => this.receive(line));
       command.stderr.on("data", (line) => console.error(`[speech-bridge] ${line}`));
       command.on("close", () => {
+        // 旧世代プロセスの通知は無視する
+        if (generation !== this.generation) return;
         this.child = undefined;
         const error = new Error("音声認識ブリッジが終了しました");
         this.pending.forEach(({ reject, timer }) => {
@@ -215,7 +252,17 @@ export class SpeechBridgeClient {
         this.pending.clear();
         this.callbacks?.onError(error.message);
       });
-      this.child = await command.spawn();
+      const spawned = await command.spawn();
+      // その間にリセットされていたら古いプロセスは捨てる
+      if (generation !== this.generation) {
+        await spawned.kill().catch(() => undefined);
+        return;
+      }
+      this.child = spawned;
+      // 再起動後に修飾キーショートカットを復元する
+      if (this.modifierShortcuts.length > 0) {
+        await this.request({ command: "configure_shortcut", shortcuts: this.modifierShortcuts }, ["ready"], 5000);
+      }
     })().finally(() => { this.starting = undefined; });
     return this.starting;
   }
