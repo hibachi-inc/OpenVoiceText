@@ -1,11 +1,16 @@
 #!/bin/bash
 # Finder からダブルクリックすると Terminal が開いて VoiceLatte の dev 版を起動する。
 # Desktop には symlink を貼って使う（mikan-chat の dev.command と同じ運用）。
-# 残留プロセスが二重起動・応答なしの原因になるため、起動前に掃除してから開く。
+#
+# 注意: 旧Swift版 (.build/VoiceLatte.app, 実体 VoiceFlowApp) と dev版 (Tauri, 実体
+# voicelatte) はバンドルID・アプリ名が同一 (com.hibachi.voicelatte / VoiceLatte)。
+# 旧版が残留していると open が古い方を再利用して修正が反映されないため、
+# 両方とも確実に落としてから開く。
 set -u
 
 PROJECT_DIR="/Users/kotatsu/AI-BASE/ai-dev/dev/OpenVoiceText-Pro/VoiceLatte"
 DEBUG_APP="$PROJECT_DIR/src-tauri/target/debug/bundle/macos/VoiceLatte.app"
+DEBUG_BIN="$DEBUG_APP/Contents/MacOS/voicelatte"
 cd "$PROJECT_DIR"
 
 # zsh で起動された場合に PATH が通らないことがあるので明示的に補う
@@ -15,24 +20,60 @@ echo "VoiceLatte Dev"
 echo "   project: $PROJECT_DIR"
 echo
 
-# 稼働中の VoiceLatte（/Applications 版・dev 版どちらも）を gracefully に終了させる
-osascript -e 'tell application "VoiceLatte" to quit' 2>/dev/null || true
-sleep 2
-STALE="$(pgrep -f 'VoiceLatte.app/Contents/MacOS/voicelatte' 2>/dev/null || true)"
+# --- 1. 残留プロセスの掃除 ---
+# dev版・旧Swift版・サイドカー/XPCを対象にする。/Applications の製品版は殺さない。
+stale_pids() {
+  for pid in $(pgrep -f 'MacOS/voicelatte|MacOS/VoiceFlowApp|voicelatte-speech|MacOS/VoiceFlowSTT|MacOS/VoiceFlowRefiner|MacOS/ProRefiner' 2>/dev/null || true); do
+    case "$(ps -o command= -p "$pid" 2>/dev/null || true)" in
+      *"/Applications/"*) continue ;;
+      *) echo "$pid" ;;
+    esac
+  done
+}
+
+# /Applications の製品版が動いていたら手を出さず中断する
+# （バンドルIDが同一のため、残っていると open が製品版を再利用してしまう）
+for pid in $(pgrep -f 'MacOS/voicelatte|MacOS/VoiceFlowApp' 2>/dev/null || true); do
+  case "$(ps -o command= -p "$pid" 2>/dev/null || true)" in
+    *"/Applications/"*)
+      echo "   /Applications の製品版が起動中です。先に終了してください (pid=$pid)"
+      exit 1
+      ;;
+  esac
+done
+
+STALE="$(stale_pids)"
 if [ -n "$STALE" ]; then
-  echo "   残留プロセスを終了します: $STALE"
+  echo "   残留プロセスを終了します:"
+  echo "$STALE" | while read -r pid; do
+    [ -n "$pid" ] && ps -o pid=,command= -p "$pid" 2>/dev/null || true
+  done
   # shellcheck disable=SC2086
   kill $STALE 2>/dev/null || true
-  sleep 2
-  STALE="$(pgrep -f 'VoiceLatte.app/Contents/MacOS/voicelatte' 2>/dev/null || true)"
-  if [ -n "$STALE" ]; then
-    echo "   強制終了します: $STALE"
-    # shellcheck disable=SC2086
-    kill -9 $STALE 2>/dev/null || true
-    sleep 1
-  fi
 fi
 
+i=0
+while [ $i -lt 5 ]; do
+  [ -z "$(stale_pids)" ] && break
+  sleep 2
+  i=$((i + 1))
+done
+
+STALE="$(stale_pids)"
+if [ -n "$STALE" ]; then
+  echo "   強制終了します: $STALE"
+  # shellcheck disable=SC2086
+  kill -9 $STALE 2>/dev/null || true
+  sleep 1
+fi
+STALE="$(stale_pids)"
+if [ -n "$STALE" ]; then
+  echo "   残留プロセスが落とせませんでした: $STALE"
+  exit 1
+fi
+echo "   プロセス掃除 OK（旧Swift版・dev版・XPCいずれもなし）"
+
+# --- 2. デバッグビルド ---
 echo "   デバッグビルド中..."
 # updater 署名キーなしで EXIT:1 になるが bundle 自体は出来るので、成果物で成否判定する
 npm run tauri -- build --debug --bundles app >/tmp/vl-debug.log 2>&1 || true
@@ -41,13 +82,38 @@ if ! grep -q 'Bundling VoiceLatte.app' /tmp/vl-debug.log; then
   tail -20 /tmp/vl-debug.log
   exit 1
 fi
+echo "   ビルド OK: $(stat -f '%Sm' -t '%m/%d %H:%M' "$DEBUG_BIN")"
 
+# --- 3. 起動 ---
 echo "   起動します"
 open "$DEBUG_APP"
-sleep 3
-if pgrep -f 'target/debug/bundle/macos/VoiceLatte.app/Contents/MacOS/voicelatte' >/dev/null; then
-  echo "   起動 OK"
+
+# 実体パスがDEBUG_BINと一致し、起動経過が120秒未満のプロセスを待つ（古い実体の再利用を検出する）
+elapsed_of() {
+  ps -o etime= -p "$1" 2>/dev/null | awk -F'[-:]' '{s=0; for(i=1;i<=NF;i++) s=s*60+$i; print s}'
+}
+OK=""
+i=0
+while [ $i -lt 20 ]; do
+  sleep 1
+  for pid in $(pgrep -f 'target/debug/bundle/macos/VoiceLatte.app/Contents/MacOS/voicelatte' 2>/dev/null || true); do
+    case "$(ps -o command= -p "$pid" 2>/dev/null || true)" in
+      "$DEBUG_BIN"*)
+        ELAPSED="$(elapsed_of "$pid")"
+        if [ -n "$ELAPSED" ] && [ "$ELAPSED" -lt 120 ]; then
+          OK="$pid"
+          break 2
+        fi
+        ;;
+    esac
+  done
+  i=$((i + 1))
+done
+
+if [ -n "$OK" ]; then
+  echo "   起動 OK (pid=$OK, 実体=$DEBUG_BIN)"
 else
   echo "   起動を確認できませんでした。ログ: /tmp/vl-debug.log"
+  pgrep -fl 'voicelatte|VoiceFlowApp|VoiceLatte' 2>/dev/null || true
   exit 1
 fi

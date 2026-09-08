@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Speech
 import os
 
 private let axLogger = Logger(subsystem: "com.hibachi.voicelatte", category: "AppContext")
@@ -434,4 +435,18 @@ struct AppContext: Sendable {
         }
         return .generic
     }
+}
+
+// SpeechTranscriberの対応ロケールに照合する。「ja」のように地域なしで渡されても
+// 同言語の対応タグ(例: ja-JP)を返す。対応がなければnil。
+func bestSupportedSpeechLocaleID(for localeID: String) async -> String? {
+    guard #available(macOS 26, *) else { return nil }
+    let tag = Locale(identifier: localeID).identifier(.bcp47)
+    let supported = await SpeechTranscriber.supportedLocales
+    if supported.contains(where: { $0.identifier(.bcp47) == tag }) { return tag }
+    let language = String(tag.split(separator: "-").first ?? Substring(tag))
+    return supported.first(where: {
+        let candidate = $0.identifier(.bcp47)
+        return candidate == language || candidate.hasPrefix(language + "-") || candidate.hasPrefix(language + "_")
+    })?.identifier(.bcp47)
 }

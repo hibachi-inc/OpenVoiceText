@@ -138,9 +138,11 @@ private final class Bridge: @unchecked Sendable {
 
     private func start(_ request: BridgeRequest) async {
         pasteTargetPID = await MainActor.run { NSWorkspace.shared.frontmostApplication?.processIdentifier }
-        let microphoneAllowed = await AVCaptureDevice.requestAccess(for: .audio)
+        // サイドカーからの要求はTCCプロンプトを出せずクラッシュするため、状態確認のみ行う。
+        // 初回許可はシステム設定画面から行う(requestPermissionが設定を開く)。
+        let microphoneAllowed = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         let isCloud = request.audioPath?.isEmpty == false
-        let speechAllowed = isCloud ? true : await requestSpeechPermission()
+        let speechAllowed = isCloud ? true : SFSpeechRecognizer.authorizationStatus() == .authorized
         guard speechAllowed, microphoneAllowed else {
             output.send(.init(id: request.id, type: "error", message: "マイクと音声認識の許可が必要です"))
             return
@@ -172,7 +174,7 @@ private final class Bridge: @unchecked Sendable {
         speech.stopRecording { [weak self] text in
             guard let self else { return }
             self.restoreOutputAudio()
-            self.output.send(.init(id: id, type: "final", text: text ?? ""))
+            self.output.send(.init(id: id, type: "final", backend: self.speech.completedEngineName(), text: text ?? ""))
             self.lock.withLock { self.recordingID = 0 }
         }
     }
@@ -215,17 +217,10 @@ private final class Bridge: @unchecked Sendable {
     private func requestPermission(id: Int, permission: String) async {
         switch permission {
         case "microphone":
-            if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
-                _ = await AVCaptureDevice.requestAccess(for: .audio)
-            } else {
-                openPrivacySettings("Privacy_Microphone")
-            }
+            // サイドカーからの要求はクラッシュするため、設定画面を開くだけにする
+            openPrivacySettings("Privacy_Microphone")
         case "speech":
-            if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
-                _ = await requestSpeechPermission()
-            } else {
-                openPrivacySettings("Privacy_SpeechRecognition")
-            }
+            openPrivacySettings("Privacy_SpeechRecognition")
         case "accessibility":
             let promptKey = "AXTrustedCheckOptionPrompt" as CFString
             AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
@@ -275,13 +270,9 @@ private final class Bridge: @unchecked Sendable {
     private func emitStatus(id: Int, localeID: String) async {
         let locale = Locale(identifier: localeID)
         if #available(macOS 26.0, *) {
-            let tag = locale.identifier(.bcp47)
-            let supported = await SpeechTranscriber.supportedLocales.contains {
-                $0.identifier(.bcp47) == tag
-            }
-            if supported {
+            if let match = await bestSupportedSpeechLocaleID(for: localeID) {
                 let installed = await SpeechTranscriber.installedLocales.contains {
-                    $0.identifier(.bcp47) == tag
+                    $0.identifier(.bcp47) == match
                 }
                 output.send(.init(
                     id: id,
@@ -313,9 +304,13 @@ private final class Bridge: @unchecked Sendable {
             output.send(.init(id: id, type: "error", message: "このmacOSでは高精度モデルを追加できません"))
             return
         }
+        guard let match = await bestSupportedSpeechLocaleID(for: localeID) else {
+            output.send(.init(id: id, type: "error", message: "この言語では高精度モデルを利用できません"))
+            return
+        }
         do {
             let transcriber = SpeechTranscriber(
-                locale: Locale(identifier: localeID),
+                locale: Locale(identifier: match),
                 preset: .progressiveTranscription
             )
             if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
@@ -324,15 +319,6 @@ private final class Bridge: @unchecked Sendable {
             output.send(.init(id: id, type: "installed", message: "高精度モデルを追加しました"))
         } catch {
             output.send(.init(id: id, type: "error", message: "モデルを追加できません: \(error.localizedDescription)"))
-        }
-    }
-
-    private func requestSpeechPermission() async -> Bool {
-        if SFSpeechRecognizer.authorizationStatus() == .authorized { return true }
-        return await withCheckedContinuation { continuation in
-            SFSpeechRecognizer.requestAuthorization { status in
-                continuation.resume(returning: status == .authorized)
-            }
         }
     }
 
@@ -473,6 +459,24 @@ private final class ModifierHotkey {
             default: .control
             }
         }
+        // バックグラウンドでは NSEvent.modifierFlags のポーリングで他アプリ操作中の修飾キーが取れない。
+        // アクセシビリティ許可があればイベントタップ、なければフォールバックでポーリングする。
+        if AXIsProcessTrusted() {
+            startEventTap()
+        } else {
+            startPolling()
+        }
+    }
+
+    func disable() {
+        stopEventTap()
+        timer?.invalidate()
+        timer = nil
+        pressed.removeAll()
+        targets.removeAll()
+    }
+
+    private func startPolling() {
         let monitoredTargets = targets
         timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { [weak self] _ in
             let flags = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -481,11 +485,43 @@ private final class ModifierHotkey {
         }
     }
 
-    func disable() {
-        timer?.invalidate()
-        timer = nil
-        pressed.removeAll()
-        targets.removeAll()
+    private var eventTap: CFMachPort?
+    private var runLoopSource: CFRunLoopSource?
+
+    private func startEventTap() {
+        let mask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask, callback: { _, type, event, refcon in
+            if type == .tapDisabledByTimeout, let refcon,
+               let tap = Unmanaged<ModifierHotkey>.fromOpaque(refcon).takeUnretainedValue().eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+            }
+            if type == .flagsChanged, let refcon,
+               let flags = NSEvent(cgEvent: event)?.modifierFlags.intersection(.deviceIndependentFlagsMask) {
+                let owner = Unmanaged<ModifierHotkey>.fromOpaque(refcon).takeUnretainedValue()
+                let states = owner.targets.map { ($0.key, flags.contains($0.value)) }
+                Task { @MainActor [weak owner] in states.forEach { owner?.handle($0.0, pressed: $0.1) } }
+            }
+            return Unmanaged.passUnretained(event)
+        }, userInfo: refcon) else {
+            startPolling()
+            return
+        }
+        eventTap = tap
+        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+    }
+
+    private func stopEventTap() {
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let runLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
+        }
+        eventTap = nil
+        runLoopSource = nil
     }
 
     private func handle(_ shortcut: String, pressed nowPressed: Bool) {

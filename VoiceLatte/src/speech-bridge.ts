@@ -1,4 +1,5 @@
 import { Command, type Child } from "@tauri-apps/plugin-shell";
+import { appLog } from "./applog";
 
 export type SpeechStatus = {
   id: number;
@@ -116,6 +117,7 @@ export class SpeechBridgeClient {
     const id = this.nextId++;
     this.recordingId = id;
     this.callbacks = callbacks;
+    appLog.info("bridge", `-> start (id=${id})`);
     await this.waitFor(id, ["started"], 10000, () => {
       void this.child?.write(`${JSON.stringify({
         id,
@@ -130,13 +132,13 @@ export class SpeechBridgeClient {
     });
   }
 
-  async stop(): Promise<string> {
-    if (!this.recordingId) return "";
+  async stop(): Promise<{ text: string; engine: string }> {
+    if (!this.recordingId) return { text: "", engine: "" };
     const id = this.nextId++;
     const event = await this.request({ command: "stop" }, ["final"], 10000, id);
     this.recordingId = undefined;
     this.callbacks = undefined;
-    return event.text ?? "";
+    return { text: event.text ?? "", engine: event.backend ?? "" };
   }
 
   async cancel() {
@@ -200,8 +202,21 @@ export class SpeechBridgeClient {
     timeout: number,
     suppliedId?: number,
   ) {
-    await this.ensureStarted();
+    // 起動待ち自体にも上限を付け、固まったまま preparing に留まるのを防ぐ
+    const started = this.ensureStarted();
+    const startupTimeout = new Promise<never>((_, reject) => {
+      window.setTimeout(() => reject(new Error("音声認識ブリッジの起動がタイムアウトしました")), 15000);
+    });
+    try {
+      await Promise.race([started, startupTimeout]);
+    } catch (error) {
+      appLog.error("bridge", `ensureStarted failed: ${error instanceof Error ? error.message : String(error)}`);
+      void this.hardReset();
+      throw error;
+    }
     const id = suppliedId ?? this.nextId++;
+    const command = String(payload.command ?? "unknown");
+    appLog.info("bridge", `-> ${command} (id=${id})`);
     return this.waitFor(id, expected, timeout, () => {
       void this.child?.write(`${JSON.stringify({ id, ...payload })}\n`);
     });
@@ -220,6 +235,7 @@ export class SpeechBridgeClient {
         this.pending.delete(id);
         // 同世代のまま＝自分が最初のタイムアウトのときだけ復旧処理を行う
         if (generation === this.generation) void this.hardReset();
+        else appLog.warn("bridge", `request ${id} timed out after hardReset by another request`);
         reject(new Error("音声認識ブリッジから応答がありません"));
       }, timeout);
       this.pending.set(id, {
@@ -237,13 +253,18 @@ export class SpeechBridgeClient {
     if (this.starting) return this.starting;
     this.starting = (async () => {
       const generation = ++this.generation;
+      appLog.info("bridge", `spawning child (generation ${generation})`);
       const command = Command.sidecar("binaries/voicelatte-speech");
       command.stdout.on("data", (line) => this.receive(line));
-      command.stderr.on("data", (line) => console.error(`[speech-bridge] ${line}`));
+      command.stderr.on("data", (line) => {
+        console.error(`[speech-bridge] ${line}`);
+        appLog.error("bridge-stderr", line);
+      });
       command.on("close", () => {
         // 旧世代プロセスの通知は無視する
         if (generation !== this.generation) return;
         this.child = undefined;
+        appLog.error("bridge", "child process closed");
         const error = new Error("音声認識ブリッジが終了しました");
         this.pending.forEach(({ reject, timer }) => {
           window.clearTimeout(timer);
@@ -291,6 +312,7 @@ export class SpeechBridgeClient {
     if (pending?.accept(event)) {
       window.clearTimeout(pending.timer);
       this.pending.delete(event.id);
+      appLog.info("bridge", `<- ${event.type} (id=${event.id})${event.type === "status" ? ` backend=${event.backend ?? ""} model=${event.modelState ?? ""}` : ""}`);
       pending.resolve(event);
       return;
     }

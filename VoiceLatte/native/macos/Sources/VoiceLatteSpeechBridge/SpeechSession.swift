@@ -63,6 +63,8 @@ final class SpeechSession: NSObject, @unchecked Sendable {
     private var cloudAudioFile: AVAudioFile?
     private var cloudCaptureActive = false
     private var cloudWriteFailed = false
+    // completeStop時に確定した、本文を作ったエンジン。final応答に載せる。
+    private var completedEngine = ""
     // ponytail: 15 seconds bounds PCM memory; move capture to the app process if longer crash replay is required.
     private let maxFallbackBufferDuration: TimeInterval = 15
 
@@ -95,9 +97,11 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         vocabulary: [String],
         reply: @escaping () -> Void
     ) {
+        sttLogger.notice("[STTService] startRecording locale=\(localeID, privacy: .public) engine=\(engine, privacy: .public)")
         warmUpTask?.cancel()
         warmUpTask = nil
         if recognitionTask != nil || _analyzer != nil || audioEngine.isRunning || isPreparing {
+            sttLogger.notice("[STTService] startRecording: cleaning up previous session")
             cleanup()
         }
 
@@ -105,6 +109,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         currentLocaleID = localeID
         currentVocabulary = vocabulary
         configureInputDevice(deviceID)
+        sttLogger.notice("[STTService] startRecording: input configured")
 
         if engine == "enhanced", #available(macOS 26, *) {
             startWithSpeechAnalyzer(locale: localeID, onCaptureReady: reply)
@@ -137,12 +142,12 @@ final class SpeechSession: NSObject, @unchecked Sendable {
                 }
             }
             audioEngine.prepare()
-            try audioEngine.start()
+            try startAudioEngineWithWatchdog()
             emit(.engine(provider))
             reply()
         } catch {
-            cleanup()
             emit(.error("録音を開始できません: \(error.localizedDescription)"))
+            cleanup()
         }
     }
 
@@ -190,10 +195,10 @@ final class SpeechSession: NSObject, @unchecked Sendable {
             if !audioEngine.isRunning {
                 do {
                     audioEngine.prepare()
-                    try audioEngine.start()
+                    try startAudioEngineWithWatchdog()
                 } catch {
-                    cleanup()
                     emit(.error(error.localizedDescription))
+                    cleanup()
                     return
                 }
             }
@@ -317,9 +322,6 @@ final class SpeechSession: NSObject, @unchecked Sendable {
 
     @available(macOS 26, *)
     private func startWithSpeechAnalyzer(locale localeID: String, onCaptureReady: @escaping () -> Void) {
-        let locale = Locale(identifier: localeID)
-        let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
-
         lock.withLock {
             isPreparing = true
             enhancedAudioHandler = nil
@@ -331,12 +333,17 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         installTapIfNeeded { [weak self] buffer in
             self?.routeEnhancedAudioBuffer(buffer)
         }
+        sttLogger.notice("[STTService] enhanced: tap installed")
         do {
             audioEngine.prepare()
-            try audioEngine.start()
+            // engine.startが戻らない機種・状態があるため番犬タイマーを付ける
+            try startAudioEngineWithWatchdog()
+            sttLogger.notice("[STTService] enhanced: engine started")
         } catch {
-            cleanup()
+            // 先に失敗を返す。cleanupのstop()はwedgedしたstartに引きずられ
+            // 戻らないことがあり、後回しにすると10秒沈黙になる。
             emit(.error(error.localizedDescription))
+            cleanup()
             return
         }
         onCaptureReady()
@@ -355,21 +362,22 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         }
 
         preparationTask = Task {
-            let bcp47 = locale.identifier(.bcp47)
-            let supported = await SpeechTranscriber.supportedLocales
             guard !Task.isCancelled else { return }
-            guard supported.contains(where: { $0.identifier(.bcp47) == bcp47 }) else {
-                sttLogger.notice("[STTService] locale=\(bcp47, privacy: .public) not supported, falling back to classic")
+            // 地域なしロケール(例: ja)でも対応タグ(例: ja-JP)に寄せる
+            guard let match = await bestSupportedSpeechLocaleID(for: localeID) else {
+                sttLogger.notice("[STTService] locale=\(localeID, privacy: .public) not supported, falling back to classic")
                 unsafeSelf.fallbackToClassicPreservingBufferedAudio(
                     locale: localeID,
                     onlyWhilePreparing: true
                 )
                 return
             }
+            let transcriber = SpeechTranscriber(locale: Locale(identifier: match), preset: .progressiveTranscription)
+            sttLogger.notice("[STTService] enhanced: transcriber created for \(match, privacy: .public)")
             let installed = await SpeechTranscriber.installedLocales
             guard !Task.isCancelled else { return }
-            let isInstalled = installed.contains { $0.identifier(.bcp47) == bcp47 }
-            sttLogger.notice("[STTService] locale=\(bcp47, privacy: .public) installed=\(isInstalled)")
+            let isInstalled = installed.contains { $0.identifier(.bcp47) == match }
+            sttLogger.notice("[STTService] locale=\(match, privacy: .public) installed=\(isInstalled)")
             if isInstalled {
                 let runID = UUID()
                 guard !Task.isCancelled,
@@ -383,7 +391,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
                     return
                 }
                 unsafeSelf.preparationTask = nil
-                unsafeSelf.launchAnalyzer(transcriber: transcriber, locale: localeID, runID: runID)
+                unsafeSelf.launchAnalyzer(transcriber: transcriber, locale: match, runID: runID)
                 return
             }
             sttLogger.notice("[STTService] Model not installed, falling back to classic")
@@ -633,17 +641,45 @@ final class SpeechSession: NSObject, @unchecked Sendable {
 
     private var audioTapHandler: ((AVAudioPCMBuffer) -> Void)?
 
+    // engine.start()が戻らない機種・状態に備えた番犬付き開始。呼び出し側がcatchしてcleanupする。
+    private struct EngineStartTimeout: LocalizedError {
+        var errorDescription: String? { "マイクの開始がタイムアウトしました" }
+    }
+
+    private func startAudioEngineWithWatchdog(timeout: TimeInterval = 5) throws {
+        final class Box: @unchecked Sendable { var error: Error? }
+        let box = Box()
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            defer { group.leave() }
+            guard let self else { return }
+            do {
+                try self.audioEngine.start()
+            } catch {
+                box.error = error
+            }
+        }
+        if group.wait(timeout: .now() + timeout) == .timedOut {
+            sttLogger.error("[STTService] engine.start timed out")
+            throw EngineStartTimeout()
+        }
+        if let error = box.error { throw error }
+    }
+
     private func installTapIfNeeded(handler: @escaping (AVAudioPCMBuffer) -> Void) {
         audioTapHandler = handler
-        let alreadyInstalled = lock.withLock { tapInstalled }
-        guard !alreadyInstalled else { return }
+        // installTap は二重呼び出しで ObjC 例外→クラッシュするため、判定から設置までロック内で行う
+        lock.lock()
+        defer { lock.unlock() }
+        guard !tapInstalled else { return }
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.audioTapHandler?(buffer)
             self?.processAudioLevel(buffer: buffer)
         }
-        lock.withLock { tapInstalled = true }
+        tapInstalled = true
     }
 
     private func cleanup() {
@@ -710,6 +746,13 @@ final class SpeechSession: NSObject, @unchecked Sendable {
             stopReply = nil
             confirmedText = ""
             provisionalText = ""
+            // 実際に本文を作ったエンジンを確定させる。onEngineイベント由来の
+            // 推測に頼ると別セッションの古い値が混入する。
+            if classicRunID != nil {
+                completedEngine = "apple-speech-classic"
+            } else if analyzerRunID != nil {
+                completedEngine = "apple-speech-analyzer"
+            }
             return (reply, result)
         }
 
@@ -764,6 +807,10 @@ final class SpeechSession: NSObject, @unchecked Sendable {
             guard let defaultID = defaultInputDeviceID() else { return }
             deviceID = defaultID
         }
+        // 既に目的のデバイスなら何もしない。無条件の再設定はHALのIOProcを
+        // 作り直させ、直後のengine.startが番犬(5秒)を超えて wedged する。
+        // 起動ごとの初回録音が確定失敗する主因だった。
+        if let current = currentInputDeviceID(audioUnit), current == deviceID { return }
         var status = AudioUnitSetProperty(
             audioUnit,
             kAudioOutputUnitProperty_CurrentDevice,
@@ -786,6 +833,20 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         if status != noErr {
             sttLogger.error("[STTService] unable to configure an input device")
         }
+    }
+
+    private func currentInputDeviceID(_ audioUnit: AudioUnit) -> AudioDeviceID? {
+        var deviceID = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioUnitGetProperty(
+            audioUnit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &deviceID,
+            &size
+        ) == noErr else { return nil }
+        return deviceID
     }
 
     private func defaultInputDeviceID() -> AudioDeviceID? {
@@ -876,7 +937,13 @@ final class SpeechSession: NSObject, @unchecked Sendable {
             classicRunID = nil
             enhancedAudioHandler = nil
             cloudWriteFailed = false
+            completedEngine = ""
         }
+    }
+
+    /// 直近に確定した本文のエンジンを返す。startごとにリセットされる。
+    func completedEngineName() -> String {
+        lock.withLock { completedEngine }
     }
 
     private func scheduleStopFinalization(after duration: Duration) {

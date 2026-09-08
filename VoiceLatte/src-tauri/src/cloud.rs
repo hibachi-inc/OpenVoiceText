@@ -18,6 +18,8 @@ const GEMINI_MODELS: [&str; 2] = ["gemini-flash-latest", "gemini-flash-lite-late
 const GROQ_REFINEMENT_MODELS: [&str; 2] = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"];
 const GEMINI_MAX_AUDIO_BYTES: usize = 14_000_000;
 const GROQ_MAX_AUDIO_BYTES: usize = 25_000_000;
+// 短すぎる録音はGroqに蹴られる(4096Bでaudio_too_shortを確認)。16kHz/16bit/monoで約0.25秒分。
+const MIN_AUDIO_BYTES: usize = 8000;
 
 #[derive(Default)]
 pub struct CloudState {
@@ -406,9 +408,13 @@ async fn groq_transcribe(
     locale: &str,
     vocabulary: Vec<String>,
 ) -> Result<CloudResult, String> {
+    if audio.len() < MIN_AUDIO_BYTES {
+        return Err(format!("cloud.audio_empty:{}", audio.len()));
+    }
     if audio.len() > GROQ_MAX_AUDIO_BYTES {
         return Err("cloud.audio_too_long".into());
     }
+    let audio_len = audio.len();
     let file = reqwest::multipart::Part::bytes(audio)
         .file_name("recording.wav")
         .mime_str("audio/wav")
@@ -444,7 +450,24 @@ async fn groq_transcribe(
         return Err("cloud.groq_key".into());
     }
     if !response.status().is_success() {
-        return Err(format!("cloud.groq_failed:{}", response.status().as_u16()));
+        let status = response.status();
+        // 400の実理由(Groqの本文)を切り詰めて残す。ログと画面の両方に出る。
+        let detail: String = response
+            .text()
+            .await
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(200)
+            .collect();
+        return Err(format!(
+            "cloud.groq_failed:{} {} (audio {} bytes)",
+            status.as_u16(),
+            detail,
+            audio_len
+        ));
     }
     let body: Value = response
         .json()
@@ -550,8 +573,18 @@ async fn stream_gemini_model(
         });
     }
     if !status.is_success() {
+        let detail: String = response
+            .text()
+            .await
+            .unwrap_or_default()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(200)
+            .collect();
         return Err(GeminiError {
-            message: format!("cloud.gemini_failed:{}", status.as_u16()),
+            message: format!("cloud.gemini_failed:{} {}", status.as_u16(), detail),
             fallback: status == reqwest::StatusCode::NOT_FOUND
                 || status == reqwest::StatusCode::TOO_MANY_REQUESTS
                 || status.is_server_error(),

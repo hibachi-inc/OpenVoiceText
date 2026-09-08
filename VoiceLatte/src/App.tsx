@@ -39,6 +39,7 @@ import {
   type UiLanguagePreference,
 } from "./i18n";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
+import { appLog, downloadLog } from "./applog";
 import voicelatteCow from "./assets/voicelatte-cow.png";
 import {
   DEFAULT_PROMPT_KEY,
@@ -61,7 +62,7 @@ type Section = "history" | "general" | "ai" | "vocabulary" | "shortcuts" | "abou
 type TranscriptionProvider = "local" | "groq" | "gemini";
 type RefinementProvider = "groq" | "gemini" | "local";
 type CaptureMode = "live" | "deferred";
-type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string };
+type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string; refiner?: string };
 type Settings = {
   locale: string;
   appLanguage: UiLanguagePreference;
@@ -76,7 +77,8 @@ type Settings = {
   refinementProvider: RefinementProvider;
   promptDefaultsVersion: number;
 };
-type HudState = { phase: Phase; transcript: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refined?: boolean };
+type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; choice?: { raw: string; refined: string } };
+type PendingChoice = { text: string; raw: string; category: string; engine: string; appName: string; promptKey?: string; refiner?: string };
 type PreparedCapture = { captureId: string; audioPath: string };
 type CloudResult = { text: string; model: string };
 type CloudTranscript = { text: string; model: string };
@@ -140,7 +142,8 @@ function Root() {
   const isHud = new URLSearchParams(location.search).has("hud");
   document.documentElement.classList.toggle("hud-page", isHud);
   document.body.classList.toggle("hud-body", isHud);
-  return isHud ? <Hud /> : <MainApp />;
+  if (isHud) return <Hud />;
+  return <MainApp />;
 }
 
 function MainApp() {
@@ -181,13 +184,16 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const apiKeyDeniedRef = useRef(apiKeyDenied);
   apiKeyDeniedRef.current = apiKeyDenied;
   const transcriptRef = useRef("");
+  const rawRef = useRef("");
+  const choiceRef = useRef<PendingChoice | null>(null);
   const phaseRef = useRef<Phase>("idle");
+  const recordStartedAt = useRef(0);
   const levelRef = useRef(0);
   const engineRef = useRef("");
   const captureModeRef = useRef<CaptureMode>("live");
   const messageRef = useRef("");
   const spaceHintRef = useRef(false);
-  const refinedRef = useRef(false);
+  const refiningRef = useRef(false);
   const hudVisibleRef = useRef(false);
   const onboardingTestRef = useRef(false);
   const holdTimer = useRef<number | undefined>(undefined);
@@ -196,6 +202,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const contextRef = useRef<{ appName: string; category: string; promptKey?: string; screenContext?: string; displayX?: number; displayY?: number }>({ appName: "VoiceLatte", category: "generic" });
   const captureRef = useRef<string | undefined>(undefined);
   const recordingProviderRef = useRef<TranscriptionProvider>("local");
+  // stopRecordingの世代。処理中のEscキャンセルで進め、取り残した非同期の続きを無効化する。
+  const stopGenRef = useRef(0);
   const actionRef = useRef<(action: "toggle" | "refine-stop" | "cancel" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop") => void>(() => {});
   const setShortcutCapturing = useCallback((capturing: boolean) => { shortcutCaptureRef.current = capturing; }, []);
   const localizedError = useCallback((error: unknown) => {
@@ -262,19 +270,23 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     if (next.captureMode !== undefined) captureModeRef.current = next.captureMode;
     if (next.message !== undefined) { messageRef.current = next.message; setMessage(next.message); }
     if (next.spaceHint !== undefined) spaceHintRef.current = next.spaceHint;
-    if (next.refined !== undefined) refinedRef.current = next.refined;
-    if (next.phase === "idle") { spaceHintRef.current = false; refinedRef.current = false; }
+    if (next.raw !== undefined) rawRef.current = next.raw;
+    if (next.refining !== undefined) refiningRef.current = next.refining;
+    if (next.phase === "idle") { spaceHintRef.current = false; refiningRef.current = false; rawRef.current = ""; }
     if (!onboardingTestRef.current) {
+      const pending = choiceRef.current;
       void updateHud({
         phase: nextPhase,
         transcript: next.transcript ?? transcriptRef.current,
+        raw: next.raw ?? rawRef.current,
         level: next.level ?? levelRef.current,
         engine: next.engine ?? engineRef.current,
         captureMode: next.captureMode ?? captureModeRef.current,
         uiLanguage: language,
         message: next.message ?? messageRef.current,
         spaceHint: spaceHintRef.current,
-        refined: refinedRef.current,
+        refining: refiningRef.current,
+        choice: pending ? { raw: pending.raw, refined: pending.text } : undefined,
       });
     }
   }, [language, updateHud]);
@@ -283,6 +295,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     if (phaseRef.current !== "idle") return;
     if (onboardingTest && !onboardingShortcutChosen) return;
     phaseRef.current = "preparing";
+    recordStartedAt.current = Date.now();
     onboardingTestRef.current = onboardingTest;
     if (onboardingTest) setOnboardingTestPassed(false);
     const provider = settings.transcriptionProvider;
@@ -312,6 +325,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
           onAudioLevel: (nextLevel) => setRecordingState({ level: nextLevel }),
           onEngine: (nextEngine) => setRecordingState({ engine: nextEngine }),
           onError: (error) => {
+            appLog.error("recording", `bridge onError: ${error}`);
             const captureId = captureRef.current;
             captureRef.current = undefined;
             recordingProviderRef.current = "local";
@@ -329,6 +343,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       );
       setRecordingState({ phase: "listening", message: t("record.listening"), spaceHint: settings.refinement && settings.toggleShortcut !== "Space" && settings.holdShortcut !== "Space" });
     } catch (error) {
+      appLog.error("recording", `start failed: ${error instanceof Error ? error.message : String(error)}`);
       if (captureRef.current) {
         void invoke("discard_capture", { captureId: captureRef.current });
         captureRef.current = undefined;
@@ -344,9 +359,17 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
 
   const stopRecording = useCallback(async (withAiRefinement = false) => {
     if (phaseRef.current !== "listening" && phaseRef.current !== "preparing") return;
-    setRecordingState({ phase: "processing", level: 0, message: recordingProviderRef.current === "local" ? t("record.processing") : t("record.cloudProcessing") });
+    // AI整形しない停止では「整形中」と出さず「文字起こし中」にする
+    const willRefine = withAiRefinement && settings.refinement;
+    setRecordingState({ phase: "processing", level: 0, refining: willRefine, message: willRefine ? (recordingProviderRef.current === "local" ? t("record.processing") : t("record.cloudProcessing")) : t("state.transcribing") });
+    const gen = stopGenRef.current;
+    const stale = () => gen !== stopGenRef.current;
     try {
-      const raw = await bridge.stop();
+      const stopResult = await bridge.stop();
+      if (stale()) return;
+      const raw = stopResult.text;
+      // final応答に載った確定エンジンを優先する。onEngine由来は別セッションの古い値が残ることがある。
+      if (stopResult.engine) engineRef.current = stopResult.engine;
       if (onboardingTestRef.current) {
         const provider = recordingProviderRef.current;
         const captureId = captureRef.current;
@@ -363,6 +386,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         }) : undefined;
         captureRef.current = undefined;
         const result = cloud?.text ?? raw;
+        if (stale()) return;
         setOnboardingTestPassed(Boolean(result.trim()));
         setRecordingState({ phase: "idle", transcript: result, level: 0, engine: cloud?.model, message: "" });
         recordingProviderRef.current = "local";
@@ -395,40 +419,61 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         throw error;
       });
       captureRef.current = undefined;
+      if (stale()) return;
       const source = cloud?.text ?? raw;
+      let refiner = "local";
       if (!source.trim()) {
         recordingProviderRef.current = "local";
         setRecordingState({ phase: "idle", transcript: "" });
         return;
       }
       if (cloud) setRecordingState({ transcript: source, engine: cloud.model });
+      // 整形がengineRefを上書きする前に文字起こし側を確定させる
+      const transcriptionEngine = cloud?.model ?? engineRef.current;
+      if (cloud && useGeminiCombined && shouldRefine) refiner = cloud.model;
       let refined = source;
       if (shouldRefine && !useGeminiCombined) {
         if (cloudRefinementProvider) {
           try {
             const result = await invoke<CloudResult>("cloud_refine", { provider: cloudRefinementProvider, text: source, prompt: refinementPrompt, screenContext });
             refined = result.text;
+            refiner = result.model || cloudRefinementProvider;
+            appLog.info("refine", `cloud ${cloudRefinementProvider} ok (${refiner})`);
             setRecordingState({ transcript: refined, engine: result.model });
           } catch (error) {
             if (bridgeMessageCode(error) === "cloud.key_denied") {
               markKeyDenied(cloudRefinementProvider);
               throw error;
             }
+            appLog.error("refine", `cloud ${cloudRefinementProvider} failed, falling back to local: ${error instanceof Error ? error.message : String(error)}`);
             refined = await bridge.refine(source, category, refinementPrompt, speechLocale, screenContext).catch(() => source);
+            if (stale()) return;
           }
         } else {
           refined = await bridge.refine(source, category, refinementPrompt, speechLocale, screenContext).catch(() => source);
+          if (stale()) return;
         }
       }
       // 整形結果がプロンプトや文脈のコピーになっていたら生テキストに戻す
       const text = postProcessTranscript(shouldDiscardRefinement(refined, source, screenContext) ? source : refined, vocabulary);
-      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: cloud?.model ?? engineRef.current, appName, promptKey: promptKey ?? appName };
+      // Space確定のときは自動ペーストせず、前後見比べの選択肢としてHUDに残す
+      if (shouldRefine) {
+        choiceRef.current = { text, raw: source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner };
+        recordingProviderRef.current = "local";
+        setRecordingState({ phase: "done", transcript: text, message: t("record.choose") });
+        // 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にする。
+        await focusHudForChoice().catch(() => undefined);
+        return;
+      }
+      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined };
       setHistory((items) => [entry, ...items].slice(0, 500));
       await bridge.insert(text, settings.autoPaste);
       recordingProviderRef.current = "local";
-      setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? t("record.inserted") : t("record.completed"), refined: shouldRefine });
+      setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? t("record.inserted") : t("record.completed") });
       window.setTimeout(() => setRecordingState({ phase: "idle" }), 1400);
     } catch (error) {
+      if (stale()) return;
+      appLog.error("recording", `stop failed after ${Date.now() - recordStartedAt.current}ms: ${error instanceof Error ? error.message : String(error)}`);
       if (captureRef.current) {
         void invoke("discard_capture", { captureId: captureRef.current });
         captureRef.current = undefined;
@@ -454,6 +499,40 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     onboardingTestRef.current = false;
   }, [bridge, setRecordingState]);
 
+  // 処理中（文字起こし・AI整形待ち）のEscキャンセル。進行中の非同期は世代で無効化し、
+  // ネイティブ側はstop応答済みのため追加操作なしで破棄する。ペーストも履歴保存もしない。
+  const cancelProcessing = useCallback(() => {
+    stopGenRef.current++;
+    const captureId = captureRef.current;
+    captureRef.current = undefined;
+    if (captureId) void invoke("discard_capture", { captureId }).catch(() => undefined);
+    recordingProviderRef.current = "local";
+    if (onboardingTestRef.current) setOnboardingTestPassed(false);
+    onboardingTestRef.current = false;
+    setRecordingState({ phase: "idle", transcript: "", level: 0 });
+  }, [setRecordingState]);
+
+  // 見比べ選択の確定。which が raw なら整形前、refined なら整形後をペーストする。
+  const finalizeChoice = useCallback(async (which: "raw" | "refined") => {
+    const choice = choiceRef.current;
+    if (!choice) return;
+    choiceRef.current = null;
+    const text = which === "raw" ? choice.raw : choice.text;
+    const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: choice.raw, createdAt: Date.now(), category: choice.category, engine: choice.engine, appName: choice.appName, promptKey: choice.promptKey, refiner: choice.refiner };
+    setHistory((items) => [entry, ...items].slice(0, 500));
+    await bridge.insert(text, settings.autoPaste);
+    void releaseHudFocus().catch(() => undefined);
+    setRecordingState({ phase: "idle", transcript: "", level: 0 });
+  }, [bridge, setHistory, setRecordingState, settings.autoPaste]);
+
+  // 見比べ選択の破棄。ペーストも履歴保存もしない。
+  const discardChoice = useCallback(() => {
+    if (!choiceRef.current) return;
+    choiceRef.current = null;
+    void releaseHudFocus().catch(() => undefined);
+    setRecordingState({ phase: "idle", transcript: "", level: 0 });
+  }, [setRecordingState]);
+
   useEffect(() => {
     actionRef.current = (action) => {
       const beginHold = (delay: number) => {
@@ -473,15 +552,22 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         holdActive.current = false;
         if (toggleOnTap && !wasHold) void (phaseRef.current === "idle" ? startRecording(showOnboarding) : stopRecording());
       };
+      // 見比べ選択中はトグルで整形版確定、キャンセルで破棄する
+      if (phaseRef.current === "done" && choiceRef.current) {
+        if (action === "toggle" || action === "refine-stop") void finalizeChoice("refined");
+        else if (action === "cancel") discardChoice();
+        return;
+      }
       if (action === "toggle") void (phaseRef.current === "idle" ? startRecording(showOnboarding) : stopRecording());
       if (action === "refine-stop" && phaseRef.current === "listening") void stopRecording(true);
       if (action === "cancel" && (phaseRef.current === "listening" || phaseRef.current === "preparing")) void cancelRecording();
+      if (action === "cancel" && phaseRef.current === "processing") cancelProcessing();
       if (action === "hold-start") beginHold(150);
       if (action === "hold-stop") endHold(false);
       if (action === "shared-start") beginHold(300);
       if (action === "shared-stop") endHold(true);
     };
-  }, [cancelRecording, showOnboarding, startRecording, stopRecording]);
+  }, [cancelProcessing, cancelRecording, discardChoice, finalizeChoice, showOnboarding, startRecording, stopRecording]);
 
   useEffect(() => {
     void bridge.status(speechLocale).then((next) => {
@@ -579,7 +665,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   }, [phase, settings.holdShortcut, settings.refinement, settings.toggleShortcut, showOnboarding]);
 
   useEffect(() => {
-    if ((phase !== "listening" && phase !== "preparing")
+    if ((phase !== "listening" && phase !== "preparing" && phase !== "processing")
       || settings.toggleShortcut === "Escape" || settings.holdShortcut === "Escape") return;
     let active = true;
     void register("Escape", (event) => {
@@ -597,6 +683,15 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     return () => unlisten?.();
   }, []);
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<{ which: "raw" | "refined" | "cancel" }>("hud-choose", (event) => {
+      if (event.payload.which === "cancel") discardChoice();
+      else void finalizeChoice(event.payload.which);
+    }).then((fn) => { unlisten = fn; });
+    return () => unlisten?.();
+  }, [discardChoice, finalizeChoice]);
+
   return (
     <main className="app-shell">
       <div className="window-drag-region" data-tauri-drag-region />
@@ -613,10 +708,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             <Icon aria-hidden="true" />{t(item.label)}
           </Button>;
         })}</nav>
-        {update.status === "available" ? <Button size="sm" className="sidebar-update" onClick={() => void installUpdate(update, setUpdate)}>
+        {update.status === "available" && <Button size="sm" className="sidebar-update" onClick={() => void installUpdate(update, setUpdate)}>
           <Download />{t("update.install", { version: update.version })}
-        </Button> : <Button variant="ghost" size="sm" className="sidebar-update-check" disabled={update.status === "checking" || update.status === "downloading"} onClick={() => void runUpdateCheck(setUpdate, true)}>
-          {update.status === "checking" || update.status === "downloading" ? t("update.checking") : t("update.check")}
+        </Button>}
+        {update.status === "downloading" && <Button size="sm" className="sidebar-update" disabled>
+          <Download />{t("update.downloading")}
         </Button>}
       </aside>
 
@@ -777,6 +873,8 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
         <PermissionRow label={t("permission.accessibility")} detail={t("permission.accessibilityDetail")} status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
       </Card>
     </>}
+    <p className="settings-group-label">{t("general.errorLog")}</p>
+    <SettingRow label={t("general.errorLog")} detail={t("general.errorLogDetail")}><Button variant="outline" size="sm" onClick={() => downloadLog()}>{t("general.exportLog")}</Button></SettingRow>
   </div>;
 }
 
@@ -1285,6 +1383,7 @@ function PromptField({ label, value, defaultOpen, onChange, onRemove }: {
 function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () => void }) {
   const { language, t } = useI18n();
   const [copied, setCopied] = useState<"original" | "refined" | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
   const copyTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(copyTimer.current), []);
   const copy = async (text: string, version: "original" | "refined") => {
@@ -1293,9 +1392,24 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
     window.clearTimeout(copyTimer.current);
     copyTimer.current = window.setTimeout(() => setCopied(null), 1600);
   };
+  const details: [string, string][] = [
+    [t("historyDialog.date"), new Date(entry.createdAt).toLocaleString(language)],
+    [t("historyDialog.app"), entry.appName || "VoiceLatte"],
+    [t("historyDialog.category"), categoryLabel(entry.category, t)],
+    [t("historyDialog.transcription"), entry.engine || "—"],
+    [t("historyDialog.refineEngine"), entry.refiner || "—"],
+    [t("historyDialog.promptKey"), entry.promptKey || "—"],
+    [t("historyDialog.chars"), `${entry.raw.length} → ${entry.text.length}`],
+  ];
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="modal history-modal sm:max-w-[520px]">
       <DialogHeader><DialogTitle>{t("historyDialog.title")}</DialogTitle><DialogDescription>{new Date(entry.createdAt).toLocaleString(language)}</DialogDescription></DialogHeader>
+      <div className="history-meta-bar">
+        <Button variant="ghost" size="xs" aria-expanded={showInfo} onClick={() => setShowInfo((v) => !v)}><Info />{t("historyDialog.details")}{showInfo ? <ChevronUp /> : <ChevronDown />}</Button>
+      </div>
+      {showInfo && <dl className="history-details">
+        {details.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}
+      </dl>}
       <div className="history-versions">
         <section className="history-version">
           <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.raw, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
@@ -1303,7 +1417,7 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
         </section>
         <div className="history-flow-arrow" aria-hidden="true"><ArrowDown /></div>
         <section className="history-version">
-          <div className="history-version-header"><b>{t("historyDialog.refined")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.text, "refined")}>{copied === "refined" ? <Check /> : <Copy />}{copied === "refined" ? t("action.copied") : t("action.copy")}</Button></div>
+          <div className="history-version-header"><b>{t("historyDialog.refined")}</b>{entry.refiner && <small>{t("historyDialog.refiner", { model: entry.refiner })}</small>}<Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.text, "refined")}>{copied === "refined" ? <Check /> : <Copy />}{copied === "refined" ? t("action.copied") : t("action.copy")}</Button></div>
           <div className="history-full">{entry.text}</div>
         </section>
       </div>
@@ -1316,12 +1430,17 @@ function SettingRow({ label, detail, children }: { label: string; detail: string
 }
 
 function Hud() {
-  const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", level: 0, engine: "", captureMode: "live", uiLanguage: systemUiLanguage });
+  const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", raw: "", level: 0, engine: "", captureMode: "live", uiLanguage: systemUiLanguage });
   const t = useMemo(() => createTranslator(state.uiLanguage ?? systemUiLanguage), [state.uiLanguage]);
   const transcriptViewRef = useRef<HTMLElement>(null);
   const copyRef = useRef<HTMLDivElement>(null);
+  const choiceBoxRef = useRef<HTMLDivElement>(null);
   const hudHeightRef = useRef(64);
-  const [refinedFlash, setRefinedFlash] = useState(false);
+  const hasChoice = state.phase === "done" && state.choice != null;
+  // 0: 元のまま、1: AI整形版。初期フォーカスは整形版。
+  const [selected, setSelected] = useState(1);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   // 録音開始時に一度だけ記録するHUDの下辺(論理座標)。以後はこの下辺を固定して上へ伸びる。
   const hudBottomRef = useRef<number | null>(null);
   useEffect(() => {
@@ -1349,13 +1468,6 @@ function Hud() {
     if (!view) return;
     if (!state.transcript) view.scrollLeft = 0;
   }, [state.transcript]);
-  // AI整形で確定したときに、テキストが光って書き換わる演出を入れる
-  useEffect(() => {
-    if (state.phase !== "done" || !state.refined) return;
-    setRefinedFlash(true);
-    const timer = window.setTimeout(() => setRefinedFlash(false), 1100);
-    return () => window.clearTimeout(timer);
-  }, [state.phase, state.refined]);
   // 録音開始時(またはリセット時)に下辺を記録する
   useEffect(() => {
     if (state.phase === "idle") {
@@ -1387,6 +1499,31 @@ function Hud() {
       }
     })();
   }, [state.phase]);
+  // 新しい選択肢が来たらフォーカスを整形版に戻す
+  useEffect(() => {
+    setSelected(1);
+  }, [state.choice?.raw, state.choice?.refined]);
+  // 選択肢表示中だけキー操作を受け付ける
+  useEffect(() => {
+    if (!hasChoice) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowUp" || event.key === "w" || event.key === "W" || event.key === "a" || event.key === "A") {
+        event.preventDefault();
+        setSelected(0);
+      } else if (event.key === "ArrowDown" || event.key === "s" || event.key === "S" || event.key === "d" || event.key === "D") {
+        event.preventDefault();
+        setSelected(1);
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        confirmChoice(selectedRef.current);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        void emitTo("main", "hud-choose", { which: "cancel" }).catch(() => undefined);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hasChoice]);
   useEffect(() => {
     const copy = copyRef.current;
     const view = transcriptViewRef.current;
@@ -1395,8 +1532,7 @@ function Hud() {
     // 判定は本文の自然な高さ(view.scrollHeightはmax-heightの影響を受けない)+ラベル・余白で、
     // 表示上の高さ制限から独立させる
     const label = copy.querySelector("small") as HTMLElement | null;
-    const hint = copy.querySelector(".hud-space-hint") as HTMLElement | null;
-    const chrome = 20 + (label?.offsetHeight ?? 14) + (hint?.offsetHeight ?? 0);
+    const chrome = 20 + (label?.offsetHeight ?? 14);
     const capped = view.scrollHeight + chrome > 320;
     view.classList.toggle("capped", capped);
     // 上限時は本文の最大高さをウィンドウ内に収まる値に合わせる
@@ -1404,7 +1540,13 @@ function Hud() {
     else view.style.removeProperty("max-height");
     // 上限到達後はテキスト領域だけを末尾へ自動スクロールさせる
     if (capped) view.scrollTop = view.scrollHeight;
-    const logicalHeight = Math.max(64, Math.min(view.scrollHeight + chrome, 320));
+    const barHeight = Math.max(64, Math.min(view.scrollHeight + chrome, 320));
+    // 選択肢表示中はその分だけ上へ伸ばす（同一ウィンドウなので追従ズレなし）
+    let logicalHeight = barHeight;
+    const box = choiceBoxRef.current;
+    if (hasChoice && box) {
+      logicalHeight = Math.min(barHeight + Math.min(box.scrollHeight + 10, 480), 560);
+    }
     if (logicalHeight === hudHeightRef.current) return;
     void (async () => {
       const bottom = hudBottomRef.current;
@@ -1412,14 +1554,21 @@ function Hud() {
       await invoke("hud_resize", { height: logicalHeight, bottom }).catch(() => undefined);
       hudHeightRef.current = logicalHeight;
     })();
-  }, [state.transcript, state.phase, state.spaceHint]);
+  }, [state.transcript, state.phase, state.spaceHint, state.choice]);
   const deferred = state.captureMode === "deferred";
   const placeholder = !state.transcript && state.phase === "listening";
   const displayText = state.transcript || (placeholder ? t(deferred ? "hud.deferredPrompt" : "hud.prompt") : state.message) || t("hud.prompt");
-  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}`}>
+  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}${hasChoice ? " tall" : ""}`}>
     <div className="hud-drag-layer" data-tauri-drag-region />
+    {hasChoice && state.choice && <div className="hud-choice" ref={choiceBoxRef}>
+      <div className="hud-choice-title">{t("record.choose")}</div>
+      <div className="choice-options">
+        <button type="button" className={"choice-option" + (selected === 0 ? " focused" : "")} onClick={() => confirmChoice(0)} onMouseEnter={() => setSelected(0)}><span>{t("hud.useRaw")}</span><span>{state.choice.raw}</span></button>
+        <button type="button" className={"choice-option primary" + (selected === 1 ? " focused" : "")} onClick={() => confirmChoice(1)} onMouseEnter={() => setSelected(1)}><span>{t("hud.useRefined")}</span><span>{state.choice.refined}</span></button>
+      </div>
+    </div>}
     <div className="hud-orb"><span className="hud-pulse" /><span className="hud-mic">●</span></div>
-    <div className={"hud-copy" + (refinedFlash ? " refining" : "")} ref={copyRef}><small>{phaseLabel(state.phase, t, deferred)}</small><b ref={transcriptViewRef} className={placeholder ? "placeholder" : undefined}>{displayText}</b>{state.phase === "listening" && state.spaceHint && <i className="hud-space-hint">{t("hud.spaceHint")}</i>}</div>
+    <div className="hud-copy" ref={copyRef}><small>{phaseLabel(state.phase, t, deferred, state.refining)}{state.phase === "listening" && state.spaceHint ? ` ・ ${t("hud.spaceHint")}` : ""}</small><b ref={transcriptViewRef} className={placeholder ? "placeholder" : undefined}>{displayText}</b></div>
     <div className="hud-meter" aria-label={t("hud.audioLevel")}>{Array.from({ length: 7 }, (_, i) => <i key={i} className={i / 7 < state.level ? "lit" : ""} />)}</div>
     {(state.phase === "listening" || state.phase === "preparing") && <Button variant="ghost" className="hud-stop h-9 rounded-none" onClick={() => void emitTo("main", "hud-stop")}><Square />{t("hud.stop")}</Button>}
   </main>;
@@ -1450,6 +1599,28 @@ async function positionHud(platform?: "macos" | "windows", displayX?: number, di
   ));
 }
 
+// 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にする。
+async function focusHudForChoice() {
+  const hud = await WebviewWindow.getByLabel("hud").catch(() => null);
+  if (!hud) return;
+  try {
+    await hud.setFocusable(true);
+    await hud.setFocus();
+  } catch (error) {
+    appLog.warn("hud", `choice focus failed, mouse only: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function releaseHudFocus() {
+  const hud = await WebviewWindow.getByLabel("hud").catch(() => null);
+  if (!hud) return;
+  await hud.setFocusable(false).catch(() => undefined);
+}
+
+function confirmChoice(index: number) {
+  void emitTo("main", "hud-choose", { which: index === 0 ? "raw" : "refined" }).catch(() => undefined);
+}
+
 function shortcutFromEvent(event: Pick<KeyboardEvent, "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey">) {
   const modifierKey = ["Control", "Alt", "Meta", "Shift"].includes(event.key);
   if (modifierKey) return event.key === "Alt" ? "Option" : event.key === "Meta" ? "Command" : event.key;
@@ -1466,10 +1637,10 @@ function prettyShortcut(shortcut: string) {
   return shortcut.replace("CommandOrControl", "⌘/Ctrl").replace("Control", "⌃").replace("Option", "⌥").replace("Command", "⌘").split("+").join(" ");
 }
 
-function phaseLabel(phase: Phase, t: Translator, deferred = false) {
+function phaseLabel(phase: Phase, t: Translator, deferred = false, refining = false) {
   if (phase === "preparing") return t("state.preparing");
   if (phase === "listening") return t(deferred ? "state.recording" : "state.listening");
-  if (phase === "processing") return t(deferred ? "state.transcribing" : "state.processing");
+  if (phase === "processing") return t(deferred || !refining ? "state.transcribing" : "state.processing");
   if (phase === "done") return t("state.done");
   if (phase === "error") return t("state.error");
   return t("state.idle");
