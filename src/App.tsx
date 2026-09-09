@@ -824,6 +824,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
           await bridge.requestPermission(permission);
           setDeviceStatus(await bridge.settingsStatus());
         }}
+        bridge={bridge}
         onInstall={() => void installSpeechModel()}
         onSaveApiKey={saveApiKey}
         onClearApiKey={clearApiKey}
@@ -1346,7 +1347,7 @@ function UpdateRow({ state, onCheck, onInstall }: { state: UpdateState; onCheck:
   </div>;
 }
 
-function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, status, deviceStatus, installing, apiKeyHints, shortcutChosen, testPassed, shortcutError, onRequestPermission, onInstall, onSaveApiKey, onClearApiKey, onShortcutCaptureChange, onShortcutChange, onComplete, onClose }: {
+function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, status, deviceStatus, installing, apiKeyHints, shortcutChosen, testPassed, shortcutError, onRequestPermission, bridge, onInstall, onSaveApiKey, onClearApiKey, onShortcutCaptureChange, onShortcutChange, onComplete, onClose }: {
   dismissible: boolean;
   phase: Phase;
   transcript: string;
@@ -1362,6 +1363,7 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
   testPassed: boolean;
   shortcutError: string;
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility" | "screencapture") => Promise<void>;
+  bridge: SpeechBridgeClient;
   onInstall: () => void;
   onSaveApiKey: (provider: "groq" | "gemini", key: string) => Promise<void>;
   onClearApiKey: (provider: "groq" | "gemini") => Promise<void>;
@@ -1410,6 +1412,7 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
             <PermissionRow label={t("permission.microphone")} status={deviceStatus.microphonePermission} onAction={() => onRequestPermission("microphone")} />
             <PermissionRow label={t("permission.speech")} status={deviceStatus.speechPermission} onAction={() => onRequestPermission("speech")} />
             <PermissionRow label={t("permission.accessibility")} detail={t("permission.accessibilityDetail")} status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
+            {deviceStatus.platform === "macos" && deviceStatus.screenCapturePermission !== "not-required" && <ScreenCaptureRow status={deviceStatus.screenCapturePermission} onOpenSettings={() => onRequestPermission("screencapture")} onTestCapture={() => bridge.screenshot()} />}
           </div> : <p className="onboarding-hint">{t("onboarding.checkingPermissions")}</p>}
         </Card>
 
