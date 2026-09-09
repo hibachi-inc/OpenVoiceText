@@ -16,16 +16,13 @@ jobs:
     runs-on: windows-2025
     env:
       RELEASE_VERSION: ${{ inputs.version }}
-    defaults:
-      run:
-        working-directory: VoiceLatte
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: VoiceLatte/package-lock.json
+          cache-dependency-path: package-lock.json
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
@@ -39,7 +36,7 @@ jobs:
         with:
           name: VoiceLatte-${{ env.RELEASE_VERSION }}-windows
           path: |
-            VoiceLatte/src-tauri/target/release/bundle/nsis/*.exe
-            VoiceLatte/src-tauri/target/release/bundle/msi/*.msi
-            VoiceLatte/src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.sig
           if-no-files-found: error

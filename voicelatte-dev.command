@@ -8,7 +8,7 @@
 # 両方とも確実に落としてから開く。
 set -u
 
-PROJECT_DIR="/Users/kotatsu/AI-BASE/ai-dev/dev/OpenVoiceText-Pro/VoiceLatte"
+PROJECT_DIR="/Users/kotatsu/AI-BASE/ai-dev/dev/OpenVoiceText-Pro"
 DEBUG_APP="$PROJECT_DIR/src-tauri/target/debug/bundle/macos/VoiceLatte.app"
 DEBUG_BIN="$DEBUG_APP/Contents/MacOS/voicelatte"
 cd "$PROJECT_DIR"
