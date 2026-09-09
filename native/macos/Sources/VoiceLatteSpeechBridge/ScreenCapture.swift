@@ -57,10 +57,14 @@ enum ScreenCapture {
     }
 
     private static func jpeg(_ image: CGImage, quality: CGFloat) -> Data? {
+        encode(image, type: UTType.jpeg.identifier, quality: quality)
+    }
+
+    private static func encode(_ image: CGImage, type: String, quality: CGFloat) -> Data? {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
             data as CFMutableData,
-            UTType.jpeg.identifier as CFString,
+            type as CFString,
             1,
             nil
         ) else { return nil }

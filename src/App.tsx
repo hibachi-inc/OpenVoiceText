@@ -374,10 +374,15 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       const startedCtx = contextRef.current;
       // 画面キャプチャも並列で取る。整形への添付は対応モデルのみだが、
       // 履歴確認用に方式問わず残す。画像不要な構成では撮らない。
-      const shotPromise: Promise<string | null> = (async () => {
+      // Gemini向けはWebPに変換して帯域を節約する（失敗時はJPEGのまま）。
+      const wantWebp = settings.refinementProvider === "gemini" && apiKeyHints.gemini !== null;
+      const shotPromise: Promise<{ data: string; mime: string } | null> = (async () => {
         if (!withAiRefinement || !settings.refinement || !settings.screenshotContext) return null;
         try {
-          return await bridge.screenshot(startedCtx.displayX, startedCtx.displayY);
+          const jpeg = await bridge.screenshot(startedCtx.displayX, startedCtx.displayY);
+          if (!jpeg) return null;
+          if (!wantWebp) return { data: jpeg, mime: "image/jpeg" };
+          return (await jpegToWebp(jpeg)) ?? { data: jpeg, mime: "image/jpeg" };
         } catch {
           return null;
         }
@@ -427,7 +432,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       const screenContext = shouldRefine ? contextRef.current.screenContext ?? "" : "";
       // 内容は保存・記録せず文字数のみ。0なら取得失敗、0超なら送信済みで用途側の問題に切り分けられる。
       const screenChars = screenContext.length;
-      if (shouldRefine) appLog.info("refine", `screen context ${screenChars} chars from ${appName} (${refreshed ? "stop" : "start"})${shot ? ` + shot ${Math.round(shot.length / 1024)}KB` : ""}`);
+      if (shouldRefine) appLog.info("refine", `screen context ${screenChars} chars from ${appName} (${refreshed ? "stop" : "start"})${shot ? ` + shot ${Math.round(shot.data.length / 1024)}KB ${shot.mime}` : ""}`);
       // 詳細表示用に先頭だけ残す。画面内容なのでlocalStorageの履歴消去と一緒に消える。
       const screenText = shouldRefine && screenChars > 0 ? screenContext.slice(0, 2000) : undefined;
       const customPrompt = resolveCustomPrompt(settings.customPrompts, contextRef.current);
@@ -456,7 +461,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             locale: speechLocale,
             screenContext,
             model: settings.refinementModel || null,
-            image: shot ?? null,
+            image: shot?.data ?? null,
+            imageMime: shot?.mime ?? null,
           }).catch((error) => onKeyDenied(error));
         } else {
           cloud = await invoke<CloudResult>("cloud_transcribe", {
@@ -486,7 +492,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       if (shouldRefine && !useGeminiCombined) {
         if (cloudRefinementProvider) {
           try {
-            const result = await invoke<CloudResult>("cloud_refine", { provider: cloudRefinementProvider, text: source, prompt: refinementPrompt, screenContext, model: settings.refinementModel || null, image: shot ?? null });
+            const result = await invoke<CloudResult>("cloud_refine", { provider: cloudRefinementProvider, text: source, prompt: refinementPrompt, screenContext, model: settings.refinementModel || null, image: shot?.data ?? null, imageMime: shot?.mime ?? null });
             refined = result.text;
             refiner = result.model || cloudRefinementProvider;
             if (result.fallbackFrom) appLog.warn("refine", `fell back to ${refiner} (${result.fallbackFrom})`);
@@ -509,7 +515,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       // 整形結果がプロンプトや文脈のコピーになっていたら生テキストに戻す
       const text = postProcessTranscript(shouldDiscardRefinement(refined, source, screenContext) ? source : refined, vocabulary);
       // 履歴確認用に撮影画像の縮小版を残す（1日保持）。失敗時はなしで続行。
-      const image = (shot ? await makeHistoryThumbnail(shot) : undefined) ?? undefined;
+      const image = (shot ? await makeHistoryThumbnail(shot.data, shot.mime) : undefined) ?? undefined;
       // Space確定のときは自動ペーストせず、前後見比べの選択肢としてHUDに残す
       if (shouldRefine) {
         choiceRef.current = { text, raw: source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner, screenChars, screenText, image };
@@ -1127,9 +1133,36 @@ function bridgeMessageCode(error: unknown) {
 const IMAGE_RETENTION_MS = 24 * 3600 * 1000;
 
 // 履歴保存用にスクショを縮小する（localStorage肥大防止）。失敗時はnull。
-async function makeHistoryThumbnail(base64: string, maxEdge = 768): Promise<string | null> {
+// JPEG base64をWebP base64へ変換する。未対応環境ではnull。
+// ImageIOはWebP書き出しに未対応のためブラウザ側で変換する。
+// toDataURLは非対応形式でPNGを返すため、先頭検証で取りこぼさない。
+async function jpegToWebp(base64: string, quality = 0.8): Promise<{ data: string; mime: string } | null> {
   try {
     const blob = await (await fetch(`data:image/jpeg;base64,${base64}`)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close();
+      return null;
+    }
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    const url = canvas.toDataURL("image/webp", quality);
+    if (!url.startsWith("data:image/webp,")) return null;
+    const data = url.split(",", 2)[1] ?? "";
+    if (!data) return null;
+    return { data, mime: "image/webp" };
+  } catch {
+    return null;
+  }
+}
+
+async function makeHistoryThumbnail(base64: string, mime = "image/jpeg", maxEdge = 768): Promise<string | null> {
+  try {
+    const blob = await (await fetch(`data:${mime};base64,${base64}`)).blob();
     const bitmap = await createImageBitmap(blob);
     const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
     const w = Math.max(1, Math.round(bitmap.width * scale));
