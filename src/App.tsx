@@ -778,7 +778,6 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         />}
         {section === "general" && <GeneralPage
           settings={settings} setSettings={setSettings} deviceStatus={deviceStatus} launchAtLogin={launchAtLogin}
-          bridge={bridge}
           onLaunchAtLogin={async (enabled) => {
             if (enabled) await enableAutostart(); else await disableAutostart();
             setLaunchAtLogin(await isAutostartEnabled());
@@ -787,6 +786,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             await bridge.requestPermission(permission);
             setDeviceStatus(await bridge.settingsStatus());
           }}
+          bridge={bridge}
+          onRerunSetup={() => setShowOnboarding(true)}
         />}
         {section === "ai" && <AiPage
           status={status} settings={settings} setSettings={setSettings} installing={installing}
@@ -874,7 +875,7 @@ function HistoryPage(props: {
   </>;
 }
 
-function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLaunchAtLogin, onRequestPermission, bridge }: {
+function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLaunchAtLogin, onRequestPermission, bridge, onRerunSetup }: {
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   deviceStatus: DeviceSettingsStatus | null;
@@ -882,6 +883,7 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
   onLaunchAtLogin: (enabled: boolean) => Promise<void>;
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility" | "screencapture") => Promise<void>;
   bridge: SpeechBridgeClient;
+  onRerunSetup: () => void;
 }) {
   const { t } = useI18n();
   const locales = [
@@ -933,6 +935,7 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
     </>}
     <p className="settings-group-label">{t("general.errorLog")}</p>
     <SettingRow label={t("general.errorLog")} detail={t("general.errorLogDetail")}><Button variant="outline" size="sm" onClick={() => downloadLog()}>{t("general.exportLog")}</Button></SettingRow>
+    <SettingRow label={t("general.rerunSetup")} detail={t("general.rerunSetupDetail")}><Button variant="outline" size="sm" onClick={onRerunSetup}>{t("general.rerunSetupAction")}</Button></SettingRow>
   </div>;
 }
 
