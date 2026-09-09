@@ -440,18 +440,35 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       const cloudRefinementProvider = shouldRefine && settings.refinementProvider !== "local" && Boolean(apiKeyHints[settings.refinementProvider])
         ? settings.refinementProvider
         : undefined;
-      const useGeminiCombined = provider === "gemini" && cloudRefinementProvider === "gemini" && settings.refinementModel === "";
-      const cloud = provider === "local" ? undefined : await invoke<CloudResult>("cloud_transcribe", {
-        captureId,
-        provider,
-        prompt: useGeminiCombined ? refinementPrompt : "",
-        locale: speechLocale,
-        vocabulary: vocabularyHints(vocabulary),
-        screenContext,
-      }).catch((error) => {
-        if (bridgeMessageCode(error) === "cloud.key_denied") markKeyDenied(provider);
-        throw error;
-      });
+      // Geminiで文字起こしも整形も行う場合は専用ルートで一本化する
+      // （音声・画像・プロンプトを同時投入）。それ以外は従来の2段構成。
+      const useGeminiCombined = provider === "gemini" && cloudRefinementProvider === "gemini";
+      let cloud: CloudResult | undefined;
+      if (provider !== "local") {
+        const onKeyDenied = (error: unknown) => {
+          if (bridgeMessageCode(error) === "cloud.key_denied") markKeyDenied(provider);
+          throw error;
+        };
+        if (useGeminiCombined) {
+          cloud = await invoke<CloudResult>("cloud_transcribe_refine", {
+            captureId,
+            prompt: refinementPrompt,
+            locale: speechLocale,
+            screenContext,
+            model: settings.refinementModel || null,
+            image: shot ?? null,
+          }).catch((error) => onKeyDenied(error));
+        } else {
+          cloud = await invoke<CloudResult>("cloud_transcribe", {
+            captureId,
+            provider,
+            prompt: "",
+            locale: speechLocale,
+            vocabulary: vocabularyHints(vocabulary),
+            screenContext,
+          }).catch((error) => onKeyDenied(error));
+        }
+      }
       captureRef.current = undefined;
       if (stale()) return;
       const source = cloud?.text ?? raw;

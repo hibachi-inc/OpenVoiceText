@@ -37,6 +37,7 @@ pub fn run() {
             cloud::list_provider_models,
             cloud::refine_model_vision,
             cloud::cloud_transcribe,
+            cloud::cloud_transcribe_refine,
             cloud::cloud_refine,
         ])
         .setup(|app| {

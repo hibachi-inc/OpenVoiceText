@@ -401,6 +401,87 @@ pub async fn cloud_transcribe(
     }
 }
 
+/// Gemini専用の一本化ルート：音声の文字起こしとAI整形を1回の呼び出しで行う。
+/// 音声・画面画像・整形プロンプトを同時に投げ、整形済みテキストを返す。
+/// 明示モデルがなければ内蔵チェーン（Flash→Flash-Lite）でフォールバックする。
+#[tauri::command]
+pub async fn cloud_transcribe_refine(
+    app: AppHandle,
+    state: State<'_, CloudState>,
+    capture_id: String,
+    prompt: String,
+    locale: String,
+    screen_context: String,
+    model: Option<String>,
+    image: Option<String>,
+) -> Result<CloudResult, String> {
+    let path = state
+        .captures
+        .lock()
+        .map_err(|_| "cloud.capture_read")?
+        .remove(&capture_id)
+        .ok_or_else(|| "cloud.capture_missing".to_string())?;
+    let _guard = TempAudio(path.clone());
+    let audio = fs::read(&path).map_err(|_| "cloud.capture_read".to_string())?;
+    if audio.len() > GEMINI_MAX_AUDIO_BYTES {
+        return Err("cloud.audio_too_long".into());
+    }
+    let key = resolve_key(&state, "gemini")?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+        .map_err(|_| "cloud.connect".to_string())?;
+    let audio = BASE64.encode(audio);
+    let instruction = format!(
+        "Transcribe the attached audio in {locale}, then apply the refinement instruction below to the transcript. Return only the final refined text. Do not add explanations.\n\n{prompt}"
+    );
+    let screen_context = tail_chars(screen_context.trim(), 10_000);
+    let explicit: Option<String> = model
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty());
+    let mut models = Vec::new();
+    if let Some(m) = explicit {
+        models.push(m);
+    }
+    for m in GEMINI_MODELS {
+        if models.iter().all(|x| x != m) {
+            models.push(m.to_string());
+        }
+    }
+    let mut last_error = "cloud.gemini_failed".to_string();
+    let mut fell_back_from: Option<String> = None;
+    for model in &models {
+        match stream_gemini_model(
+            &client,
+            &key,
+            model,
+            Some(&audio),
+            &instruction,
+            &screen_context,
+            image.as_deref(),
+            &app,
+        )
+        .await
+        {
+            Ok(text) => {
+                return Ok(CloudResult {
+                    text,
+                    model: model.clone(),
+                    fallback_from: fell_back_from,
+                })
+            }
+            Err(error) if error.fallback => {
+                if fell_back_from.is_none() {
+                    fell_back_from = Some(format!("{model}: {}", error.message));
+                }
+                last_error = error.message
+            }
+            Err(error) => return Err(error.message),
+        }
+    }
+    Err(last_error)
+}
+
 #[tauri::command]
 pub async fn cloud_refine(
     app: AppHandle,
