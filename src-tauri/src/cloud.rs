@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -41,6 +41,9 @@ pub struct PreparedCapture {
 pub struct CloudResult {
     text: String,
     model: String,
+    /// 結合ルートの場合のみ：整形前の文字起こし
+    #[serde(skip_serializing_if = "Option::is_none")]
+    raw: Option<String>,
     /// フォールバックで別モデルに切り替わった場合の、失敗したモデルと理由
     #[serde(skip_serializing_if = "Option::is_none")]
     fallback_from: Option<String>,
@@ -171,11 +174,6 @@ fn sanitize_image_mime(mime: Option<String>) -> String {
         Some("image/webp") => "image/webp".to_string(),
         _ => "image/jpeg".to_string(),
     }
-}
-
-#[tauri::command]
-pub fn refine_model_vision(provider: String, model: String) -> bool {
-    model_supports_vision(&provider, &model)
 }
 
 #[derive(Serialize)]
@@ -442,7 +440,7 @@ pub async fn cloud_transcribe_refine(
         .map_err(|_| "cloud.connect".to_string())?;
     let audio = BASE64.encode(audio);
     let instruction = format!(
-        "Transcribe the attached audio in {locale}, then apply the refinement instruction below to the transcript. Return only the final refined text. Do not add explanations.\n\n{prompt}"
+        "Transcribe the attached audio in {locale}, then apply the refinement instruction below to the transcript. Return ONLY a JSON object like {{\"transcript\": \"...\", \"refined\": \"...\"}} holding the raw transcript and the refined text. Do not add explanations.\n\n{prompt}"
     );
     let screen_context = tail_chars(screen_context.trim(), 10_000);
     let explicit: Option<String> = model
@@ -474,9 +472,11 @@ pub async fn cloud_transcribe_refine(
         .await
         {
             Ok(text) => {
+                let (transcript, refined) = parse_combined_output(&text);
                 return Ok(CloudResult {
-                    text,
+                    text: refined,
                     model: model.clone(),
+                    raw: transcript,
                     fallback_from: fell_back_from,
                 })
             }
@@ -490,6 +490,42 @@ pub async fn cloud_transcribe_refine(
         }
     }
     Err(last_error)
+}
+
+#[derive(Deserialize)]
+struct CombinedOutput {
+    transcript: String,
+    refined: String,
+}
+
+/// 結合ルートの応答（JSON）を解釈する。壊れていたら全体を整形済み扱いにする。
+fn parse_combined_output(text: &str) -> (Option<String>, String) {
+    let trimmed = text.trim();
+    let json_str = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .map(|s| s.trim_end().strip_suffix("```").unwrap_or(s).trim())
+        .unwrap_or(trimmed);
+    match serde_json::from_str::<CombinedOutput>(json_str) {
+        Ok(out) => {
+            let transcript = out.transcript.trim().to_string();
+            let refined = out.refined.trim();
+            let refined = if refined.is_empty() {
+                text.to_string()
+            } else {
+                refined.to_string()
+            };
+            (
+                if transcript.is_empty() {
+                    None
+                } else {
+                    Some(transcript)
+                },
+                refined,
+            )
+        }
+        Err(_) => (None, text.to_string()),
+    }
 }
 
 #[tauri::command]
@@ -537,11 +573,12 @@ pub async fn cloud_refine(
             for model in dedup_chain(&GROQ_REFINEMENT_MODELS, &explicit) {
                 match stream_groq_refinement(&client, &key, &model, &input, image.as_deref(), &app).await {
                     Ok(text) => {
-                        return Ok(CloudResult {
-                            text,
-                            model: model.clone(),
-                            fallback_from: fell_back_from,
-                        })
+                return Ok(CloudResult {
+                    text,
+                    model: model.clone(),
+                    raw: None,
+                    fallback_from: fell_back_from,
+                })
                     }
                     Err(error) if error.fallback => {
                         if fell_back_from.is_none() {
@@ -560,11 +597,12 @@ pub async fn cloud_refine(
             for model in dedup_chain(&GEMINI_MODELS, &explicit) {
                 match stream_gemini_model(&client, &key, &model, None, &input, "", image.as_deref(), &sanitize_image_mime(image_mime.clone()), &app).await {
                     Ok(text) => {
-                        return Ok(CloudResult {
-                            text,
-                            model: model.clone(),
-                            fallback_from: fell_back_from,
-                        })
+                return Ok(CloudResult {
+                    text,
+                    model: model.clone(),
+                    raw: None,
+                    fallback_from: fell_back_from,
+                })
                     }
                     Err(error) if error.fallback => {
                         if fell_back_from.is_none() {
@@ -791,6 +829,7 @@ async fn groq_transcribe(
     Ok(CloudResult {
         text,
         model: "whisper-large-v3-turbo".into(),
+        raw: None,
         fallback_from: None,
     })
 }
@@ -832,6 +871,7 @@ async fn gemini_transcribe(
                 return Ok(CloudResult {
                     text,
                     model: model.into(),
+                    raw: None,
                     fallback_from: fell_back_from,
                 })
             }
@@ -1086,7 +1126,6 @@ mod tests {
             ["gemini-flash-latest", "gemini-flash-lite-latest"]
         );
     }
-
     #[test]
     fn vision_capability_matches_known_catalog() {
         assert!(model_supports_vision("gemini", "gemini-flash-latest"));
@@ -1095,6 +1134,21 @@ mod tests {
         assert!(!model_supports_vision("groq", "openai/gpt-oss-120b"));
         assert!(!model_supports_vision("groq", "llama-3.3-70b-versatile"));
         assert!(!model_supports_vision("local", "anything"));
+    }
+
+    #[test]
+    fn combined_output_parses_json_and_falls_back_to_plain_text() {
+        let (raw, refined) =
+            parse_combined_output(r#"{"transcript": "hello", "refined": "Hello."}"#);
+        assert_eq!(raw.as_deref(), Some("hello"));
+        assert_eq!(refined, "Hello.");
+        let fenced = "```json\n{\"transcript\": \"a\", \"refined\": \"b\"}\n```";
+        let (raw, refined) = parse_combined_output(fenced);
+        assert_eq!(raw.as_deref(), Some("a"));
+        assert_eq!(refined, "b");
+        let (raw, refined) = parse_combined_output("just text");
+        assert!(raw.is_none());
+        assert_eq!(refined, "just text");
     }
 
     #[test]

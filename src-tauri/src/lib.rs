@@ -35,7 +35,6 @@ pub fn run() {
             cloud::api_key_present,
             cloud::clear_api_key,
             cloud::list_provider_models,
-            cloud::refine_model_vision,
             cloud::cloud_transcribe,
             cloud::cloud_transcribe_refine,
             cloud::cloud_refine,

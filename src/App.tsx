@@ -82,7 +82,7 @@ type Settings = {
 type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; choice?: { raw: string; refined: string } };
 type PendingChoice = { text: string; raw: string; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string; image?: string };
 type PreparedCapture = { captureId: string; audioPath: string };
-type CloudResult = { text: string; model: string; fallbackFrom?: string };
+type CloudResult = { text: string; model: string; fallbackFrom?: string; raw?: string };
 type CloudTranscript = { text: string; model: string };
 
 const systemUiLanguage = resolveUiLanguage("system");
@@ -138,7 +138,17 @@ function useStoredState<T>(key: string, initial: T, normalize?: (stored: unknown
       return normalize ? normalize(stored) : stored as T;
     } catch { return initial; }
   });
-  useEffect(() => localStorage.setItem(key, JSON.stringify(value)), [key, value]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // クォータ超過時は画像だけ捨てて再試行する（履歴サムネ用）。
+      // それでもだめなら永続化を諦める（メモリ上の値は維持）。
+      try {
+        localStorage.setItem(key, JSON.stringify(value, (k, v) => (k === "image" ? undefined : v)));
+      } catch { /* ignore */ }
+    }
+  }, [key, value]);
   return [value, setValue] as const;
 }
 
@@ -378,6 +388,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       const wantWebp = settings.refinementProvider === "gemini" && apiKeyHints.gemini !== null;
       const shotPromise: Promise<{ data: string; mime: string } | null> = (async () => {
         if (!withAiRefinement || !settings.refinement || !settings.screenshotContext) return null;
+        if (!isScreenCaptureAllowed(startedCtx)) return null;
         try {
           const jpeg = await bridge.screenshot(startedCtx.displayX, startedCtx.displayY);
           if (!jpeg) return null;
@@ -478,6 +489,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       captureRef.current = undefined;
       if (stale()) return;
       const source = cloud?.text ?? raw;
+      // 結合ルートは整形前の文字起こしも返す。なければ整形済みで代用する。
+      const cloudRaw = cloud?.raw && cloud.raw.trim() ? cloud.raw : undefined;
       let refiner = "local";
       if (!source.trim()) {
         recordingProviderRef.current = "local";
@@ -518,14 +531,14 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       const image = (shot ? await makeHistoryThumbnail(shot.data, shot.mime) : undefined) ?? undefined;
       // Space確定のときは自動ペーストせず、前後見比べの選択肢としてHUDに残す
       if (shouldRefine) {
-        choiceRef.current = { text, raw: source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner, screenChars, screenText, image };
+        choiceRef.current = { text, raw: cloudRaw ?? source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner, screenChars, screenText, image };
         recordingProviderRef.current = "local";
         setRecordingState({ phase: "done", transcript: text, message: t("record.choose") });
         // 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にする。
         if (contextRef.current.platform !== "windows") await focusHudForChoice(bridge).catch(() => undefined);
         return;
       }
-      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined, screenChars: shouldRefine ? screenChars : undefined, screenText: shouldRefine ? screenText : undefined, image };
+      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: cloudRaw ?? source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined, screenChars: shouldRefine ? screenChars : undefined, screenText: shouldRefine ? screenText : undefined, image };
       setHistory((items) => purgeExpiredImages([entry, ...items]).slice(0, 500));
       await bridge.insert(text, settings.autoPaste);
       recordingProviderRef.current = "local";
@@ -649,6 +662,14 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   // 保存済み履歴の古い撮影画像を破棄する（1日保持）。
   useEffect(() => {
     setHistory((items) => purgeExpiredImages(items));
+  }, [setHistory]);
+
+  // 長時間起動中も古い画像が残らないよう定期的に破棄する。
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setHistory((items) => purgeExpiredImages(items));
+    }, 3600 * 1000);
+    return () => window.clearInterval(timer);
   }, [setHistory]);
 
   // セットアップの表示時に画面収録の確認を済ませる。初回撮影でOSが確認
@@ -1131,6 +1152,19 @@ function bridgeMessageCode(error: unknown) {
 }
 
 const IMAGE_RETENTION_MS = 24 * 3600 * 1000;
+
+// 撮影対象外（ターミナル・パスワード管理系）。ネイティブ側の除外と合わせる。
+const SCREEN_CAPTURE_BLOCKED_BUNDLE_IDS = [
+  "com.1password.1password",
+  "com.bitwarden.desktop",
+  "com.apple.keychainaccess",
+];
+
+function isScreenCaptureAllowed(context: { category?: string; bundleID?: string }): boolean {
+  if (context.category === "terminal") return false;
+  const id = context.bundleID ?? "";
+  return !SCREEN_CAPTURE_BLOCKED_BUNDLE_IDS.some((prefix) => id.startsWith(prefix));
+}
 
 // 履歴保存用にスクショを縮小する（localStorage肥大防止）。失敗時はnull。
 // JPEG base64をWebP base64へ変換する。未対応環境ではnull。
