@@ -628,6 +628,30 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     setHistory((items) => purgeExpiredImages(items));
   }, [setHistory]);
 
+  // セットアップの表示時に画面収録の確認を済ませる。初回撮影でOSが確認
+  // ダイアログを出すため、画像自体は捨てる。拒否時は権限欄の誘導に任せる。
+  const screenCapturePromptedRef = useRef(false);
+  useEffect(() => {
+    if (!showOnboarding) {
+      screenCapturePromptedRef.current = false;
+      return;
+    }
+    if (screenCapturePromptedRef.current) return;
+    if (deviceStatus?.platform !== "macos") return;
+    if (
+      deviceStatus.screenCapturePermission === "authorized" ||
+      deviceStatus.screenCapturePermission === "not-required"
+    ) {
+      return;
+    }
+    screenCapturePromptedRef.current = true;
+    void (async () => {
+      await bridge.screenshot().catch(() => null);
+      const next = await bridge.settingsStatus().catch(() => null);
+      if (next) setDeviceStatus(next);
+    })();
+  }, [showOnboarding, deviceStatus, bridge, setDeviceStatus]);
+
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listen<CloudTranscript>("cloud-transcript", (event) => {
