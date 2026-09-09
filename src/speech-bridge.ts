@@ -93,10 +93,11 @@ export class SpeechBridgeClient {
     };
   }
 
-  // 入力先ディスプレイのスクリーンショット（JPEG base64）。権限なし・失敗はnull。
-  async screenshot(x?: number, y?: number): Promise<string | null> {
+  // 入力先アプリのウィンドウだけを撮影する（取れなければ画面全体）。
+  // 権限なし・失敗はnull。
+  async screenshot(x?: number, y?: number, bundleID?: string): Promise<string | null> {
     try {
-      const event = await this.request({ command: "screenshot", displayX: x, displayY: y }, ["screenshot"], 8000);
+      const event = await this.request({ command: "screenshot", displayX: x, displayY: y, bundleID }, ["screenshot"], 8000);
       return event.image ?? null;
     } catch {
       return null;

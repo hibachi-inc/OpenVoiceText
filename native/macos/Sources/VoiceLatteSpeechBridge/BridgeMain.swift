@@ -24,6 +24,7 @@ private struct BridgeRequest: Decodable {
     let screenContext: String?
     let displayX: Double?
     let displayY: Double?
+    let bundleID: String?
 }
 
 private struct AudioDeviceResponse: Encodable {
@@ -123,7 +124,7 @@ private final class Bridge: @unchecked Sendable {
             output.send(.init(id: request.id, type: "inserted", text: request.text ?? ""))
         case "screenshot":
             // 失敗時はnilで返す。呼び出し側は文脈なしで続行する。
-            let shot = ScreenCapture.captureDisplay(x: request.displayX, y: request.displayY)
+            let shot = await ScreenCapture.captureDisplay(x: request.displayX, y: request.displayY, bundleID: request.bundleID)
             output.send(.init(id: request.id, type: "screenshot", image: shot))
         case "focus_app":
             // 親プロセス（Tauri本体＝HUDの持ち主）を前面に出す。

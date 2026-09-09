@@ -390,7 +390,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         if (!withAiRefinement || !settings.refinement || !settings.screenshotContext) return null;
         if (!isScreenCaptureAllowed(startedCtx)) return null;
         try {
-          const jpeg = await bridge.screenshot(startedCtx.displayX, startedCtx.displayY);
+          const jpeg = await bridge.screenshot(startedCtx.displayX, startedCtx.displayY, startedCtx.bundleID);
           if (!jpeg) return null;
           if (!wantWebp) return { data: jpeg, mime: "image/jpeg" };
           return (await jpegToWebp(jpeg)) ?? { data: jpeg, mime: "image/jpeg" };
