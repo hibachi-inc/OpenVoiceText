@@ -372,18 +372,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       // 停止と並行で文脈を取り直す。録音中にAXツリーが温まるため開始時より取れる。
       // 別アプリに移っていたら開始時のものを優先する。遅延を増やさないよう並列実行。
       const startedCtx = contextRef.current;
-      // 画面キャプチャも並列で取る。保存せず整形にだけ渡す。画像不要な構成では撮らない。
+      // 画面キャプチャも並列で取る。整形への添付は対応モデルのみだが、
+      // 履歴確認用に方式問わず残す。画像不要な構成では撮らない。
       const shotPromise: Promise<string | null> = (async () => {
         if (!withAiRefinement || !settings.refinement || !settings.screenshotContext) return null;
-        const rp = settings.refinementProvider;
-        if (rp === "local" || !apiKeyHints[rp]) return null;
-        // 内蔵チェーン先頭が画像対応なのはGeminiのみ。Groqは明示指定かつ対応確認できたら撮る。
-        if (rp !== "gemini" && settings.refinementModel === "") return null;
         try {
-          if (rp === "groq") {
-            const ok = await invoke<boolean>("refine_model_vision", { provider: rp, model: settings.refinementModel });
-            if (!ok) return null;
-          }
           return await bridge.screenshot(startedCtx.displayX, startedCtx.displayY);
         } catch {
           return null;
@@ -786,7 +779,6 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             await bridge.requestPermission(permission);
             setDeviceStatus(await bridge.settingsStatus());
           }}
-          bridge={bridge}
           onRerunSetup={() => setShowOnboarding(true)}
         />}
         {section === "ai" && <AiPage
@@ -825,7 +817,6 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
           await bridge.requestPermission(permission);
           setDeviceStatus(await bridge.settingsStatus());
         }}
-        bridge={bridge}
         onInstall={() => void installSpeechModel()}
         onSaveApiKey={saveApiKey}
         onClearApiKey={clearApiKey}
@@ -875,14 +866,13 @@ function HistoryPage(props: {
   </>;
 }
 
-function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLaunchAtLogin, onRequestPermission, bridge, onRerunSetup }: {
+function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLaunchAtLogin, onRequestPermission, onRerunSetup }: {
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   deviceStatus: DeviceSettingsStatus | null;
   launchAtLogin: boolean;
   onLaunchAtLogin: (enabled: boolean) => Promise<void>;
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility" | "screencapture") => Promise<void>;
-  bridge: SpeechBridgeClient;
   onRerunSetup: () => void;
 }) {
   const { t } = useI18n();
@@ -930,7 +920,7 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
         <PermissionRow label={t("permission.microphone")} status={deviceStatus.microphonePermission} onAction={() => onRequestPermission("microphone")} />
         <PermissionRow label={t("permission.speech")} status={deviceStatus.speechPermission} onAction={() => onRequestPermission("speech")} />
         <PermissionRow label={t("permission.accessibility")} detail={t("permission.accessibilityDetail")} status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
-        <ScreenCaptureRow status={deviceStatus.screenCapturePermission} onOpenSettings={() => onRequestPermission("screencapture")} onTestCapture={() => bridge.screenshot()} />
+        <ScreenCaptureRow status={deviceStatus.screenCapturePermission} onOpenSettings={() => onRequestPermission("screencapture")} />
       </Card>
     </>}
     <p className="settings-group-label">{t("general.errorLog")}</p>
@@ -1135,43 +1125,18 @@ function purgeExpiredImages(items: HistoryEntry[]): HistoryEntry[] {
   return changed ? next : items;
 }
 
-function ScreenCaptureRow({ status, onOpenSettings, onTestCapture }: {
+function ScreenCaptureRow({ status, onOpenSettings }: {
   status: DeviceSettingsStatus["screenCapturePermission"];
   onOpenSettings: () => Promise<void>;
-  onTestCapture: () => Promise<string | null>;
 }) {
   const { t } = useI18n();
-  const [testing, setTesting] = useState(false);
-  const [testOk, setTestOk] = useState<boolean | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
   const granted = status === "authorized" || status === "not-required";
-  const test = () => {
-    setTesting(true);
-    setTestOk(null);
-    setPreview(null);
-    void onTestCapture()
-      .then((shot) => {
-        setTestOk(shot !== null);
-        setPreview(shot);
-      })
-      .catch(() => setTestOk(false))
-      .finally(() => setTesting(false));
-  };
-  return <div className="permission-row-stacked">
-    <div className="permission-row">
-      <span className={cn("permission-mark", granted && "granted")}>{granted ? <Check /> : <AlertCircle />}</span>
-      <div><b>{t("permission.screenCapture")}</b><small>{t("permission.screenCaptureDetail")}</small></div>
-      {granted
-        ? <span className="permission-state">{t("permission.granted")}</span>
-        : <Button variant="outline" size="xs" className="secondary-button" onClick={() => void onOpenSettings()}>{t("permission.openSettings")}</Button>}
-    </div>
-    <div className="permission-test-row">
-      <Button variant="outline" size="xs" className="secondary-button" disabled={testing} onClick={test}>
-        {testing ? t("permission.testing") : t("permission.testCapture")}
-      </Button>
-      {testOk !== null && <span className="permission-state">{testOk ? t("permission.testOk") : t("permission.testFailed")}</span>}
-    </div>
-    {preview && <img className="permission-test-preview" src={`data:image/jpeg;base64,${preview}`} alt="" />}
+  return <div className="permission-row">
+    <span className={cn("permission-mark", granted && "granted")}>{granted ? <Check /> : <AlertCircle />}</span>
+    <div><b>{t("permission.screenCapture")}</b><small>{t("permission.screenCaptureDetail")}</small></div>
+    {granted
+      ? <span className="permission-state">{t("permission.granted")}</span>
+      : <Button variant="outline" size="xs" className="secondary-button" onClick={() => void onOpenSettings()}>{t("permission.openSettings")}</Button>}
   </div>;
 }
 
@@ -1350,7 +1315,7 @@ function UpdateRow({ state, onCheck, onInstall }: { state: UpdateState; onCheck:
   </div>;
 }
 
-function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, status, deviceStatus, installing, apiKeyHints, shortcutChosen, testPassed, shortcutError, onRequestPermission, bridge, onInstall, onSaveApiKey, onClearApiKey, onShortcutCaptureChange, onShortcutChange, onComplete, onClose }: {
+function OnboardingDialog({ dismissible, phase, transcript, level, message, settings, setSettings, status, deviceStatus, installing, apiKeyHints, shortcutChosen, testPassed, shortcutError, onRequestPermission, onInstall, onSaveApiKey, onClearApiKey, onShortcutCaptureChange, onShortcutChange, onComplete, onClose }: {
   dismissible: boolean;
   phase: Phase;
   transcript: string;
@@ -1366,7 +1331,6 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
   testPassed: boolean;
   shortcutError: string;
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility" | "screencapture") => Promise<void>;
-  bridge: SpeechBridgeClient;
   onInstall: () => void;
   onSaveApiKey: (provider: "groq" | "gemini", key: string) => Promise<void>;
   onClearApiKey: (provider: "groq" | "gemini") => Promise<void>;
@@ -1415,7 +1379,7 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
             <PermissionRow label={t("permission.microphone")} status={deviceStatus.microphonePermission} onAction={() => onRequestPermission("microphone")} />
             <PermissionRow label={t("permission.speech")} status={deviceStatus.speechPermission} onAction={() => onRequestPermission("speech")} />
             <PermissionRow label={t("permission.accessibility")} detail={t("permission.accessibilityDetail")} status={deviceStatus.accessibilityPermission} onAction={() => onRequestPermission("accessibility")} />
-            {deviceStatus.platform === "macos" && deviceStatus.screenCapturePermission !== "not-required" && <ScreenCaptureRow status={deviceStatus.screenCapturePermission} onOpenSettings={() => onRequestPermission("screencapture")} onTestCapture={() => bridge.screenshot()} />}
+            {deviceStatus.platform === "macos" && deviceStatus.screenCapturePermission !== "not-required" && <ScreenCaptureRow status={deviceStatus.screenCapturePermission} onOpenSettings={() => onRequestPermission("screencapture")} />}
           </div> : <p className="onboarding-hint">{t("onboarding.checkingPermissions")}</p>}
         </Card>
 
