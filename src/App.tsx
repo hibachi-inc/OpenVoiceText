@@ -1696,15 +1696,20 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
         <img className="history-screenshot" src={`data:image/jpeg;base64,${entry.image}`} alt="" />
       </div>}
       <div className="history-versions">
-        <section className="history-version">
-          <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.raw, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
-          <div className="history-full original">{entry.raw}</div>
-        </section>
-        <div className="history-flow-arrow" aria-hidden="true"><ArrowDown /></div>
-        <section className="history-version">
-          <div className="history-version-header"><b>{t("historyDialog.refined")}</b>{entry.refiner && <small>{t("historyDialog.refiner", { model: entry.refiner })}</small>}<Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.text, "refined")}>{copied === "refined" ? <Check /> : <Copy />}{copied === "refined" ? t("action.copied") : t("action.copy")}</Button></div>
+        {entry.refiner !== undefined && entry.raw !== entry.text ? <>
+          <section className="history-version">
+            <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.raw, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
+            <div className="history-full original">{entry.raw}</div>
+          </section>
+          <div className="history-flow-arrow" aria-hidden="true"><ArrowDown /></div>
+          <section className="history-version">
+            <div className="history-version-header"><b>{t("historyDialog.refined")}</b>{entry.refiner && <small>{t("historyDialog.refiner", { model: entry.refiner })}</small>}<Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.text, "refined")}>{copied === "refined" ? <Check /> : <Copy />}{copied === "refined" ? t("action.copied") : t("action.copy")}</Button></div>
+            <div className="history-full">{entry.text}</div>
+          </section>
+        </> : <section className="history-version">
+          <div className="history-version-header"><b>{t("historyDialog.transcription")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.text, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
           <div className="history-full">{entry.text}</div>
-        </section>
+        </section>}
       </div>
     </DialogContent>
   </Dialog>;
