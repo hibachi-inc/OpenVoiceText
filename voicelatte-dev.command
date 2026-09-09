@@ -1,17 +1,16 @@
 #!/bin/bash
 # Finder からダブルクリックすると Terminal が開いて VoiceLatte の dev 版を起動する。
-# Desktop には symlink を貼って使う（mikan-chat の dev.command と同じ運用）。
+# Desktop には symlink を貼って使う。
 #
-# 注意: 旧Swift版 (.build/VoiceLatte.app, 実体 VoiceFlowApp) と dev版 (Tauri, 実体
-# voicelatte) はバンドルID・アプリ名が同一 (com.hibachi.voicelatte / VoiceLatte)。
-# 旧版が残留していると open が古い方を再利用して修正が反映されないため、
-# 両方とも確実に落としてから開く。
+# 注意: dev版 (Tauri, 実体 voicelatte) と製品版はバンドルID・アプリ名が同一
+# (com.hibachi.voicelatte / VoiceLatte)。製品版が残留していると open が
+# 製品版を再利用して修正が反映されないため、dev版を確実に落としてから開く。
 set -u
 
 PROJECT_DIR="/Users/kotatsu/AI-BASE/ai-dev/dev/OpenVoiceText-Pro"
 DEBUG_APP="$PROJECT_DIR/src-tauri/target/debug/bundle/macos/VoiceLatte.app"
 DEBUG_BIN="$DEBUG_APP/Contents/MacOS/voicelatte"
-cd "$PROJECT_DIR"
+cd "$PROJECT_DIR" || exit 1
 
 # zsh で起動された場合に PATH が通らないことがあるので明示的に補う
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
@@ -21,9 +20,9 @@ echo "   project: $PROJECT_DIR"
 echo
 
 # --- 1. 残留プロセスの掃除 ---
-# dev版・旧Swift版・サイドカー/XPCを対象にする。/Applications の製品版は殺さない。
+# dev版とサイドカーを対象にする。/Applications の製品版は殺さない。
 stale_pids() {
-  for pid in $(pgrep -f 'MacOS/voicelatte|MacOS/VoiceFlowApp|voicelatte-speech|MacOS/VoiceFlowSTT|MacOS/VoiceFlowRefiner|MacOS/ProRefiner' 2>/dev/null || true); do
+  for pid in $(pgrep -f 'MacOS/voicelatte|voicelatte-speech' 2>/dev/null || true); do
     case "$(ps -o command= -p "$pid" 2>/dev/null || true)" in
       *"/Applications/"*) continue ;;
       *) echo "$pid" ;;
@@ -33,7 +32,7 @@ stale_pids() {
 
 # /Applications の製品版が動いていたら手を出さず中断する
 # （バンドルIDが同一のため、残っていると open が製品版を再利用してしまう）
-for pid in $(pgrep -f 'MacOS/voicelatte|MacOS/VoiceFlowApp' 2>/dev/null || true); do
+for pid in $(pgrep -f 'MacOS/voicelatte' 2>/dev/null || true); do
   case "$(ps -o command= -p "$pid" 2>/dev/null || true)" in
     *"/Applications/"*)
       echo "   /Applications の製品版が起動中です。先に終了してください (pid=$pid)"
@@ -71,7 +70,7 @@ if [ -n "$STALE" ]; then
   echo "   残留プロセスが落とせませんでした: $STALE"
   exit 1
 fi
-echo "   プロセス掃除 OK（旧Swift版・dev版・XPCいずれもなし）"
+echo "   プロセス掃除 OK（dev版・サイドカーいずれもなし）"
 
 # --- 2. デバッグビルド ---
 echo "   デバッグビルド中..."
@@ -114,6 +113,6 @@ if [ -n "$OK" ]; then
   echo "   起動 OK (pid=$OK, 実体=$DEBUG_BIN)"
 else
   echo "   起動を確認できませんでした。ログ: /tmp/vl-debug.log"
-  pgrep -fl 'voicelatte|VoiceFlowApp|VoiceLatte' 2>/dev/null || true
+  pgrep -fl 'voicelatte|VoiceLatte' 2>/dev/null || true
   exit 1
 fi
