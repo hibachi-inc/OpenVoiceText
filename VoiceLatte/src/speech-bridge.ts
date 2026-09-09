@@ -13,8 +13,9 @@ export type SpeechStatus = {
 
 type BridgeEvent = Omit<Partial<SpeechStatus>, "id" | "type"> & {
   id: number;
-  type: "status" | "settings" | "ready" | "started" | "engine" | "transcript" | "audio_level" | "final" | "refined" | "inserted" | "installed" | "context" | "shortcut" | "error";
+  type: "status" | "settings" | "ready" | "started" | "engine" | "transcript" | "audio_level" | "final" | "refined" | "inserted" | "installed" | "context" | "shortcut" | "screenshot" | "error";
   text?: string;
+  image?: string;
   level?: number;
   message?: string;
   appName?: string;
@@ -88,6 +89,16 @@ export class SpeechBridgeClient {
       displayX: event.displayX,
       displayY: event.displayY,
     };
+  }
+
+  // 入力先ディスプレイのスクリーンショット（JPEG base64）。権限なし・失敗はnull。
+  async screenshot(x?: number, y?: number): Promise<string | null> {
+    try {
+      const event = await this.request({ command: "screenshot", displayX: x, displayY: y }, ["screenshot"], 8000);
+      return event.image ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async settingsStatus(): Promise<DeviceSettingsStatus> {

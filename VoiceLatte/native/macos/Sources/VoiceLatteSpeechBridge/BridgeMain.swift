@@ -22,6 +22,8 @@ private struct BridgeRequest: Decodable {
     let audioPath: String?
     let cloudProvider: String?
     let screenContext: String?
+    let displayX: Double?
+    let displayY: Double?
 }
 
 private struct AudioDeviceResponse: Encodable {
@@ -44,6 +46,7 @@ private struct BridgeResponse: Encodable {
     var category: String? = nil
     var promptKey: String? = nil
     var screenContext: String? = nil
+    var image: String? = nil
     var displayX: Double? = nil
     var displayY: Double? = nil
     var shortcut: String? = nil
@@ -116,6 +119,10 @@ private final class Bridge: @unchecked Sendable {
         case "insert":
             insert(request.text ?? "", autoPaste: request.autoPaste != false)
             output.send(.init(id: request.id, type: "inserted", text: request.text ?? ""))
+        case "screenshot":
+            // 失敗時はnilで返す。呼び出し側は文脈なしで続行する。
+            let shot = ScreenCapture.captureDisplay(x: request.displayX, y: request.displayY)
+            output.send(.init(id: request.id, type: "screenshot", image: shot))
         case "configure_shortcut":
             await MainActor.run {
                 let shortcuts = request.shortcuts ?? request.shortcut.map { [$0] } ?? []

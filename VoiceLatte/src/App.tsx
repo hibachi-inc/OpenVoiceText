@@ -62,7 +62,7 @@ type Section = "history" | "general" | "ai" | "vocabulary" | "shortcuts" | "abou
 type TranscriptionProvider = "local" | "groq" | "gemini";
 type RefinementProvider = "groq" | "gemini" | "local";
 type CaptureMode = "live" | "deferred";
-type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string; refiner?: string };
+type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string };
 type Settings = {
   locale: string;
   appLanguage: UiLanguagePreference;
@@ -75,12 +75,14 @@ type Settings = {
   muteOtherAudio: boolean;
   transcriptionProvider: TranscriptionProvider;
   refinementProvider: RefinementProvider;
+  refinementModel: string;
+  screenshotContext: boolean;
   promptDefaultsVersion: number;
 };
 type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; choice?: { raw: string; refined: string } };
-type PendingChoice = { text: string; raw: string; category: string; engine: string; appName: string; promptKey?: string; refiner?: string };
+type PendingChoice = { text: string; raw: string; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string };
 type PreparedCapture = { captureId: string; audioPath: string };
-type CloudResult = { text: string; model: string };
+type CloudResult = { text: string; model: string; fallbackFrom?: string };
 type CloudTranscript = { text: string; model: string };
 
 const systemUiLanguage = resolveUiLanguage("system");
@@ -97,6 +99,8 @@ const DEFAULT_SETTINGS: Settings = {
   muteOtherAudio: true,
   transcriptionProvider: "local",
   refinementProvider: "groq",
+  refinementModel: "",
+  screenshotContext: true,
   promptDefaultsVersion: 1,
 };
 
@@ -199,7 +203,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const holdTimer = useRef<number | undefined>(undefined);
   const holdActive = useRef(false);
   const shortcutCaptureRef = useRef(false);
-  const contextRef = useRef<{ appName: string; category: string; promptKey?: string; screenContext?: string; displayX?: number; displayY?: number }>({ appName: "VoiceLatte", category: "generic" });
+  const contextRef = useRef<{ appName: string; bundleID?: string; category: string; promptKey?: string; screenContext?: string; displayX?: number; displayY?: number }>({ appName: "VoiceLatte", category: "generic" });
   const captureRef = useRef<string | undefined>(undefined);
   const recordingProviderRef = useRef<TranscriptionProvider>("local");
   // stopRecordingの世代。処理中のEscキャンセルで進め、取り残した非同期の続きを無効化する。
@@ -365,8 +369,40 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     const gen = stopGenRef.current;
     const stale = () => gen !== stopGenRef.current;
     try {
-      const stopResult = await bridge.stop();
+      // 停止と並行で文脈を取り直す。録音中にAXツリーが温まるため開始時より取れる。
+      // 別アプリに移っていたら開始時のものを優先する。遅延を増やさないよう並列実行。
+      const startedCtx = contextRef.current;
+      // 画面キャプチャも並列で取る。保存せず整形にだけ渡す。画像不要な構成では撮らない。
+      const shotPromise: Promise<string | null> = (async () => {
+        if (!withAiRefinement || !settings.refinement || !settings.screenshotContext) return null;
+        const rp = settings.refinementProvider;
+        if (rp === "local" || !apiKeyHints[rp]) return null;
+        // 内蔵チェーン先頭が画像対応なのはGeminiのみ。Groqは明示指定かつ対応確認できたら撮る。
+        if (rp !== "gemini" && settings.refinementModel === "") return null;
+        try {
+          if (rp === "groq") {
+            const ok = await invoke<boolean>("refine_model_vision", { provider: rp, model: settings.refinementModel });
+            if (!ok) return null;
+          }
+          return await bridge.screenshot(startedCtx.displayX, startedCtx.displayY);
+        } catch {
+          return null;
+        }
+      })();
+      const [stopResult, freshCtx, shot] = await Promise.all([
+        bridge.stop(),
+        withAiRefinement && settings.refinement ? bridge.context().catch(() => null) : Promise.resolve(null),
+        shotPromise,
+      ]);
       if (stale()) return;
+      const freshTree = freshCtx?.screenContext ?? "";
+      const startedTree = startedCtx.screenContext ?? "";
+      const sameApp = freshCtx !== null
+        && (freshCtx.bundleID ? freshCtx.bundleID === startedCtx.bundleID : freshCtx.appName === startedCtx.appName);
+      const refreshed = sameApp && freshTree.length > startedTree.length;
+      if (refreshed) {
+        contextRef.current = { ...startedCtx, screenContext: freshTree };
+      }
       const raw = stopResult.text;
       // final応答に載った確定エンジンを優先する。onEngine由来は別セッションの古い値が残ることがある。
       if (stopResult.engine) engineRef.current = stopResult.engine;
@@ -396,6 +432,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       const { category, appName, promptKey } = contextRef.current;
       const shouldRefine = withAiRefinement && settings.refinement;
       const screenContext = shouldRefine ? contextRef.current.screenContext ?? "" : "";
+      // 内容は保存・記録せず文字数のみ。0なら取得失敗、0超なら送信済みで用途側の問題に切り分けられる。
+      const screenChars = screenContext.length;
+      if (shouldRefine) appLog.info("refine", `screen context ${screenChars} chars from ${appName} (${refreshed ? "stop" : "start"})${shot ? ` + shot ${Math.round(shot.length / 1024)}KB` : ""}`);
+      // 詳細表示用に先頭だけ残す。画面内容なのでlocalStorageの履歴消去と一緒に消える。
+      const screenText = shouldRefine && screenChars > 0 ? screenContext.slice(0, 2000) : undefined;
       const customPrompt = resolveCustomPrompt(settings.customPrompts, contextRef.current);
       const refinementPrompt = shouldRefine
         ? buildRefinementPrompt(customPrompt, vocabulary, speechLocale)
@@ -406,7 +447,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       const cloudRefinementProvider = shouldRefine && settings.refinementProvider !== "local" && Boolean(apiKeyHints[settings.refinementProvider])
         ? settings.refinementProvider
         : undefined;
-      const useGeminiCombined = provider === "gemini" && cloudRefinementProvider === "gemini";
+      const useGeminiCombined = provider === "gemini" && cloudRefinementProvider === "gemini" && settings.refinementModel === "";
       const cloud = provider === "local" ? undefined : await invoke<CloudResult>("cloud_transcribe", {
         captureId,
         provider,
@@ -435,9 +476,10 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       if (shouldRefine && !useGeminiCombined) {
         if (cloudRefinementProvider) {
           try {
-            const result = await invoke<CloudResult>("cloud_refine", { provider: cloudRefinementProvider, text: source, prompt: refinementPrompt, screenContext });
+            const result = await invoke<CloudResult>("cloud_refine", { provider: cloudRefinementProvider, text: source, prompt: refinementPrompt, screenContext, model: settings.refinementModel || null, image: shot ?? null });
             refined = result.text;
             refiner = result.model || cloudRefinementProvider;
+            if (result.fallbackFrom) appLog.warn("refine", `fell back to ${refiner} (${result.fallbackFrom})`);
             appLog.info("refine", `cloud ${cloudRefinementProvider} ok (${refiner})`);
             setRecordingState({ transcript: refined, engine: result.model });
           } catch (error) {
@@ -458,14 +500,14 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       const text = postProcessTranscript(shouldDiscardRefinement(refined, source, screenContext) ? source : refined, vocabulary);
       // Space確定のときは自動ペーストせず、前後見比べの選択肢としてHUDに残す
       if (shouldRefine) {
-        choiceRef.current = { text, raw: source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner };
+        choiceRef.current = { text, raw: source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner, screenChars, screenText };
         recordingProviderRef.current = "local";
         setRecordingState({ phase: "done", transcript: text, message: t("record.choose") });
         // 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にする。
         await focusHudForChoice().catch(() => undefined);
         return;
       }
-      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined };
+      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined, screenChars: shouldRefine ? screenChars : undefined, screenText: shouldRefine ? screenText : undefined };
       setHistory((items) => [entry, ...items].slice(0, 500));
       await bridge.insert(text, settings.autoPaste);
       recordingProviderRef.current = "local";
@@ -518,7 +560,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     if (!choice) return;
     choiceRef.current = null;
     const text = which === "raw" ? choice.raw : choice.text;
-    const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: choice.raw, createdAt: Date.now(), category: choice.category, engine: choice.engine, appName: choice.appName, promptKey: choice.promptKey, refiner: choice.refiner };
+    const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: choice.raw, createdAt: Date.now(), category: choice.category, engine: choice.engine, appName: choice.appName, promptKey: choice.promptKey, refiner: choice.refiner, screenChars: choice.screenChars, screenText: choice.screenText };
     setHistory((items) => [entry, ...items].slice(0, 500));
     await bridge.insert(text, settings.autoPaste);
     void releaseHudFocus().catch(() => undefined);
@@ -933,6 +975,13 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
       </Select>
     </SettingRow>}
     {settings.refinement && settings.refinementProvider !== "local" && settings.transcriptionProvider !== settings.refinementProvider && <ApiKeyRow provider={settings.refinementProvider} label={`${settings.refinementProvider === "groq" ? "Groq" : "Gemini"} API Key`} keyHint={apiKeyHints[settings.refinementProvider]} onSave={onSaveApiKey} onClear={onClearApiKey} />}
+    {settings.refinement && settings.refinementProvider !== "local" && <RefineModelCatalog
+      provider={settings.refinementProvider}
+      hasKey={apiKeyHints[settings.refinementProvider] !== null}
+      value={settings.refinementModel}
+      onChange={(refinementModel) => setSettings((s) => ({ ...s, refinementModel }))}
+    />}
+    {settings.refinement && settings.refinementProvider !== "local" && <SettingRow label={t("ai.screenshotContext")} detail={t("ai.screenshotContextDetail")}><Switch checked={settings.screenshotContext} onCheckedChange={(screenshotContext) => setSettings((s) => ({ ...s, screenshotContext }))} /></SettingRow>}
     <Button variant="ghost" className="refine-strip ai-refine-strip h-auto" onClick={onPrompts}>
       <span className="strip-icon"><SlidersHorizontal /></span><span><b>{t("history.refinement")}</b><small>{t("history.refinementDetail")}</small></span><ChevronRight className="chevron" />
     </Button>
@@ -961,6 +1010,61 @@ function ApiKeyRow({ provider, label, keyHint, onSave, onClear }: {
       <Input type="password" value={key} autoComplete="off" spellCheck={false} onChange={(event) => setKey(event.target.value)} placeholder={keyHint ?? t("apiKey.placeholder")} />
       <Button size="sm" disabled={!key.trim()} onClick={() => void run(async () => { await onSave(provider, key); setKey(""); })}>{configured ? t("apiKey.update") : t("apiKey.save")}</Button>
       {configured && <Button variant="ghost" size="sm" onClick={() => void run(() => onClear(provider))}>{t("apiKey.remove")}</Button>}
+    </div>
+  </div>;
+}
+
+// 整形モデルのカタログ。キー保存後に利用可能一覧を取り、失効・廃止の検出と選び直しに使う。
+function RefineModelCatalog({ provider, hasKey, value, onChange }: {
+  provider: "groq" | "gemini";
+  hasKey: boolean;
+  value: string;
+  onChange: (model: string) => void;
+}) {
+  const { language, t } = useI18n();
+  const [models, setModels] = useState<{ id: string; vision: boolean }[] | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      setModels(await invoke<{ id: string; vision: boolean }[]>("list_provider_models", { provider }));
+    } catch (reason) {
+      setModels(null);
+      setError(localizeBridgeMessage(reason instanceof Error ? reason.message : String(reason), language, t));
+    } finally {
+      setLoading(false);
+    }
+  }, [language, provider, t]);
+  useEffect(() => {
+    if (!hasKey) {
+      setModels(null);
+      setError("");
+      return;
+    }
+    void load();
+  }, [hasKey, load]);
+  const ids = (models ?? []).map((m) => m.id);
+  const stale = value !== "" && models !== null && !ids.includes(value);
+  const selectValue = value === "" ? "__auto__" : value;
+  return <div className="setting-row api-key-row">
+    <div>
+      <b>{t("ai.modelSelect")}</b>
+      <span>{t("ai.modelSelectDetail")}</span>
+      {stale && <small className="api-key-error">{t("ai.modelStale")}</small>}
+      {!hasKey && <small>{t("apiKey.notConfigured")}</small>}
+      {error && <small className="api-key-error">{error}</small>}
+    </div>
+    <div className="api-key-actions">
+      <Select value={selectValue} disabled={!hasKey || models === null} onValueChange={(v) => onChange(v === "__auto__" ? "" : v)}>
+        <SelectTrigger size="sm" className="settings-select"><SelectValue placeholder={loading ? t("ai.modelsLoading") : t("ai.modelAuto")} /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__auto__">{t("ai.modelAuto")}</SelectItem>
+          {(models ?? []).map((m) => <SelectItem value={m.id} key={m.id}>{m.vision ? `${m.id}（${t("ai.modelVision")}）` : m.id}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Button variant="ghost" size="sm" disabled={!hasKey || loading} onClick={() => void load()}>{t("ai.modelsRefresh")}</Button>
     </div>
   </div>;
 }
@@ -1399,6 +1503,7 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
     [t("historyDialog.transcription"), entry.engine || "—"],
     [t("historyDialog.refineEngine"), entry.refiner || "—"],
     [t("historyDialog.promptKey"), entry.promptKey || "—"],
+    [t("historyDialog.context"), entry.screenChars === undefined ? "—" : t("historyDialog.contextValue", { count: entry.screenChars })],
     [t("historyDialog.chars"), `${entry.raw.length} → ${entry.text.length}`],
   ];
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -1410,6 +1515,7 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
       {showInfo && <dl className="history-details">
         {details.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}
       </dl>}
+      {showInfo && entry.screenText && <div className="history-full original history-context-body">{entry.screenText}</div>}
       <div className="history-versions">
         <section className="history-version">
           <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.raw, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
@@ -1696,6 +1802,12 @@ function normalizeSettings(stored: unknown): Settings {
   const refinementProvider: RefinementProvider = ["groq", "gemini", "local"].includes(legacy.refinementProvider ?? "")
     ? legacy.refinementProvider as RefinementProvider
     : DEFAULT_SETTINGS.refinementProvider;
+  const refinementModel = typeof legacy.refinementModel === "string"
+    ? legacy.refinementModel.slice(0, 120)
+    : DEFAULT_SETTINGS.refinementModel;
+  const screenshotContext = typeof legacy.screenshotContext === "boolean"
+    ? legacy.screenshotContext
+    : DEFAULT_SETTINGS.screenshotContext;
   const jaDefaults = legacyDefaultPrompts("ja");
   const enDefaults = legacyDefaultPrompts("en");
   const customPrompts = migrateLegacyCustomPrompts(legacy, {
@@ -1708,7 +1820,7 @@ function normalizeSettings(stored: unknown): Settings {
     customPrompts[DEFAULT_PROMPT_KEY] = defaultRefinementPrompt(resolveUiLanguage(appLanguage));
   }
   const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, ...current } = legacy;
-  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, promptDefaultsVersion: 1, customPrompts };
+  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, screenshotContext, promptDefaultsVersion: 1, customPrompts };
   if (legacy.appLanguage === undefined) {
     return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
   }

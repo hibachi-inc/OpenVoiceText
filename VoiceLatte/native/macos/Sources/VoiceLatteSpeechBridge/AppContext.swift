@@ -75,7 +75,7 @@ struct AppContext: Sendable {
         "com.bitwarden.desktop",
         "com.apple.keychainaccess",
     ]
-    private static let contextRoles: Set<String> = ["AXStaticText", "AXHeading", "AXTextArea", "AXTextField"]
+    private static let contextRoles: Set<String> = ["AXStaticText", "AXHeading", "AXTextArea", "AXTextField", "AXLink"]
 
     private static func activeDisplayPoint(pid: pid_t) -> CGPoint? {
         if AXIsProcessTrusted() {
@@ -97,6 +97,8 @@ struct AppContext: Sendable {
         var visited = 0
         var chunks: [String] = []
         var seen: Set<String> = []
+        // 診断用。テキスト内容は入れない。
+        var roles: [String: Int] = [:]
     }
 
     private static func screenContext(pid: pid_t, bundleID: String?, category: Category) -> String? {
@@ -104,20 +106,31 @@ struct AppContext: Sendable {
         if let bundleID, sensitiveBundleIDs.contains(where: { bundleID.hasPrefix($0) }) { return nil }
 
         let app = AXUIElementCreateApplication(pid)
-        AXUIElementSetMessagingTimeout(app, 0.1)
+        AXUIElementSetMessagingTimeout(app, 0.3)
         guard let window = elementAttribute(app, kAXFocusedWindowAttribute),
               let windowFrame = frame(of: window) else { return nil }
         let focused = elementAttribute(app, kAXFocusedUIElementAttribute)
-        var budget = ContextBudget()
-        collectVisibleText(
+        // Chrome等は初回問い合わせ時にアクセシビリティツリーが空のため、
+        // 何も取れなければ少し待って再試行する。カーソル・選択は別枠で必ず付ける。
+        var (windowText, visited, roles) = collectWindowText(
             from: window,
             focused: focused,
-            windowFrame: windowFrame,
-            depth: 0,
-            budget: &budget
+            windowFrame: windowFrame
         )
+        if windowText.isEmpty {
+            Thread.sleep(forTimeInterval: 0.4)
+            (windowText, visited, roles) = collectWindowText(
+                from: window,
+                focused: focused,
+                windowFrame: windowFrame
+            )
+        }
+        let topRoles = roles.sorted { $0.value > $1.value }.prefix(8)
+            .map { "\($0.key):\($0.value)" }.joined(separator: " ")
+        // 種別名のみで本文は含まないためpublic指定
+        axLogger.notice("screen context: \(windowText.count) chunks, \(visited) nodes [\(topRoles, privacy: .public)]")
 
-        let joined = budget.chunks.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let joined = windowText.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         var blocks: [String] = []
         if !joined.isEmpty { blocks.append(joined) }
         // 入力中の欄は走査対象から外す代わり、カーソル前後だけを別枠で渡す
@@ -176,6 +189,22 @@ struct AppContext: Sendable {
         return "[選択中のテキスト]\n(発話はこの位置への挿入文として整え、選択文の言い換え・要約にしない)\n\(String(flattened.prefix(500)))"
     }
 
+    private static func collectWindowText(
+        from window: AXUIElement,
+        focused: AXUIElement?,
+        windowFrame: CGRect
+    ) -> (chunks: [String], visited: Int, roles: [String: Int]) {
+        var budget = ContextBudget()
+        collectVisibleText(
+            from: window,
+            focused: focused,
+            windowFrame: windowFrame,
+            depth: 0,
+            budget: &budget
+        )
+        return (budget.chunks, budget.visited, budget.roles)
+    }
+
     private static func collectVisibleText(
         from element: AXUIElement,
         focused: AXUIElement?,
@@ -183,13 +212,17 @@ struct AppContext: Sendable {
         depth: Int,
         budget: inout ContextBudget
     ) {
-        guard depth <= 12, budget.visited < 400, CFAbsoluteTimeGetCurrent() < budget.deadline else { return }
+        guard depth <= 16, budget.visited < 800, CFAbsoluteTimeGetCurrent() < budget.deadline else { return }
         budget.visited += 1
         if let focused, CFEqual(element, focused) { return }
         if boolAttribute(element, kAXHiddenAttribute) == true { return }
-        if let elementFrame = frame(of: element), !windowFrame.intersects(elementFrame) { return }
+        // 枠が取れない要素は剪定せず潜る。仮想化ツリーではゼロ枠が普通にある。
+        if let elementFrame = frame(of: element),
+           elementFrame.width > 0, elementFrame.height > 0,
+           !windowFrame.intersects(elementFrame) { return }
 
         let role = stringAttribute(element, kAXRoleAttribute) ?? ""
+        budget.roles[role.isEmpty ? "<roleなし>" : role, default: 0] += 1
         if role == "AXSecureTextField" { return }
         if contextRoles.contains(role) {
             var settable = DarwinBoolean(false)
