@@ -30,6 +30,7 @@ type BridgeEvent = Omit<Partial<SpeechStatus>, "id" | "type"> & {
   microphonePermission?: DeviceSettingsStatus["microphonePermission"];
   speechPermission?: DeviceSettingsStatus["speechPermission"];
   accessibilityPermission?: DeviceSettingsStatus["accessibilityPermission"];
+  screenCapturePermission?: DeviceSettingsStatus["screenCapturePermission"];
 };
 
 export type RecordingCallbacks = {
@@ -45,6 +46,7 @@ export type DeviceSettingsStatus = {
   microphonePermission: "authorized" | "not-determined" | "denied" | "system-managed";
   speechPermission: "authorized" | "not-determined" | "denied" | "system-managed";
   accessibilityPermission: "authorized" | "denied" | "not-required";
+  screenCapturePermission: "authorized" | "not-determined" | "denied" | "not-required";
 };
 
 export class SpeechBridgeClient {
@@ -109,10 +111,11 @@ export class SpeechBridgeClient {
       microphonePermission: event.microphonePermission ?? "system-managed",
       speechPermission: event.speechPermission ?? "system-managed",
       accessibilityPermission: event.accessibilityPermission ?? "not-required",
+      screenCapturePermission: event.screenCapturePermission ?? "not-required",
     };
   }
 
-  async requestPermission(permission: "microphone" | "speech" | "accessibility") {
+  async requestPermission(permission: "microphone" | "speech" | "accessibility" | "screencapture") {
     await this.request({ command: "request_permission", permission }, ["ready"], 10000);
   }
 

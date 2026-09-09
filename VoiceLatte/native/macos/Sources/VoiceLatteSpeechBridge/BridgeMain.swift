@@ -54,6 +54,7 @@ private struct BridgeResponse: Encodable {
     var microphonePermission: String? = nil
     var speechPermission: String? = nil
     var accessibilityPermission: String? = nil
+    var screenCapturePermission: String? = nil
 }
 
 private final class Output: @unchecked Sendable {
@@ -217,7 +218,8 @@ private final class Bridge: @unchecked Sendable {
             devices: AudioInputDeviceCatalog.devices().map { .init(uid: $0.uid, name: $0.name) },
             microphonePermission: permissionName(AVCaptureDevice.authorizationStatus(for: .audio)),
             speechPermission: permissionName(SFSpeechRecognizer.authorizationStatus()),
-            accessibilityPermission: AXIsProcessTrusted() ? "authorized" : "denied"
+            accessibilityPermission: AXIsProcessTrusted() ? "authorized" : "denied",
+            screenCapturePermission: CGPreflightScreenCaptureAccess() ? "authorized" : "denied"
         ))
     }
 
@@ -231,6 +233,10 @@ private final class Bridge: @unchecked Sendable {
         case "accessibility":
             let promptKey = "AXTrustedCheckOptionPrompt" as CFString
             AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
+        case "screencapture":
+            // サイドカーからのTCC要求はクラッシュの恐れがあるため設定画面を開くだけにする。
+            // 初回の撮影試行時にOSが自動で確認ダイアログを出す。
+            openPrivacySettings("Privacy_ScreenCapture")
         default:
             break
         }
