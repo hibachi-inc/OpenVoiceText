@@ -103,6 +103,16 @@ export class SpeechBridgeClient {
     }
   }
 
+  // 親プロセス（Tauri本体）を前面に出す。選択肢のキー操作に必要。
+  async focusApp() {
+    await this.request({ command: "focus_app" }, ["ready"], 5000);
+  }
+
+  // focusApp で退いた前面アプリに戻す。
+  async restoreApp() {
+    await this.request({ command: "restore_app" }, ["ready"], 5000);
+  }
+
   async settingsStatus(): Promise<DeviceSettingsStatus> {
     const event = await this.request({ command: "settings_status" }, ["settings"], 5000);
     return {

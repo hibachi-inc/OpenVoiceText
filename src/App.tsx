@@ -203,7 +203,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const holdTimer = useRef<number | undefined>(undefined);
   const holdActive = useRef(false);
   const shortcutCaptureRef = useRef(false);
-  const contextRef = useRef<{ appName: string; bundleID?: string; category: string; promptKey?: string; screenContext?: string; displayX?: number; displayY?: number }>({ appName: "VoiceLatte", category: "generic" });
+  const contextRef = useRef<{ appName: string; bundleID?: string; category: string; promptKey?: string; screenContext?: string; displayX?: number; displayY?: number; platform?: "macos" | "windows" }>({ appName: "VoiceLatte", category: "generic" });
   const captureRef = useRef<string | undefined>(undefined);
   const recordingProviderRef = useRef<TranscriptionProvider>("local");
   // stopRecordingの世代。処理中のEscキャンセルで進め、取り残した非同期の続きを無効化する。
@@ -506,7 +506,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         recordingProviderRef.current = "local";
         setRecordingState({ phase: "done", transcript: text, message: t("record.choose") });
         // 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にする。
-        await focusHudForChoice().catch(() => undefined);
+        if (contextRef.current.platform !== "windows") await focusHudForChoice(bridge).catch(() => undefined);
         return;
       }
       const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined, screenChars: shouldRefine ? screenChars : undefined, screenText: shouldRefine ? screenText : undefined, image };
@@ -565,17 +565,22 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: choice.raw, createdAt: Date.now(), category: choice.category, engine: choice.engine, appName: choice.appName, promptKey: choice.promptKey, refiner: choice.refiner, screenChars: choice.screenChars, screenText: choice.screenText, image: choice.image };
     setHistory((items) => purgeExpiredImages([entry, ...items]).slice(0, 500));
     await bridge.insert(text, settings.autoPaste);
+    // 選択肢表示で前面に出した分は必ず戻す（insertが切替済みでも同アプリへの再送で無害）
+    await bridge.restoreApp().catch(() => undefined);
     void releaseHudFocus().catch(() => undefined);
     setRecordingState({ phase: "idle", transcript: "", level: 0 });
   }, [bridge, setHistory, setRecordingState, settings.autoPaste]);
 
-  // 見比べ選択の破棄。ペーストも履歴保存もしない。
+  // 見比べ選択の破棄。ペーストも履歴保存もしない。退かせた前面アプリに戻す。
   const discardChoice = useCallback(() => {
     if (!choiceRef.current) return;
     choiceRef.current = null;
-    void releaseHudFocus().catch(() => undefined);
+    void (async () => {
+      await bridge.restoreApp().catch(() => undefined);
+      await releaseHudFocus().catch(() => undefined);
+    })();
     setRecordingState({ phase: "idle", transcript: "", level: 0 });
-  }, [setRecordingState]);
+  }, [bridge, setRecordingState]);
 
   useEffect(() => {
     actionRef.current = (action) => {
@@ -1801,13 +1806,19 @@ async function positionHud(platform?: "macos" | "windows", displayX?: number, di
   ));
 }
 
-// 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にする。
-async function focusHudForChoice() {
+// 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にし、
+// アプリ自体を前面に出す（非アクティブなアプリのウィンドウにはキーが届かないため）。
+async function focusHudForChoice(bridge: SpeechBridgeClient) {
   const hud = await WebviewWindow.getByLabel("hud").catch(() => null);
   if (!hud) return;
   try {
     await hud.setFocusable(true);
-    await hud.setFocus();
+    await bridge.focusApp();
+    await hud.setFocus().catch(async () => {
+      // アクティベーション直後は間に合わないことがあるため1回だけ再試行する
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await hud.setFocus();
+    });
   } catch (error) {
     appLog.warn("hud", `choice focus failed, mouse only: ${error instanceof Error ? error.message : String(error)}`);
   }

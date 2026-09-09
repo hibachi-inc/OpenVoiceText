@@ -78,6 +78,7 @@ private final class Bridge: @unchecked Sendable {
     private var recordingID = 0
     private var mutedOutputDeviceID: AudioDeviceID?
     private var pasteTargetPID: pid_t?
+    private var previousPID: pid_t?
 
     func handle(_ request: BridgeRequest) async {
         switch request.command {
@@ -124,6 +125,15 @@ private final class Bridge: @unchecked Sendable {
             // 失敗時はnilで返す。呼び出し側は文脈なしで続行する。
             let shot = ScreenCapture.captureDisplay(x: request.displayX, y: request.displayY)
             output.send(.init(id: request.id, type: "screenshot", image: shot))
+        case "focus_app":
+            // 親プロセス（Tauri本体＝HUDの持ち主）を前面に出す。
+            // 非アクティブなアプリのウィンドウにはキーが届かないため、選択肢の
+            // キーボード操作に必要。直前の前面アプリを覚えて restore_app で戻す。
+            await focusParentApp()
+            output.send(.init(id: request.id, type: "ready"))
+        case "restore_app":
+            restorePreviousApp()
+            output.send(.init(id: request.id, type: "ready"))
         case "configure_shortcut":
             await MainActor.run {
                 let shortcuts = request.shortcuts ?? request.shortcut.map { [$0] } ?? []
@@ -357,6 +367,35 @@ private final class Bridge: @unchecked Sendable {
         up?.flags = .maskCommand
         down?.post(tap: .cghidEventTap)
         up?.post(tap: .cghidEventTap)
+    }
+
+    /// 親プロセス（Tauri本体）を前面に出し、直前の前面アプリを覚える。
+    private func focusParentApp() async {
+        let parent = getppid()
+        await MainActor.run {
+            if let front = NSWorkspace.shared.frontmostApplication,
+               front.processIdentifier != parent {
+                lock.withLock { previousPID = front.processIdentifier }
+            }
+            if let target = NSRunningApplication(processIdentifier: parent), !target.isTerminated {
+                _ = target.activate()
+            }
+        }
+    }
+
+    /// focusParentApp で覚えた前面アプリに戻す。使い捨て。
+    private func restorePreviousApp() {
+        let pid = lock.withLock { () -> pid_t? in
+            defer { previousPID = nil }
+            return previousPID
+        }
+        guard let pid, pid != getpid(),
+              let target = NSRunningApplication(processIdentifier: pid), !target.isTerminated else { return }
+        if Thread.isMainThread {
+            _ = target.activate()
+        } else {
+            DispatchQueue.main.sync { _ = target.activate() }
+        }
     }
 }
 
