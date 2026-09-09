@@ -457,7 +457,7 @@ struct AppContext: Sendable {
                      "whatsapp", "messages", "line", "claude", "anthropic"]),
             (.code, ["xcode", "cursor", "visualstudiocode", "vscode", "jetbrains",
                      "intellij", "pycharm", "webstorm", "sublime", "zed", "nova", "codex"]),
-            (.terminal, ["terminal", "iterm", "warp", "ghostty", "kitty", "alacritty"]),
+            (.terminal, ["terminal", "iterm", "warp", "ghostty", "kitty", "alacritty", "cmuxterm", "wezterm"]),
             (.notes, ["notes", "notion", "obsidian", "bear", "evernote", "onenote", "craft"]),
             (.browser, ["safari", "chrome", "firefox", "edge", "arc", "brave", "orion", "comet"]),
         ]

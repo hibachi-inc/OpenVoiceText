@@ -38,14 +38,16 @@ enum ScreenCapture {
         return encoded
     }
 
-    /// 指定アプリの表示中ウィンドウだけを写す。壁紙は残る。
+    /// 指定アプリの表示中ウィンドウだけを写す。黒埋め部分は切り落とす。
     @MainActor
     private static func appWindowsImage(bundleID: String?, fallbackDisplay: CGDirectDisplayID) async -> CGImage? {
         guard let bundleID, !bundleID.isEmpty else { return nil }
         guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) else { return nil }
         guard let window = content.windows.first(where: {
             $0.isOnScreen && $0.owningApplication?.bundleIdentifier == bundleID
-        }) else { return nil }
+        }) else {
+            fputs("SCK: no window for \(bundleID)\n", stderr); return nil
+        }
         let center = CGPoint(x: window.frame.midX, y: window.frame.midY)
         let display = displayID(point: center) ?? fallbackDisplay
         let others = content.applications.filter { $0.bundleIdentifier != bundleID }
@@ -57,7 +59,37 @@ enum ScreenCapture {
         config.width = Int((bounds.width * scale).rounded())
         config.height = Int((bounds.height * scale).rounded())
         config.showsCursor = false
-        return try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+        guard let full = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) else { return nil }
+        // アプリ領域だけに切り詰める（切り詰め不可なら全体を返す）
+        if let crop = appCropRect(bundleID: bundleID, content: content, display: display,
+                                  imageSize: CGSize(width: full.width, height: full.height)),
+           let cropped = full.cropping(to: crop) {
+            return cropped
+        }
+        return full
+    }
+
+    /// 対象アプリのウィンドウ外接矩形を画像ピクセル座標で求める。
+    private static func appCropRect(bundleID: String, content: SCShareableContent,
+                                    display: CGDirectDisplayID, imageSize: CGSize) -> CGRect? {
+        let bounds = CGDisplayBounds(display)
+        let frames = content.windows.compactMap { window -> CGRect? in
+            guard window.isOnScreen, window.owningApplication?.bundleIdentifier == bundleID else { return nil }
+            let clipped = window.frame.intersection(bounds)
+            guard !clipped.isNull, !clipped.isEmpty else { return nil }
+            return clipped
+        }
+        guard var union = frames.first else { return nil }
+        for frame in frames.dropFirst() { union = union.union(frame) }
+        let sx = imageSize.width / bounds.width
+        let sy = imageSize.height / bounds.height
+        let pixels = CGRect(x: (union.minX - bounds.minX) * sx,
+                            y: (union.minY - bounds.minY) * sy,
+                            width: union.width * sx,
+                            height: union.height * sy)
+        let clamped = pixels.intersection(CGRect(origin: .zero, size: imageSize))
+        guard !clamped.isNull, clamped.width >= 4, clamped.height >= 4 else { return nil }
+        return clamped.integral
     }
 
     private static func displayID(x: Double?, y: Double?) -> CGDirectDisplayID {
