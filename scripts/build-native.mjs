@@ -8,22 +8,14 @@ const target = execFileSync("rustc", ["--print", "host-tuple"], { encoding: "utf
 const binaries = join(root, "src-tauri", "binaries");
 mkdirSync(binaries, { recursive: true });
 
-if (process.platform === "darwin") {
-  const packagePath = join(root, "native", "macos");
-  execFileSync("swift", ["build", "-c", "release", "--package-path", packagePath], { stdio: "inherit" });
-  copyFileSync(
-    join(packagePath, ".build", "release", "voicelatte-speech"),
-    join(binaries, `voicelatte-speech-${target}`),
-  );
-} else if (process.platform === "win32") {
-  const project = join(root, "native", "windows", "VoiceLatte.SpeechBridge", "VoiceLatte.SpeechBridge.csproj");
-  const runtime = process.arch === "arm64" ? "win-arm64" : "win-x64";
-  const output = join(root, "native", "windows", "publish", runtime);
-  execFileSync("dotnet", ["publish", project, "-c", "Release", "-r", runtime, "-o", output], { stdio: "inherit" });
-  copyFileSync(
-    join(output, "VoiceLatte.SpeechBridge.exe"),
-    join(binaries, `voicelatte-speech-${target}.exe`),
-  );
-} else {
-  throw new Error(`Unsupported platform: ${process.platform}`);
+// Mac専用。Windowsサイドカーは未検証のため削除済み（復活時はgit履歴から）。
+if (process.platform !== "darwin") {
+  throw new Error(`Unsupported platform: ${process.platform} (macOS only)`);
 }
+
+const packagePath = join(root, "native", "macos");
+execFileSync("swift", ["build", "-c", "release", "--package-path", packagePath], { stdio: "inherit" });
+copyFileSync(
+  join(packagePath, ".build", "release", "voicelatte-speech"),
+  join(binaries, `voicelatte-speech-${target}`),
+);
