@@ -112,13 +112,16 @@ body {
 .permission-mark.granted { background: #e1f4e8; color: #2d8d55; }
 .permission-state { color: #85888d; font-size: 10px; }
 .permission-row .secondary-button { margin-top: 0; padding: 6px 9px; font-size: 10px; }
-.shortcut-recorder { min-width: 142px; padding: 8px 10px; border: 1px solid rgba(40,43,49,.1); border-radius: 9px; background: #f2f3f5; font-size: 11px; cursor: pointer; }
 .permission-row-stacked { padding: 8px 0; border-bottom: 1px solid rgba(45,48,54,.07); }
 .permission-row-stacked:last-child { border-bottom: 0; }
 .permission-row-stacked > .permission-row { min-height: 0; border-bottom: 0; }
 .permission-test-row { display: flex; align-items: center; gap: 8px; margin: 6px 0 0 31px; }
 .permission-test-row .secondary-button { margin-top: 0; padding: 6px 9px; font-size: 10px; }
 .permission-test-preview { display: block; max-width: 240px; margin: 8px 0 4px 31px; border-radius: 8px; border: 1px solid rgba(45,48,54,.1); }
+.history-screenshot-wrap { margin-top: 10px; }
+.history-screenshot-wrap small { display: block; margin-bottom: 4px; color: #85888d; font-size: 9px; }
+.history-screenshot { display: block; max-width: 100%; border-radius: 8px; border: 1px solid rgba(45,48,54,.1); }
+.shortcut-recorder { min-width: 142px; padding: 8px 10px; border: 1px solid rgba(40,43,49,.1); border-radius: 9px; background: #f2f3f5; font-size: 11px; cursor: pointer; }
 .shortcut-recorder.recording { outline: 2px solid rgba(66,105,158,.22); background: white; }
 .add-word { display: grid; grid-template-columns: minmax(0, .75fr) minmax(0, 1.45fr) auto; align-items: end; }
 .dictionary-field { min-width: 0; }

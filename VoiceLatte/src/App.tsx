@@ -62,7 +62,7 @@ type Section = "history" | "general" | "ai" | "vocabulary" | "shortcuts" | "abou
 type TranscriptionProvider = "local" | "groq" | "gemini";
 type RefinementProvider = "groq" | "gemini" | "local";
 type CaptureMode = "live" | "deferred";
-type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string };
+type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string; image?: string };
 type Settings = {
   locale: string;
   appLanguage: UiLanguagePreference;
@@ -80,7 +80,7 @@ type Settings = {
   promptDefaultsVersion: number;
 };
 type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; choice?: { raw: string; refined: string } };
-type PendingChoice = { text: string; raw: string; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string };
+type PendingChoice = { text: string; raw: string; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string; image?: string };
 type PreparedCapture = { captureId: string; audioPath: string };
 type CloudResult = { text: string; model: string; fallbackFrom?: string };
 type CloudTranscript = { text: string; model: string };
@@ -498,17 +498,19 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       }
       // 整形結果がプロンプトや文脈のコピーになっていたら生テキストに戻す
       const text = postProcessTranscript(shouldDiscardRefinement(refined, source, screenContext) ? source : refined, vocabulary);
+      // 履歴確認用に撮影画像の縮小版を残す（1日保持）。失敗時はなしで続行。
+      const image = (shot ? await makeHistoryThumbnail(shot) : undefined) ?? undefined;
       // Space確定のときは自動ペーストせず、前後見比べの選択肢としてHUDに残す
       if (shouldRefine) {
-        choiceRef.current = { text, raw: source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner, screenChars, screenText };
+        choiceRef.current = { text, raw: source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner, screenChars, screenText, image };
         recordingProviderRef.current = "local";
         setRecordingState({ phase: "done", transcript: text, message: t("record.choose") });
         // 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にする。
         await focusHudForChoice().catch(() => undefined);
         return;
       }
-      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined, screenChars: shouldRefine ? screenChars : undefined, screenText: shouldRefine ? screenText : undefined };
-      setHistory((items) => [entry, ...items].slice(0, 500));
+      const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined, screenChars: shouldRefine ? screenChars : undefined, screenText: shouldRefine ? screenText : undefined, image };
+      setHistory((items) => purgeExpiredImages([entry, ...items]).slice(0, 500));
       await bridge.insert(text, settings.autoPaste);
       recordingProviderRef.current = "local";
       setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? t("record.inserted") : t("record.completed") });
@@ -560,8 +562,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     if (!choice) return;
     choiceRef.current = null;
     const text = which === "raw" ? choice.raw : choice.text;
-    const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: choice.raw, createdAt: Date.now(), category: choice.category, engine: choice.engine, appName: choice.appName, promptKey: choice.promptKey, refiner: choice.refiner, screenChars: choice.screenChars, screenText: choice.screenText };
-    setHistory((items) => [entry, ...items].slice(0, 500));
+    const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: choice.raw, createdAt: Date.now(), category: choice.category, engine: choice.engine, appName: choice.appName, promptKey: choice.promptKey, refiner: choice.refiner, screenChars: choice.screenChars, screenText: choice.screenText, image: choice.image };
+    setHistory((items) => purgeExpiredImages([entry, ...items]).slice(0, 500));
     await bridge.insert(text, settings.autoPaste);
     void releaseHudFocus().catch(() => undefined);
     setRecordingState({ phase: "idle", transcript: "", level: 0 });
@@ -622,6 +624,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   }, [bridge, localizedError, refreshApiKeys, speechLocale]);
 
   useEffect(() => { void runUpdateCheck(setUpdate, false); }, []);
+
+  // 保存済み履歴の古い撮影画像を破棄する（1日保持）。
+  useEffect(() => {
+    setHistory((items) => purgeExpiredImages(items));
+  }, [setHistory]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -1077,6 +1084,47 @@ function bridgeMessageCode(error: unknown) {
   return message.split(":", 2)[0];
 }
 
+const IMAGE_RETENTION_MS = 24 * 3600 * 1000;
+
+// 履歴保存用にスクショを縮小する（localStorage肥大防止）。失敗時はnull。
+async function makeHistoryThumbnail(base64: string, maxEdge = 768): Promise<string | null> {
+  try {
+    const blob = await (await fetch(`data:image/jpeg;base64,${base64}`)).blob();
+    const bitmap = await createImageBitmap(blob);
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      bitmap.close();
+      return null;
+    }
+    ctx.drawImage(bitmap, 0, 0, w, h);
+    bitmap.close();
+    return canvas.toDataURL("image/jpeg", 0.6).split(",", 2)[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// 24時間より古い撮影画像を取り除く（テキストは残す）。
+function purgeExpiredImages(items: HistoryEntry[]): HistoryEntry[] {
+  const cutoff = Date.now() - IMAGE_RETENTION_MS;
+  let changed = false;
+  const next = items.map((entry) => {
+    if (entry.image && entry.createdAt < cutoff) {
+      changed = true;
+      const pruned = { ...entry };
+      delete pruned.image;
+      return pruned;
+    }
+    return entry;
+  });
+  return changed ? next : items;
+}
 
 function ScreenCaptureRow({ status, onOpenSettings, onTestCapture }: {
   status: DeviceSettingsStatus["screenCapturePermission"];
@@ -1560,6 +1608,10 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
         {details.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}
       </dl>}
       {showInfo && entry.screenText && <div className="history-full original history-context-body">{entry.screenText}</div>}
+      {entry.image && <div className="history-screenshot-wrap">
+        <small>{t("historyDialog.image")}</small>
+        <img className="history-screenshot" src={`data:image/jpeg;base64,${entry.image}`} alt="" />
+      </div>}
       <div className="history-versions">
         <section className="history-version">
           <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.raw, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
