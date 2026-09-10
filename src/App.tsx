@@ -1041,7 +1041,7 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
 
     <p className="settings-group-label">{t("ai.refinement")}</p>
     <SettingRow label={t("general.refinement")} detail={t("general.refinementDetail")}><Switch checked={settings.refinement} onCheckedChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
-    {settings.refinement && <SettingRow label={t("ai.refinementModel")} detail={settings.refinementProvider === "groq" ? t("ai.refinementGroqDetail") : settings.refinementProvider === "gemini" ? t("ai.refinementGeminiDetail") : t("ai.refinementLocalDetail")}>
+    {settings.refinement && <SettingRow label={t("ai.refinementModel")} detail={settings.refinementProvider === "groq" ? t("ai.refinementGroqDetail") : settings.refinementProvider === "gemini" ? t(settings.refinementModel ? "ai.refinementGeminiDetailCustom" : "ai.refinementGeminiDetail") : t("ai.refinementLocalDetail")}>
       <Select value={settings.refinementProvider} onValueChange={(refinementProvider) => setSettings((s) => ({ ...s, refinementProvider: refinementProvider as RefinementProvider }))}>
         <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
         <SelectContent>
