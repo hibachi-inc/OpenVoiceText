@@ -76,6 +76,7 @@ type Settings = {
   transcriptionProvider: TranscriptionProvider;
   refinementProvider: RefinementProvider;
   refinementModel: string;
+  transcriptionModel: string;
   screenshotContext: boolean;
   promptDefaultsVersion: number;
 };
@@ -100,6 +101,7 @@ const DEFAULT_SETTINGS: Settings = {
   transcriptionProvider: "local",
   refinementProvider: "gemini",
   refinementModel: "",
+  transcriptionModel: "",
   screenshotContext: true,
   promptDefaultsVersion: 1,
 };
@@ -483,6 +485,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             locale: speechLocale,
             vocabulary: vocabularyHints(vocabulary),
             screenContext,
+            model: settings.transcriptionModel || null,
           }).catch((error) => onKeyDenied(error));
         }
       }
@@ -1036,6 +1039,12 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
         onSave={onSaveApiKey}
         onClear={onClearApiKey}
       />}
+      {settings.transcriptionProvider === "gemini" && <RefineModelCatalog
+        provider="gemini"
+        hasKey={apiKeyHints.gemini !== null}
+        value={settings.transcriptionModel}
+        onChange={(transcriptionModel) => setSettings((s) => withLinkedTranscriptionModel(s, transcriptionModel))}
+      />}
       <p className="settings-note">{settings.transcriptionProvider === "local"
         ? t("general.onDevice")
         : t(deviceStatus?.platform === "macos" && settings.refinement ? "general.cloudAudioWithContext" : "general.cloudAudio")}</p>
@@ -1062,7 +1071,7 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
             provider={settings.refinementProvider}
             hasKey={apiKeyHints[settings.refinementProvider] !== null}
             value={settings.refinementModel}
-            onChange={(refinementModel) => setSettings((s) => ({ ...s, refinementModel }))}
+            onChange={(refinementModel) => setSettings((s) => withLinkedRefinementModel(s, refinementModel))}
           />
           <SettingRow label={t("ai.screenshotContext")} detail={t("ai.screenshotContextDetail")}><Switch checked={settings.screenshotContext} onCheckedChange={(screenshotContext) => setSettings((s) => ({ ...s, screenshotContext }))} /></SettingRow>
         </>}
@@ -1559,6 +1568,12 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
             <div><span className={`status-dot ${status?.modelState === "ready" ? "ready" : ""}`} /><span>{modelStatusMessage(status, t)}</span></div>
             {status?.modelState === "download-required" && <Button variant="outline" size="sm" onClick={onInstall} disabled={installing}>{installing ? t("general.addingModel") : t("general.addModel")}</Button>}
           </div>}
+          {settings.transcriptionProvider === "gemini" && <RefineModelCatalog
+            provider="gemini"
+            hasKey={apiKeyHints.gemini !== null}
+            value={settings.transcriptionModel}
+            onChange={(transcriptionModel) => setSettings((s) => withLinkedTranscriptionModel(s, transcriptionModel))}
+          />}
         </Card>
 
         <Card className="onboarding-section gap-0 py-0">
@@ -1607,7 +1622,7 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
             provider={settings.refinementProvider}
             hasKey={apiKeyHints[settings.refinementProvider] !== null}
             value={settings.refinementModel}
-            onChange={(refinementModel) => setSettings((s) => ({ ...s, refinementModel }))}
+            onChange={(refinementModel) => setSettings((s) => withLinkedRefinementModel(s, refinementModel))}
           />}
         </Card>}
 
@@ -1814,6 +1829,23 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
       </div>
     </DialogContent>
   </Dialog>;
+}
+
+// 両方がGeminiのときは転写・整形で同じモデルを使うよう連動させる。
+function withLinkedTranscriptionModel(current: Settings, transcriptionModel: string): Settings {
+  return {
+    ...current,
+    transcriptionModel,
+    ...(current.refinementProvider === "gemini" ? { refinementModel: transcriptionModel } : {}),
+  };
+}
+
+function withLinkedRefinementModel(current: Settings, refinementModel: string): Settings {
+  return {
+    ...current,
+    refinementModel,
+    ...(current.transcriptionProvider === "gemini" ? { transcriptionModel: refinementModel } : {}),
+  };
 }
 
 function SettingRow({ label, detail, children }: { label: string; detail: string; children: React.ReactNode }) {
@@ -2096,6 +2128,9 @@ function normalizeSettings(stored: unknown): Settings {
   const refinementModel = typeof legacy.refinementModel === "string"
     ? legacy.refinementModel.slice(0, 120)
     : DEFAULT_SETTINGS.refinementModel;
+  const transcriptionModel = typeof legacy.transcriptionModel === "string"
+    ? legacy.transcriptionModel.slice(0, 120)
+    : DEFAULT_SETTINGS.transcriptionModel;
   const screenshotContext = typeof legacy.screenshotContext === "boolean"
     ? legacy.screenshotContext
     : DEFAULT_SETTINGS.screenshotContext;
@@ -2111,7 +2146,7 @@ function normalizeSettings(stored: unknown): Settings {
     customPrompts[DEFAULT_PROMPT_KEY] = defaultRefinementPrompt(resolveUiLanguage(appLanguage));
   }
   const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, ...current } = legacy;
-  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, screenshotContext, promptDefaultsVersion: 1, customPrompts };
+  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, screenshotContext, promptDefaultsVersion: 1, customPrompts };
   if (legacy.appLanguage === undefined) {
     return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
   }

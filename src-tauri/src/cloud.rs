@@ -364,6 +364,20 @@ pub fn clear_api_key(state: State<'_, CloudState>, provider: String) -> Result<(
     }
 }
 
+/// 明示モデルを先頭にしたGeminiチェーン。重複は除く。
+fn gemini_chain(explicit: Option<String>) -> Vec<String> {
+    let mut models = Vec::new();
+    if let Some(m) = explicit.map(|m| m.trim().to_string()).filter(|m| !m.is_empty()) {
+        models.push(m);
+    }
+    for m in GEMINI_MODELS {
+        if models.iter().all(|x| x != m) {
+            models.push(m.to_string());
+        }
+    }
+    models
+}
+
 #[tauri::command]
 pub async fn cloud_transcribe(
     app: AppHandle,
@@ -374,6 +388,7 @@ pub async fn cloud_transcribe(
     locale: String,
     vocabulary: Vec<String>,
     screen_context: String,
+    model: Option<String>,
 ) -> Result<CloudResult, String> {
     let path = state
         .captures
@@ -399,6 +414,7 @@ pub async fn cloud_transcribe(
                 &prompt,
                 &locale,
                 &screen_context,
+                model,
                 &app,
             )
             .await
@@ -864,6 +880,7 @@ async fn gemini_transcribe(
     prompt: &str,
     locale: &str,
     screen_context: &str,
+    model: Option<String>,
     app: &AppHandle,
 ) -> Result<CloudResult, String> {
     if audio.len() > GEMINI_MAX_AUDIO_BYTES {
@@ -876,11 +893,11 @@ async fn gemini_transcribe(
     let screen_context = tail_chars(screen_context.trim(), 10_000);
     let mut last_error = "cloud.gemini_failed".to_string();
     let mut fell_back_from: Option<String> = None;
-    for model in GEMINI_MODELS {
+    for model in gemini_chain(model) {
         match stream_gemini_model(
             client,
             key,
-            model,
+            &model,
             Some(&audio),
             &instruction,
             &screen_context,
@@ -1149,6 +1166,22 @@ mod tests {
         assert_eq!(
             GEMINI_MODELS,
             ["gemini-flash-lite-latest", "gemini-flash-latest"]
+        );
+    }
+
+    #[test]
+    fn gemini_chain_puts_explicit_model_first() {
+        assert_eq!(
+            gemini_chain(None),
+            ["gemini-flash-lite-latest", "gemini-flash-latest"]
+        );
+        assert_eq!(
+            gemini_chain(Some("custom-model".into())),
+            ["custom-model", "gemini-flash-lite-latest", "gemini-flash-latest"]
+        );
+        assert_eq!(
+            gemini_chain(Some("gemini-flash-latest".into())),
+            ["gemini-flash-latest", "gemini-flash-lite-latest"]
         );
     }
     #[test]
