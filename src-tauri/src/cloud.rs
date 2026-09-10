@@ -176,6 +176,16 @@ fn sanitize_image_mime(mime: Option<String>) -> String {
     }
 }
 
+/// Gemini失敗時に次モデルへ進めるか。400も対象にする。
+/// モデルごとの受付差異があり別モデルで通ることがあるため。
+/// フォールバック発生時は呼び出し側に記録が残る。
+fn is_fallback_status(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::BAD_REQUEST
+        || status == reqwest::StatusCode::NOT_FOUND
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        || status.is_server_error()
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
@@ -983,7 +993,7 @@ async fn stream_gemini_model(
         });
     }
     if !status.is_success() {
-        // 400の詳細（fieldViolations等）が切れないよう十分に残す。
+        // 400番台の詳細（fieldViolations等）が切れないよう十分に残す。
         let detail: String = response
             .text()
             .await
@@ -995,10 +1005,11 @@ async fn stream_gemini_model(
             .take(500)
             .collect();
         return Err(GeminiError {
+            // 400もフォールバック対象にする。モデルごとの受付差異
+            // （音声・画像の対応等）があり、別モデルで通ることがあるため。
+            // 鍵系（401/403）は対象外のまま即失敗させる。
             message: format!("cloud.gemini_failed:{} {}", status.as_u16(), detail),
-            fallback: status == reqwest::StatusCode::NOT_FOUND
-                || status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                || status.is_server_error(),
+            fallback: is_fallback_status(status),
         });
     }
 
@@ -1220,6 +1231,18 @@ mod tests {
         let required = enforced["responseSchema"]["required"].as_array().unwrap();
         assert!(required.contains(&json!("transcript")));
         assert!(required.contains(&json!("refined")));
+    }
+
+    #[test]
+    fn gemini_fallback_covers_bad_request_but_not_key_errors() {
+        use reqwest::StatusCode;
+        assert!(is_fallback_status(StatusCode::BAD_REQUEST));
+        assert!(is_fallback_status(StatusCode::NOT_FOUND));
+        assert!(is_fallback_status(StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_fallback_status(StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(!is_fallback_status(StatusCode::UNAUTHORIZED));
+        assert!(!is_fallback_status(StatusCode::FORBIDDEN));
+        assert!(!is_fallback_status(StatusCode::OK));
     }
 
     #[test]
