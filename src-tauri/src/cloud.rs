@@ -561,6 +561,9 @@ pub async fn cloud_transcribe_refine(
         .ok_or_else(|| "cloud.capture_missing".to_string())?;
     let _guard = TempAudio(path.clone());
     let audio = fs::read(&path).map_err(|_| "cloud.capture_read".to_string())?;
+    if audio.len() < MIN_AUDIO_BYTES {
+        return Err(format!("cloud.audio_empty:{}", audio.len()));
+    }
     if audio.len() > GEMINI_MAX_AUDIO_BYTES {
         return Err("cloud.audio_too_long".into());
     }
@@ -1034,6 +1037,9 @@ async fn gemini_transcribe(
     model: Option<String>,
     app: &AppHandle,
 ) -> Result<CloudResult, String> {
+    if audio.len() < MIN_AUDIO_BYTES {
+        return Err(format!("cloud.audio_empty:{}", audio.len()));
+    }
     if audio.len() > GEMINI_MAX_AUDIO_BYTES {
         return Err("cloud.audio_too_long".into());
     }
@@ -1133,9 +1139,27 @@ async fn stream_gemini_model(
         "contents": [{ "role": "user", "parts": parts }],
         "generationConfig": gemini_generation_config(json_output, model)
     });
+    let started = std::time::Instant::now();
     let response = client.post(format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
-    )).header("x-goog-api-key", key).json(&body).send().await.map_err(|_| GeminiError {
+    )).header("x-goog-api-key", key).json(&body).send().await;
+    let elapsed_ms = started.elapsed().as_millis();
+    match &response {
+        Ok(r) => eprintln!(
+            "[voicelatte] gemini model={} audio_bytes={} image={} json={} status={} elapsed_ms={}",
+            model,
+            audio.map(|a| a.len()).unwrap_or(0),
+            image.map(|i| format!("{}B/{}", i.len(), image_mime)).unwrap_or_else(|| "-".into()),
+            json_output,
+            r.status(),
+            elapsed_ms,
+        ),
+        Err(_) => eprintln!(
+            "[voicelatte] gemini model={} connect-fail elapsed_ms={}",
+            model, elapsed_ms,
+        ),
+    }
+    let response = response.map_err(|_| GeminiError {
         message: "cloud.gemini_connect".into(),
         fallback: true,
     })?;

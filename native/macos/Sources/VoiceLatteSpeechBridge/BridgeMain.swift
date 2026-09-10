@@ -169,6 +169,9 @@ private final class Bridge: @unchecked Sendable {
 
         lock.withLock { recordingID = request.id }
         setOtherAudioMuted(request.muteOtherAudio == true)
+        // 立ち上げタイムアウトはプロセス内復旧不能として再起動する。
+        // wedgedしたAVAudioEngineを使い続けると後続も沈黙するため。
+        speech.onBringUpFailed = { [weak self] in self?.fatalRestartForAudioWedge() }
         if let audioPath = request.audioPath, !audioPath.isEmpty {
             speech.startCloudCapture(
                 path: audioPath,
@@ -196,6 +199,14 @@ private final class Bridge: @unchecked Sendable {
             self.output.send(.init(id: id, type: "final", backend: self.speech.completedEngineName(), text: text ?? ""))
             self.lock.withLock { self.recordingID = 0 }
         }
+    }
+
+    /// 音声立ち上げタイムアウト時の最終手段。ミュートを戻して終了し、
+    /// フロントの自動再生成に委ねる（次コマンドで復旧する）。
+    private func fatalRestartForAudioWedge() {
+        restoreOutputAudio()
+        fflush(stdout)
+        exit(EXIT_FAILURE)
     }
 
     private func handle(_ event: SpeechSession.Event) {

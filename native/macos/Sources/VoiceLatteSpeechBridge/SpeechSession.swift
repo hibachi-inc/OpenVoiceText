@@ -47,6 +47,10 @@ final class SpeechSession: NSObject, @unchecked Sendable {
     private var preparationTimeoutTask: Task<Void, Never>?
     private let lock = NSLock()
 
+    /// 音声立ち上げの番犬タイムアウト時に呼ばれる。プロセス内復旧は
+    /// 不能のため、呼び出し側で再起動する。
+    var onBringUpFailed: (() -> Void)?
+
     private var tapInstalled = false
     private var pendingBuffers: [AVAudioPCMBuffer] = []
     private var fallbackBuffers: [AVAudioPCMBuffer] = []
@@ -148,6 +152,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         } catch {
             emit(.error("録音を開始できません: \(error.localizedDescription)"))
             cleanup()
+            if error is EngineStartTimeout { onBringUpFailed?() }
         }
     }
 
@@ -199,6 +204,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
                 } catch {
                     emit(.error(error.localizedDescription))
                     cleanup()
+                    if error is EngineStartTimeout { onBringUpFailed?() }
                     return
                 }
             }
@@ -344,6 +350,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
             // 戻らないことがあり、後回しにすると10秒沈黙になる。
             emit(.error(error.localizedDescription))
             cleanup()
+            if error is EngineStartTimeout { onBringUpFailed?() }
             return
         }
         onCaptureReady()
@@ -816,12 +823,11 @@ final class SpeechSession: NSObject, @unchecked Sendable {
     }
 
     private func configureInputDevice(_ requestedID: UInt32) {
+        // 0（システム既定）は設定せずエンジンに任せる。無条件の再設定は
+        // HALのIOProcを作り直させ、直後のstartを wedged させる主因のため。
+        guard requestedID != 0 else { return }
         guard let audioUnit = audioEngine.inputNode.audioUnit else { return }
         var deviceID = AudioDeviceID(requestedID)
-        if deviceID == 0 {
-            guard let defaultID = defaultInputDeviceID() else { return }
-            deviceID = defaultID
-        }
         // 既に目的のデバイスなら何もしない。無条件の再設定はHALのIOProcを
         // 作り直させ、直後のengine.startが番犬(5秒)を超えて wedged する。
         // 起動ごとの初回録音が確定失敗する主因だった。
