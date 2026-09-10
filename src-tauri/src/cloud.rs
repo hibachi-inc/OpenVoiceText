@@ -14,12 +14,13 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const KEYCHAIN_SERVICE: &str = "com.hibachi.voicelatte.cloud";
-const GEMINI_MODELS: [&str; 4] = [
-    "gemini-2.5-flash-lite",
+const GEMINI_MODELS: [&str; 3] = [
     "gemini-2.5-flash",
     "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
 ];
+// 注：gemini-2.5-flash-lite は提供終了のため除外した（404 "no longer available"）。
+// 将来2.5-flashも同様になったらここから外す。フォールバックが拾う。
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
 const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
 const GEMINI_MAX_AUDIO_BYTES: usize = 14_000_000;
@@ -1248,7 +1249,6 @@ mod tests {
         assert_eq!(
             GEMINI_MODELS,
             [
-                "gemini-2.5-flash-lite",
                 "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
@@ -1261,7 +1261,6 @@ mod tests {
         assert_eq!(
             gemini_chain(None),
             [
-                "gemini-2.5-flash-lite",
                 "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
@@ -1271,7 +1270,6 @@ mod tests {
             gemini_chain(Some("custom-model".into())),
             [
                 "custom-model",
-                "gemini-2.5-flash-lite",
                 "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
@@ -1281,7 +1279,6 @@ mod tests {
             gemini_chain(Some("gemini-2.5-flash".into())),
             [
                 "gemini-2.5-flash",
-                "gemini-2.5-flash-lite",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
             ]
