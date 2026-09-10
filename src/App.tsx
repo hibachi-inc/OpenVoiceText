@@ -98,7 +98,7 @@ const DEFAULT_SETTINGS: Settings = {
   microphoneUID: "",
   muteOtherAudio: true,
   transcriptionProvider: "local",
-  refinementProvider: "groq",
+  refinementProvider: "gemini",
   refinementModel: "",
   screenshotContext: true,
   promptDefaultsVersion: 1,
@@ -1529,28 +1529,29 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
         </Card>
 
         <Card className="onboarding-section gap-0 py-0">
+          <b className="onboarding-step-title">{t("onboarding.apiKeys")}</b>
+          <p className="onboarding-hint">{t("onboarding.apiKeysHint")}</p>
+          <ApiKeyRow provider="gemini" label="Gemini API Key" keyHint={apiKeyHints.gemini} onSave={onSaveApiKey} onClear={onClearApiKey} />
+          <ApiKeyRow provider="groq" label="Groq API Key" keyHint={apiKeyHints.groq} onSave={onSaveApiKey} onClear={onClearApiKey} />
+        </Card>
+
+        <Card className="onboarding-section gap-0 py-0">
           <b className="onboarding-step-title">{t("onboarding.recognition")}</b>
           <div className="onboarding-method-row">
             <div><b>{t("general.processingMethod")}</b><span>{t("onboarding.recognitionHint")}</span></div>
-            <Select value={settings.transcriptionProvider} onValueChange={(transcriptionProvider) => setSettings((current) => ({ ...current, transcriptionProvider: transcriptionProvider as TranscriptionProvider }))}>
+            <Select value={settings.transcriptionProvider} onValueChange={(transcriptionProvider) => setSettings((s) => ({ ...s, transcriptionProvider: transcriptionProvider as TranscriptionProvider }))}>
               <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="local">{t(platform === "windows" ? "onboarding.localWindows" : "onboarding.localApple")}</SelectItem>
+                <SelectItem value="local">{t(platform === "windows" ? "onboarding.localWindows" : "onboarding.localApple")} <Badge variant="secondary">{t("onboarding.recommended")}</Badge></SelectItem>
                 <SelectItem value="groq">Groq Cloud</SelectItem>
                 <SelectItem value="gemini">Gemini</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          {settings.transcriptionProvider === "local" ? <div className="onboarding-model-status">
+          {settings.transcriptionProvider === "local" && <div className="onboarding-model-status">
             <div><span className={`status-dot ${status?.modelState === "ready" ? "ready" : ""}`} /><span>{modelStatusMessage(status, t)}</span></div>
             {status?.modelState === "download-required" && <Button variant="outline" size="sm" onClick={onInstall} disabled={installing}>{installing ? t("general.addingModel") : t("general.addModel")}</Button>}
-          </div> : <ApiKeyRow
-            provider={settings.transcriptionProvider}
-            label={`${settings.transcriptionProvider === "groq" ? "Groq" : "Gemini"} API Key`}
-            keyHint={apiKeyHints[settings.transcriptionProvider]}
-            onSave={onSaveApiKey}
-            onClear={onClearApiKey}
-          />}
+          </div>}
         </Card>
 
         <Card className="onboarding-section gap-0 py-0">
@@ -1581,6 +1582,27 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
           </div>
           {shortcutError && <p className="inline-error">{shortcutError}</p>}
         </Card>
+
+        {settings.refinement && <Card className="onboarding-section gap-0 py-0">
+          <b className="onboarding-step-title">{t("onboarding.refinement")}</b>
+          <div className="onboarding-method-row">
+            <div><b>{t("ai.refinementModel")}</b><span>{settings.refinementProvider === "groq" ? t("ai.refinementGroqDetail") : settings.refinementProvider === "gemini" ? t(settings.refinementModel ? "ai.refinementGeminiDetailCustom" : "ai.refinementGeminiDetail") : t("ai.refinementLocalDetail")}</span></div>
+            <Select value={settings.refinementProvider} onValueChange={(refinementProvider) => setSettings((s) => ({ ...s, refinementProvider: refinementProvider as RefinementProvider }))}>
+              <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gemini">Gemini <Badge variant="secondary">{t("onboarding.recommended")}</Badge></SelectItem>
+                <SelectItem value="groq">Groq Cloud</SelectItem>
+                <SelectItem value="local">{t("provider.local")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {settings.refinementProvider !== "local" && <RefineModelCatalog
+            provider={settings.refinementProvider}
+            hasKey={apiKeyHints[settings.refinementProvider] !== null}
+            value={settings.refinementModel}
+            onChange={(refinementModel) => setSettings((s) => ({ ...s, refinementModel }))}
+          />}
+        </Card>}
 
         <Card className="onboarding-section gap-0 py-0">
           <b className="onboarding-step-title">{t("onboarding.test")}</b>
