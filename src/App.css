@@ -98,6 +98,7 @@ body {
 .api-key-actions input { min-width: 0; height: 34px; background: rgba(255,255,255,.62); font-size: 11px; }
 .api-key-actions button { flex: 0 0 auto; }
 .api-key-error { display: block; margin-top: 5px; color: #ad4742; font-size: 9px; font-weight: 500; }
+.api-key-link { height: auto; padding: 0; font-size: 9px; }
 .secondary-button { margin-top: 12px; }
 .helper { margin: -1px 5px 3px; color: #85888d; font-size: 10px; line-height: 1.5; }
 .inline-error { margin: 0; padding: 10px; border-radius: 10px; background: #fff1f0; color: #ad4742; font-size: 11px; }

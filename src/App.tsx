@@ -1081,8 +1081,9 @@ function ApiKeyRow({ provider, label, keyHint, onSave, onClear }: {
     try { await action(); }
     catch (reason) { setError(localizeBridgeMessage(reason instanceof Error ? reason.message : String(reason), language, t)); }
   };
+  const keyUrl = provider === "gemini" ? "https://aistudio.google.com/apikey" : "https://console.groq.com/keys";
   return <div className="setting-row api-key-row">
-    <div><b>{label}</b><span>{provider === "gemini" && `${t("apiKey.geminiDetail")} · `}{configured ? t("apiKey.configured") : t("apiKey.notConfigured")}</span><small>{t("apiKey.keychainNotice")}</small>{error && <small className="api-key-error">{error}</small>}</div>
+    <div><b>{label}</b><span>{provider === "gemini" && `${t("apiKey.geminiDetail")} · `}{configured ? t("apiKey.configured") : t("apiKey.notConfigured")}</span><small>{t("apiKey.keychainNotice")} <Button variant="link" size="xs" className="api-key-link" onClick={() => void run(() => invoke("open_url", { url: keyUrl }))}>{t("apiKey.getKey")}</Button></small>{error && <small className="api-key-error">{error}</small>}</div>
     <div className="api-key-actions">
       <Input type="password" value={key} autoComplete="off" spellCheck={false} onChange={(event) => setKey(event.target.value)} placeholder={keyHint ?? t("apiKey.placeholder")} />
       <Button size="sm" disabled={!key.trim()} onClick={() => void run(async () => { await onSave(provider, key); setKey(""); })}>{configured ? t("apiKey.update") : t("apiKey.save")}</Button>

@@ -16,6 +16,23 @@ fn hud_resize(window: tauri::WebviewWindow, height: f64, bottom: f64) -> Result<
     Ok(())
 }
 
+/// APIキー発行ページを外部ブラウザで開く。許可リスト外のURLは拒否する。
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    const ALLOWED: [&str; 2] = [
+        "https://aistudio.google.com/",
+        "https://console.groq.com/",
+    ];
+    if !ALLOWED.iter().any(|prefix| url.starts_with(prefix)) {
+        return Err("cloud.invalid_url".into());
+    }
+    std::process::Command::new("open")
+        .arg(&url)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -29,6 +46,7 @@ pub fn run() {
         .manage(cloud::CloudState::default())
         .invoke_handler(tauri::generate_handler![
             hud_resize,
+            open_url,
             cloud::prepare_capture,
             cloud::discard_capture,
             cloud::set_api_key,
