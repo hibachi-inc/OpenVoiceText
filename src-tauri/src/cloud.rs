@@ -1308,6 +1308,7 @@ mod tests {
         assert!(!is_gemini_flash_text_model("gemini-3.1-flash-image-preview"));
         assert!(!is_gemini_flash_text_model("whisper-large-v3-turbo"));
     }
+
     #[test]
     fn vision_capability_matches_known_catalog() {
         assert!(model_supports_vision("gemini", "gemini-flash-latest"));
