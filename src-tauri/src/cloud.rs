@@ -642,6 +642,19 @@ struct GroqError {
     fallback: bool,
 }
 
+/// モデル別のreasoning設定。GPT-OSS以外にlow等を送ると400になる。
+/// Qwen系はinstructモード（none）が整形向きで速くて安い。
+fn groq_reasoning_effort(model: &str) -> Option<&'static str> {
+    let lower = model.to_lowercase();
+    if lower.starts_with("openai/gpt-oss") {
+        Some("low")
+    } else if lower.contains("qwen") {
+        Some("none")
+    } else {
+        None
+    }
+}
+
 async fn stream_groq_refinement(
     client: &reqwest::Client,
     key: &str,
@@ -662,14 +675,16 @@ async fn stream_groq_refinement(
         ]),
         None => json!(input),
     };
-    let body = json!({
+    let mut body = json!({
         "model": model,
         "messages": [{ "role": "user", "content": content }],
-        "reasoning_effort": "low",
         "include_reasoning": false,
         "temperature": 0.2,
         "stream": true
     });
+    if let Some(effort) = groq_reasoning_effort(model) {
+        body["reasoning_effort"] = json!(effort);
+    }
     let response = client
         .post("https://api.groq.com/openai/v1/chat/completions")
         .bearer_auth(key)
@@ -1181,6 +1196,16 @@ mod tests {
         let required = enforced["responseSchema"]["required"].as_array().unwrap();
         assert!(required.contains(&json!("transcript")));
         assert!(required.contains(&json!("refined")));
+    }
+
+    #[test]
+    fn groq_reasoning_effort_matches_model_family() {
+        // low/medium/highはGPT-OSS専用。Qwenにlowを送ると400になる。
+        assert_eq!(groq_reasoning_effort("openai/gpt-oss-120b"), Some("low"));
+        assert_eq!(groq_reasoning_effort("openai/gpt-oss-20b"), Some("low"));
+        assert_eq!(groq_reasoning_effort("qwen/qwen3.6-27b"), Some("none"));
+        assert_eq!(groq_reasoning_effort("qwen/qwen3.8-27b"), Some("none"));
+        assert_eq!(groq_reasoning_effort("llama-3.3-70b-versatile"), None);
     }
 
     #[test]
