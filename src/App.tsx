@@ -460,7 +460,10 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         : undefined;
       // Geminiで文字起こしも整形も行う場合は専用ルートで一本化する
       // （音声・画像・プロンプトを同時投入）。それ以外は従来の2段構成。
-      const useGeminiCombined = provider === "gemini" && cloudRefinementProvider === "gemini";
+      // 結合ルートは音声を扱うため、音声非対応のGemma指定時は2段構成に回す。
+      const useGeminiCombined = provider === "gemini"
+        && cloudRefinementProvider === "gemini"
+        && !settings.refinementModel.toLowerCase().includes("gemma");
       let cloud: CloudResult | undefined;
       if (provider !== "local") {
         const onKeyDenied = (error: unknown) => {
@@ -1071,6 +1074,7 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
             provider={settings.refinementProvider}
             hasKey={apiKeyHints[settings.refinementProvider] !== null}
             value={settings.refinementModel}
+            includeGemma
             onChange={(refinementModel) => setSettings((s) => withLinkedRefinementModel(s, refinementModel))}
           />
           <SettingRow label={t("ai.screenshotContext")} detail={t("ai.screenshotContextDetail")}><Switch checked={settings.screenshotContext} onCheckedChange={(screenshotContext) => setSettings((s) => ({ ...s, screenshotContext }))} /></SettingRow>
@@ -1110,11 +1114,13 @@ function ApiKeyRow({ provider, label, keyHint, onSave, onClear }: {
 }
 
 // 整形モデルのカタログ。キー保存後に利用可能一覧を取り、失効・廃止の検出と選び直しに使う。
-function RefineModelCatalog({ provider, hasKey, value, onChange }: {
+function RefineModelCatalog({ provider, hasKey, value, onChange, includeGemma }: {
   provider: "groq" | "gemini";
   hasKey: boolean;
   value: string;
   onChange: (model: string) => void;
+  // 整形側のみ：Gemma（画像OK・音声NG）を選択肢に含める。転写側はflashのみ。
+  includeGemma?: boolean;
 }) {
   const { language, t } = useI18n();
   const [models, setModels] = useState<{ id: string; vision: boolean }[] | null>(null);
@@ -1140,7 +1146,11 @@ function RefineModelCatalog({ provider, hasKey, value, onChange }: {
     }
     void load();
   }, [hasKey, load]);
-  const visibleModels = (models ?? []).filter((m) => provider !== "gemini" || m.id.toLowerCase().includes("flash"));
+  const visibleModels = (models ?? []).filter((m) => {
+    if (provider !== "gemini") return true;
+    const id = m.id.toLowerCase();
+    return id.includes("flash") || (includeGemma === true && id.includes("gemma"));
+  });
   const ids = visibleModels.map((m) => m.id);
   const stale = value !== "" && models !== null && !ids.includes(value);
   const selectValue = value === "" ? "__auto__" : value;
@@ -1622,6 +1632,7 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
             provider={settings.refinementProvider}
             hasKey={apiKeyHints[settings.refinementProvider] !== null}
             value={settings.refinementModel}
+            includeGemma
             onChange={(refinementModel) => setSettings((s) => withLinkedRefinementModel(s, refinementModel))}
           />}
         </Card>}
@@ -1841,10 +1852,13 @@ function withLinkedTranscriptionModel(current: Settings, transcriptionModel: str
 }
 
 function withLinkedRefinementModel(current: Settings, refinementModel: string): Settings {
+  // Gemmaは音声非対応のため転写側には連動させない。
+  const linkable = current.transcriptionProvider === "gemini"
+    && !refinementModel.toLowerCase().includes("gemma");
   return {
     ...current,
     refinementModel,
-    ...(current.transcriptionProvider === "gemini" ? { transcriptionModel: refinementModel } : {}),
+    ...(linkable ? { transcriptionModel: refinementModel } : {}),
   };
 }
 

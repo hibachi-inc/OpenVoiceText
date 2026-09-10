@@ -14,12 +14,15 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const KEYCHAIN_SERVICE: &str = "com.hibachi.voicelatte.cloud";
-const GEMINI_MODELS: [&str; 3] = [
+const GEMINI_MODELS: [&str; 5] = [
     "gemini-2.5-flash",
     "gemini-3.5-flash-lite",
     "gemini-3.5-flash",
+    "gemma-4-26b-a4b-it",
+    "gemma-4-31b-it",
 ];
 // 注：gemini-2.5-flash-lite は提供終了のため除外した（404 "no longer available"）。
+// Gemma 26B/31B は音声非対応のため転写には使わない（model_supports_audio）。
 // 将来2.5-flashも同様になったらここから外す。フォールバックが拾う。
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
 const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
@@ -164,6 +167,7 @@ pub fn api_key_present(provider: String) -> Result<bool, String> {
 
 /// モデル能力規則（集約）。モデル別の振る舞い差異はここに集める。
 /// - 画像添付可否: model_supports_vision（Geminiは全対応、Groqは既知IDのみ）
+/// - 音声入力可否: model_supports_audio（Gemma 26B/31Bは非対応）
 /// - 抽出対象: is_gemini_flash_text_model（動的フォールバック用。
 ///   UI側 RefineModelCatalog の flash 絞り込みと同規則。変えたら両方直すこと）
 /// - 思考設定: gemini_generation_config 内の世代分岐
@@ -411,6 +415,13 @@ fn is_gemini_flash_text_model(id: &str) -> bool {
     lower.contains("flash") && !lower.contains("image") && is_refine_candidate(id)
 }
 
+/// 音声入力に対応するモデルか。Gemma 26B/31Bに音声エンコーダはない。
+/// 転写・結合経路では音声非対応モデルを候補から外す。
+fn model_supports_audio(id: &str) -> bool {
+    let lower = id.to_lowercase();
+    !(lower.contains("gemma-4-26b") || lower.contains("gemma-4-31b"))
+}
+
 /// 動的フォールバックの候補か。一覧からflash系だけ拾う。
 fn is_dynamic_fallback_candidate(id: &str, tried: &[String]) -> bool {
     is_gemini_flash_text_model(id) && !tried.iter().any(|t| t == id)
@@ -574,12 +585,15 @@ pub async fn cloud_transcribe_refine(
 
 /// Geminiの生成設定。結合ルートではJSON強制モード＋スキーマで形を固定する。
 /// 思考設定は世代別：2.5系はthinkingBudget:0、3.x系はthinkingLevel:minimal、
-/// 世代不明のlite系は省略、その他のエイリアス等は従来通りbudget:0を試す
-/// （拒否されたら400フォールバックで次へ進む）。
+/// Gemma系は省略（未知パラメータで400になる恐れがあるため）、
+/// 世代不明lite系は省略、その他エイリアスは従来通りbudget:0を試す
+/// （拒否時は400フォールバックで次へ進む）。
 fn gemini_generation_config(json_output: bool, model: &str) -> Value {
     let mut config = json!({ "temperature": 0 });
     let lower = model.to_lowercase();
-    if lower.contains("2.5") {
+    if lower.contains("gemma") {
+        // omit thinking config entirely
+    } else if lower.contains("2.5") {
         config["thinkingConfig"] = json!({ "thinkingBudget": 0 });
     } else if lower.contains("3.") {
         config["thinkingConfig"] = json!({ "thinkingLevel": "minimal" });
@@ -964,7 +978,11 @@ async fn gemini_transcribe(
     let screen_context = tail_chars(screen_context.trim(), 10_000);
     let mut last_error = "cloud.gemini_failed".to_string();
     let mut fell_back_from: Option<String> = None;
-    let mut models = gemini_chain(model);
+    // 音声非対応モデル（Gemma 26B/31B等）は転写では試さない。
+    let mut models: Vec<String> = gemini_chain(model)
+        .into_iter()
+        .filter(|m| model_supports_audio(m))
+        .collect();
     let mut dynamic_done = false;
     let mut i = 0;
     while i < models.len() {
@@ -1252,6 +1270,8 @@ mod tests {
                 "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
+                "gemma-4-26b-a4b-it",
+                "gemma-4-31b-it",
             ]
         );
     }
@@ -1264,6 +1284,8 @@ mod tests {
                 "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
+                "gemma-4-26b-a4b-it",
+                "gemma-4-31b-it",
             ]
         );
         assert_eq!(
@@ -1273,6 +1295,8 @@ mod tests {
                 "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
+                "gemma-4-26b-a4b-it",
+                "gemma-4-31b-it",
             ]
         );
         assert_eq!(
@@ -1281,6 +1305,8 @@ mod tests {
                 "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.5-flash",
+                "gemma-4-26b-a4b-it",
+                "gemma-4-31b-it",
             ]
         );
     }
@@ -1342,6 +1368,17 @@ mod tests {
         let required = enforced["responseSchema"]["required"].as_array().unwrap();
         assert!(required.contains(&json!("transcript")));
         assert!(required.contains(&json!("refined")));
+    }
+
+    #[test]
+    fn gemma_models_skip_thinking_and_audio() {
+        // Gemma 26B/31B は思考パラメータも音声入力も非対応。
+        let gen = gemini_generation_config(false, "gemma-4-31b-it");
+        assert!(gen.get("thinkingConfig").is_none());
+        assert!(!model_supports_audio("gemma-4-26b-a4b-it"));
+        assert!(!model_supports_audio("gemma-4-31b-it"));
+        assert!(model_supports_audio("gemini-2.5-flash"));
+        assert!(model_supports_audio("gemini-3.5-flash"));
     }
 
     #[test]
