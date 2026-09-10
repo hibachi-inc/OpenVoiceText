@@ -1122,7 +1122,8 @@ function RefineModelCatalog({ provider, hasKey, value, onChange }: {
     }
     void load();
   }, [hasKey, load]);
-  const ids = (models ?? []).map((m) => m.id);
+  const visibleModels = (models ?? []).filter((m) => provider !== "gemini" || m.id.toLowerCase().includes("flash"));
+  const ids = visibleModels.map((m) => m.id);
   const stale = value !== "" && models !== null && !ids.includes(value);
   const selectValue = value === "" ? "__auto__" : value;
   return <div className="setting-row api-key-row">
@@ -1138,7 +1139,7 @@ function RefineModelCatalog({ provider, hasKey, value, onChange }: {
         <SelectTrigger size="sm" className="settings-select"><SelectValue placeholder={loading ? t("ai.modelsLoading") : t("ai.modelAuto")} /></SelectTrigger>
         <SelectContent>
           <SelectItem value="__auto__">{t("ai.modelAuto")}</SelectItem>
-          {(models ?? []).map((m) => <SelectItem value={m.id} key={m.id}>{m.vision ? `${m.id}（${t("ai.modelVision")}）` : m.id}</SelectItem>)}
+          {visibleModels.map((m) => <SelectItem value={m.id} key={m.id}>{m.vision ? `${m.id}（${t("ai.modelVision")}）` : m.id}</SelectItem>)}
         </SelectContent>
       </Select>
       <Button variant="ghost" size="sm" disabled={!hasKey || loading} onClick={() => void load()}>{t("ai.modelsRefresh")}</Button>
