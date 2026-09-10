@@ -161,6 +161,16 @@ pub fn api_key_present(provider: String) -> Result<bool, String> {
     api_key_present_impl(&provider)
 }
 
+/// モデル能力規則（集約）。モデル別の振る舞い差異はここに集める。
+/// - 画像添付可否: model_supports_vision（Geminiは全対応、Groqは既知IDのみ）
+/// - 抽出対象: is_gemini_flash_text_model（動的フォールバック用。
+///   UI側 RefineModelCatalog の flash 絞り込みと同規則。変えたら両方直すこと）
+/// - 思考設定: gemini_generation_config 内の世代分岐
+///   （2.5系=thinkingBudget:0、3.x系=thinkingLevel:minimal、世代不明lite系=省略、
+///   その他エイリアス=budget:0試行。拒否時は400フォールバックで次へ進む）
+/// - 推論量: groq_reasoning_effort（GPT-OSS=low、Qwen=none、その他=省略。
+///   他系列にlow等を送ると400になる）
+/// - 連鎖組み立て: gemini_chain（明示モデル先頭＋重複除去）
 /// 整形モデルが画像文脈を受けられるか。Groqはカタログ方式のため既知IDで判定する。
 fn model_supports_vision(provider: &str, model: &str) -> bool {
     match provider {
@@ -393,13 +403,16 @@ fn gemini_chain(explicit: Option<String>) -> Vec<String> {
     models
 }
 
+/// Geminiの動的フォールバック対象（flash系テキストモデル）。
+/// UI側の一覧フィルタと同規則。変えたら両方直すこと。
+fn is_gemini_flash_text_model(id: &str) -> bool {
+    let lower = id.to_lowercase();
+    lower.contains("flash") && !lower.contains("image") && is_refine_candidate(id)
+}
+
 /// 動的フォールバックの候補か。一覧からflash系だけ拾う。
 fn is_dynamic_fallback_candidate(id: &str, tried: &[String]) -> bool {
-    let lower = id.to_lowercase();
-    lower.contains("flash")
-        && !lower.contains("image")
-        && is_refine_candidate(id)
-        && !tried.iter().any(|t| t == id)
+    is_gemini_flash_text_model(id) && !tried.iter().any(|t| t == id)
 }
 
 /// 静的チェーンが尽きたら一覧からflash系を追加で拾う（最大3）。
@@ -648,18 +661,6 @@ pub async fn cloud_refine(
     let explicit: Option<String> = model
         .map(|m| m.trim().to_string())
         .filter(|m| !m.is_empty());
-    let dedup_chain = |chain: &[&str], explicit: &Option<String>| -> Vec<String> {
-        let mut out = Vec::new();
-        if let Some(m) = explicit {
-            out.push(m.clone());
-        }
-        for m in chain {
-            if explicit.as_deref() != Some(*m) {
-                out.push(m.to_string());
-            }
-        }
-        out
-    };
     match provider.as_str() {
         "groq" => {
             // モデル内フォールバックはしない。120B→20Bと繋いでも出力差がなく
@@ -678,7 +679,7 @@ pub async fn cloud_refine(
         "gemini" => {
             let mut last_error = "cloud.gemini_failed".to_string();
             let mut fell_back_from: Option<String> = None;
-            let mut models = dedup_chain(&GEMINI_MODELS, &explicit);
+            let mut models = gemini_chain(explicit.clone());
             let mut dynamic_done = false;
             let mut i = 0;
             while i < models.len() {
@@ -1297,6 +1298,15 @@ mod tests {
         assert!(!is_dynamic_fallback_candidate("gemini-2.5-pro", &tried));
         assert!(!is_dynamic_fallback_candidate("gemini-3.1-flash-image-preview", &tried));
         assert!(!is_dynamic_fallback_candidate("whisper-large-v3-turbo", &tried));
+    }
+
+    #[test]
+    fn gemini_flash_text_model_rule() {
+        assert!(is_gemini_flash_text_model("gemini-2.5-flash"));
+        assert!(is_gemini_flash_text_model("gemini-3.5-flash-lite"));
+        assert!(!is_gemini_flash_text_model("gemini-2.5-pro"));
+        assert!(!is_gemini_flash_text_model("gemini-3.1-flash-image-preview"));
+        assert!(!is_gemini_flash_text_model("whisper-large-v3-turbo"));
     }
     #[test]
     fn vision_capability_matches_known_catalog() {
