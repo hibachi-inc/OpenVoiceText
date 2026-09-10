@@ -1169,6 +1169,10 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, task, linkActiv
   const ids = visibleModels.map((m) => m.id);
   const stale = value !== "" && models !== null && !ids.includes(value);
   const selectValue = value === "" ? "__auto__" : value;
+  // トリガーにはIDだけ出す（バッジは一覧内のみ）。バッジ付きだと崩れるため。
+  const triggerLabel = selectValue === "__auto__"
+    ? (loading ? t("ai.modelsLoading") : t("ai.modelAuto"))
+    : selectValue;
   return <div className="setting-row api-key-row">
     <div>
       <b>{t("ai.modelSelect")}</b>
@@ -1181,13 +1185,14 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, task, linkActiv
     </div>
     <div className="api-key-actions">
       <Select value={selectValue} disabled={!hasKey || models === null} onValueChange={(v) => onChange(v === "__auto__" ? "" : v)}>
-        <SelectTrigger size="sm" className="settings-select"><SelectValue placeholder={loading ? t("ai.modelsLoading") : t("ai.modelAuto")} /></SelectTrigger>
+        <SelectTrigger size="sm" className="settings-select"><span className="model-trigger-label">{triggerLabel}</span></SelectTrigger>
         <SelectContent>
           <SelectItem value="__auto__">{t("ai.modelAuto")}</SelectItem>
           {visibleModels.map((m) => <SelectItem value={m.id} key={m.id}>
-            {m.id}
+            <span className="model-option"><span className="model-option-id">{m.id}</span>
             {m.vision === true && <Badge variant="secondary" title={t("ai.modelVisionDetail")}>{t("ai.modelVision")}</Badge>}
             {m.audio === true && <Badge variant="secondary" title={t("ai.modelAudioDetail")}>{t("ai.modelAudio")}</Badge>}
+            </span>
           </SelectItem>)}
         </SelectContent>
       </Select>
