@@ -720,8 +720,9 @@ pub async fn cloud_refine(
         return Err("cloud.no_speech".into());
     }
     let key = resolve_key(&state, &provider)?;
+    // 整形は小ペイロードのため短めにし、停滞時の切り替えを速くする（転写は音声のため60秒維持）。
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
+        .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|_| "cloud.connect".to_string())?;
     let input = refinement_input(&prompt, &text, &screen_context);
@@ -844,12 +845,24 @@ async fn stream_groq_refinement(
     if let Some(effort) = groq_reasoning_effort(model) {
         body["reasoning_effort"] = json!(effort);
     }
+    let started = std::time::Instant::now();
     let response = client
         .post("https://api.groq.com/openai/v1/chat/completions")
         .bearer_auth(key)
         .json(&body)
         .send()
-        .await
+        .await;
+    diag_log(app, format!(
+        "groq model={} image={} status={} {}ms",
+        model,
+        image.map(|i| format!("{}B", i.len())).unwrap_or_else(|| "-".into()),
+        match &response {
+            Ok(r) => r.status().to_string(),
+            Err(_) => "connect-fail".into(),
+        },
+        started.elapsed().as_millis(),
+    ));
+    let response = response
         .map_err(|_| GroqError {
             message: "cloud.groq_connect".into(),
             fallback: true,
@@ -1103,6 +1116,48 @@ struct GeminiError {
     fallback: bool,
 }
 
+/// 試行診断をファイルに残す（open起動ではstderrが捨てられるため）。
+/// ~/Library/Application Support/com.hibachi.voicelatte/diagnostics.log。
+/// 1MB超で切り詰める。失敗しても無視する。
+fn diag_log(app: &AppHandle, line: String) {
+    use std::io::Write;
+    let Ok(dir) = app.path().app_data_dir() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("diagnostics.log");
+    let append = std::fs::metadata(&path).map(|m| m.len() < 1_000_000).unwrap_or(true);
+    let mut opts = std::fs::OpenOptions::new();
+    opts.create(true);
+    if append {
+        opts.append(true);
+    } else {
+        opts.write(true).truncate(true);
+    }
+    if let Ok(mut file) = opts.open(path) {
+        let secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = writeln!(file, "{secs} {line}");
+    }
+}
+
+fn diag_gemini_line(
+    model: &str,
+    audio_bytes: usize,
+    image: Option<&str>,
+    image_mime: &str,
+    json_output: bool,
+    status: &str,
+    elapsed_ms: u128,
+) -> String {
+    let image_desc = image
+        .map(|i| format!("{}B/{}", i.len(), image_mime))
+        .unwrap_or_else(|| "-".into());
+    format!("gemini model={model} audio={audio_bytes} image={image_desc} json={json_output} status={status} {elapsed_ms}ms")
+}
+
 async fn stream_gemini_model(
     client: &reqwest::Client,
     key: &str,
@@ -1145,19 +1200,8 @@ async fn stream_gemini_model(
     )).header("x-goog-api-key", key).json(&body).send().await;
     let elapsed_ms = started.elapsed().as_millis();
     match &response {
-        Ok(r) => eprintln!(
-            "[voicelatte] gemini model={} audio_bytes={} image={} json={} status={} elapsed_ms={}",
-            model,
-            audio.map(|a| a.len()).unwrap_or(0),
-            image.map(|i| format!("{}B/{}", i.len(), image_mime)).unwrap_or_else(|| "-".into()),
-            json_output,
-            r.status(),
-            elapsed_ms,
-        ),
-        Err(_) => eprintln!(
-            "[voicelatte] gemini model={} connect-fail elapsed_ms={}",
-            model, elapsed_ms,
-        ),
+        Ok(r) => diag_log(app, diag_gemini_line(model, audio.map(|a| a.len()).unwrap_or(0), image, image_mime, json_output, &r.status().to_string(), elapsed_ms)),
+        Err(_) => diag_log(app, diag_gemini_line(model, audio.map(|a| a.len()).unwrap_or(0), image, image_mime, json_output, "connect-fail", elapsed_ms)),
     }
     let response = response.map_err(|_| GeminiError {
         message: "cloud.gemini_connect".into(),
@@ -1429,6 +1473,16 @@ mod tests {
             ["openai/gpt-oss-120b"]
         );
         assert_eq!(groq_refine_chain(None), ["openai/gpt-oss-120b"]);
+    }
+
+    #[test]
+    fn diag_line_contains_attempt_details() {
+        let line = diag_gemini_line("m", 100, Some("abcd"), "image/jpeg", true, "200", 12);
+        assert!(line.contains("model=m"));
+        assert!(line.contains("json=true"));
+        assert!(line.contains("12ms"));
+        let plain = diag_gemini_line("m", 0, None, "image/jpeg", false, "503", 3);
+        assert!(plain.contains("image=-"));
     }
 
     #[test]
