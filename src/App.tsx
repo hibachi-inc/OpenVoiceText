@@ -1043,24 +1043,30 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
 
     <p className="settings-group-label">{t("ai.refinement")}</p>
     <SettingRow label={t("general.refinement")} detail={t("general.refinementDetail")}><Switch checked={settings.refinement} onCheckedChange={(refinement) => setSettings((s) => ({ ...s, refinement }))} /></SettingRow>
-    {settings.refinement && <SettingRow label={t("ai.refinementModel")} detail={settings.refinementProvider === "groq" ? t("ai.refinementGroqDetail") : settings.refinementProvider === "gemini" ? t(settings.refinementModel ? "ai.refinementGeminiDetailCustom" : "ai.refinementGeminiDetail") : t("ai.refinementLocalDetail")}>
-      <Select value={settings.refinementProvider} onValueChange={(refinementProvider) => setSettings((s) => ({ ...s, refinementProvider: refinementProvider as RefinementProvider }))}>
-        <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="groq">Groq Cloud</SelectItem>
-          <SelectItem value="gemini">Gemini</SelectItem>
-          <SelectItem value="local">{t("provider.local")}</SelectItem>
-        </SelectContent>
-      </Select>
-    </SettingRow>}
-    {settings.refinement && settings.refinementProvider !== "local" && settings.transcriptionProvider !== settings.refinementProvider && <ApiKeyRow provider={settings.refinementProvider} label={`${settings.refinementProvider === "groq" ? "Groq" : "Gemini"} API Key`} keyHint={apiKeyHints[settings.refinementProvider]} onSave={onSaveApiKey} onClear={onClearApiKey} />}
-    {settings.refinement && settings.refinementProvider !== "local" && <RefineModelCatalog
-      provider={settings.refinementProvider}
-      hasKey={apiKeyHints[settings.refinementProvider] !== null}
-      value={settings.refinementModel}
-      onChange={(refinementModel) => setSettings((s) => ({ ...s, refinementModel }))}
-    />}
-    {settings.refinement && settings.refinementProvider !== "local" && <SettingRow label={t("ai.screenshotContext")} detail={t("ai.screenshotContextDetail")}><Switch checked={settings.screenshotContext} onCheckedChange={(screenshotContext) => setSettings((s) => ({ ...s, screenshotContext }))} /></SettingRow>}
+    {settings.refinement && <Card className="glass-card recognition-card gap-0 py-0">
+      <SettingRow label={t("ai.refinementModel")} detail={settings.refinementProvider === "groq" ? t("ai.refinementGroqDetail") : settings.refinementProvider === "gemini" ? t(settings.refinementModel ? "ai.refinementGeminiDetailCustom" : "ai.refinementGeminiDetail") : t("ai.refinementLocalDetail")}>
+        <Select value={settings.refinementProvider} onValueChange={(refinementProvider) => setSettings((s) => ({ ...s, refinementProvider: refinementProvider as RefinementProvider }))}>
+          <SelectTrigger size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="groq">Groq Cloud</SelectItem>
+            <SelectItem value="gemini">Gemini</SelectItem>
+            <SelectItem value="local">{t("provider.local")}</SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingRow>
+      {settings.refinementProvider === "local"
+        ? <p className="settings-note">{t("ai.refinementLocalDetail")}</p>
+        : <>
+          {settings.transcriptionProvider !== settings.refinementProvider && <ApiKeyRow provider={settings.refinementProvider} label={`${settings.refinementProvider === "groq" ? "Groq" : "Gemini"} API Key`} keyHint={apiKeyHints[settings.refinementProvider]} onSave={onSaveApiKey} onClear={onClearApiKey} />}
+          <RefineModelCatalog
+            provider={settings.refinementProvider}
+            hasKey={apiKeyHints[settings.refinementProvider] !== null}
+            value={settings.refinementModel}
+            onChange={(refinementModel) => setSettings((s) => ({ ...s, refinementModel }))}
+          />
+          <SettingRow label={t("ai.screenshotContext")} detail={t("ai.screenshotContextDetail")}><Switch checked={settings.screenshotContext} onCheckedChange={(screenshotContext) => setSettings((s) => ({ ...s, screenshotContext }))} /></SettingRow>
+        </>}
+    </Card>}
     <Button variant="ghost" className="refine-strip ai-refine-strip h-auto" onClick={onPrompts}>
       <span className="strip-icon"><SlidersHorizontal /></span><span><b>{t("history.refinement")}</b><small>{t("history.refinementDetail")}</small></span><ChevronRight className="chevron" />
     </Button>
