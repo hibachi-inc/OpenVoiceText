@@ -14,7 +14,7 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const KEYCHAIN_SERVICE: &str = "com.hibachi.voicelatte.cloud";
-const GEMINI_MODELS: [&str; 2] = ["gemini-flash-latest", "gemini-flash-lite-latest"];
+const GEMINI_MODELS: [&str; 2] = ["gemini-flash-lite-latest", "gemini-flash-latest"];
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
 const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
 const GEMINI_MAX_AUDIO_BYTES: usize = 14_000_000;
@@ -1148,7 +1148,7 @@ mod tests {
     fn gemini_fallback_chain_is_stable() {
         assert_eq!(
             GEMINI_MODELS,
-            ["gemini-flash-latest", "gemini-flash-lite-latest"]
+            ["gemini-flash-lite-latest", "gemini-flash-latest"]
         );
     }
     #[test]
