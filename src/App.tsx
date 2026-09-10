@@ -1193,8 +1193,8 @@ const SCREEN_CAPTURE_BLOCKED_NAME_HINTS = [
   "yubico authenticator",
 ];
 
-function isScreenCaptureAllowed(context: { category?: string; bundleID?: string; appName?: string }): boolean {
-  if (context.category === "terminal") return false;
+// 撮影対象外の判定（ターミナルは除外しない。CLI入力が増えているため）。
+function isScreenCaptureAllowed(context: { bundleID?: string; appName?: string }): boolean {
   const id = (context.bundleID ?? "").toLowerCase();
   if (id && SCREEN_CAPTURE_BLOCKED_BUNDLE_HINTS.some((hint) => id.includes(hint))) return false;
   const name = (context.appName ?? "").toLowerCase();

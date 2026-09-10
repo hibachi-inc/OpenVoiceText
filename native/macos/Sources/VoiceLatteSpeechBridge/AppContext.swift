@@ -45,8 +45,7 @@ struct AppContext: Sendable {
             screenContext: screenContext(
                 pid: app.processIdentifier,
                 bundleID: app.bundleIdentifier,
-                appName: appName,
-                category: category
+                appName: appName
             ),
             displayX: displayPoint.map { Double($0.x) },
             displayY: displayPoint.map { Double($0.y) }
@@ -143,8 +142,9 @@ struct AppContext: Sendable {
         var roles: [String: Int] = [:]
     }
 
-    private static func screenContext(pid: pid_t, bundleID: String?, appName: String?, category: Category) -> String? {
-        guard AXIsProcessTrusted(), category != .terminal else { return nil }
+    private static func screenContext(pid: pid_t, bundleID: String?, appName: String?) -> String? {
+        // ターミナルは除外しない（CLI入力が増えているため）。
+        guard AXIsProcessTrusted() else { return nil }
         if isSensitiveApp(bundleID: bundleID, appName: appName) { return nil }
 
         let app = AXUIElementCreateApplication(pid)
