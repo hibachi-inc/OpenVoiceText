@@ -14,7 +14,7 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const KEYCHAIN_SERVICE: &str = "com.hibachi.voicelatte.cloud";
-const GEMINI_MODELS: [&str; 2] = ["gemini-flash-lite-latest", "gemini-flash-latest"];
+const GEMINI_MODELS: [&str; 2] = ["gemini-flash-latest", "gemini-flash-lite-latest"];
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
 const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
 const GEMINI_MAX_AUDIO_BYTES: usize = 14_000_000;
@@ -983,6 +983,7 @@ async fn stream_gemini_model(
         });
     }
     if !status.is_success() {
+        // 400の詳細（fieldViolations等）が切れないよう十分に残す。
         let detail: String = response
             .text()
             .await
@@ -991,7 +992,7 @@ async fn stream_gemini_model(
             .collect::<Vec<_>>()
             .join(" ")
             .chars()
-            .take(200)
+            .take(500)
             .collect();
         return Err(GeminiError {
             message: format!("cloud.gemini_failed:{} {}", status.as_u16(), detail),
@@ -1165,7 +1166,7 @@ mod tests {
     fn gemini_fallback_chain_is_stable() {
         assert_eq!(
             GEMINI_MODELS,
-            ["gemini-flash-lite-latest", "gemini-flash-latest"]
+            ["gemini-flash-latest", "gemini-flash-lite-latest"]
         );
     }
 
@@ -1173,15 +1174,15 @@ mod tests {
     fn gemini_chain_puts_explicit_model_first() {
         assert_eq!(
             gemini_chain(None),
-            ["gemini-flash-lite-latest", "gemini-flash-latest"]
+            ["gemini-flash-latest", "gemini-flash-lite-latest"]
         );
         assert_eq!(
             gemini_chain(Some("custom-model".into())),
-            ["custom-model", "gemini-flash-lite-latest", "gemini-flash-latest"]
+            ["custom-model", "gemini-flash-latest", "gemini-flash-lite-latest"]
         );
         assert_eq!(
-            gemini_chain(Some("gemini-flash-latest".into())),
-            ["gemini-flash-latest", "gemini-flash-lite-latest"]
+            gemini_chain(Some("gemini-flash-lite-latest".into())),
+            ["gemini-flash-lite-latest", "gemini-flash-latest"]
         );
     }
     #[test]
