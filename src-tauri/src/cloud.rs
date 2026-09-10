@@ -388,6 +388,32 @@ fn gemini_chain(explicit: Option<String>) -> Vec<String> {
     models
 }
 
+/// 動的フォールバックの候補か。一覧からflash系だけ拾う。
+fn is_dynamic_fallback_candidate(id: &str, tried: &[String]) -> bool {
+    let lower = id.to_lowercase();
+    lower.contains("flash")
+        && !lower.contains("image")
+        && is_refine_candidate(id)
+        && !tried.iter().any(|t| t == id)
+}
+
+/// 静的チェーンが尽きたら一覧からflash系を追加で拾う（最大3）。
+/// 無料枠の混雑503などに備える。取得失敗時は空。
+async fn gemini_dynamic_fallbacks(
+    client: &reqwest::Client,
+    key: &str,
+    tried: &[String],
+) -> Vec<String> {
+    match list_gemini_models(client, key).await {
+        Ok(ids) => ids
+            .into_iter()
+            .filter(|id| is_dynamic_fallback_candidate(id, tried))
+            .take(3)
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 #[tauri::command]
 pub async fn cloud_transcribe(
     app: AppHandle,
@@ -483,11 +509,14 @@ pub async fn cloud_transcribe_refine(
     }
     let mut last_error = "cloud.gemini_failed".to_string();
     let mut fell_back_from: Option<String> = None;
-    for model in &models {
+    let mut dynamic_done = false;
+    let mut i = 0;
+    while i < models.len() {
+        let model = models[i].clone();
         match stream_gemini_model(
             &client,
             &key,
-            model,
+            &model,
             Some(&audio),
             &instruction,
             &screen_context,
@@ -502,7 +531,7 @@ pub async fn cloud_transcribe_refine(
                 let (transcript, refined) = parse_combined_output(&text);
                 return Ok(CloudResult {
                     text: refined,
-                    model: model.clone(),
+                    model,
                     raw: transcript,
                     fallback_from: fell_back_from,
                 })
@@ -511,7 +540,12 @@ pub async fn cloud_transcribe_refine(
                 if fell_back_from.is_none() {
                     fell_back_from = Some(format!("{model}: {}", error.message));
                 }
-                last_error = error.message
+                last_error = error.message;
+                i += 1;
+                if i >= models.len() && !dynamic_done {
+                    dynamic_done = true;
+                    models.extend(gemini_dynamic_fallbacks(&client, &key, &models).await);
+                }
             }
             Err(error) => return Err(error.message),
         }
@@ -628,12 +662,16 @@ pub async fn cloud_refine(
         "gemini" => {
             let mut last_error = "cloud.gemini_failed".to_string();
             let mut fell_back_from: Option<String> = None;
-            for model in dedup_chain(&GEMINI_MODELS, &explicit) {
+            let mut models = dedup_chain(&GEMINI_MODELS, &explicit);
+            let mut dynamic_done = false;
+            let mut i = 0;
+            while i < models.len() {
+                let model = models[i].clone();
                 match stream_gemini_model(&client, &key, &model, None, &input, "", image.as_deref(), &sanitize_image_mime(image_mime.clone()), false, &app).await {
                     Ok(text) => {
                 return Ok(CloudResult {
                     text,
-                    model: model.clone(),
+                    model,
                     raw: None,
                     fallback_from: fell_back_from,
                 })
@@ -642,7 +680,12 @@ pub async fn cloud_refine(
                         if fell_back_from.is_none() {
                             fell_back_from = Some(format!("{model}: {}", error.message));
                         }
-                        last_error = error.message
+                        last_error = error.message;
+                        i += 1;
+                        if i >= models.len() && !dynamic_done {
+                            dynamic_done = true;
+                            models.extend(gemini_dynamic_fallbacks(&client, &key, &models).await);
+                        }
                     }
                     Err(error) => return Err(error.message),
                 }
@@ -903,7 +946,11 @@ async fn gemini_transcribe(
     let screen_context = tail_chars(screen_context.trim(), 10_000);
     let mut last_error = "cloud.gemini_failed".to_string();
     let mut fell_back_from: Option<String> = None;
-    for model in gemini_chain(model) {
+    let mut models = gemini_chain(model);
+    let mut dynamic_done = false;
+    let mut i = 0;
+    while i < models.len() {
+        let model = models[i].clone();
         match stream_gemini_model(
             client,
             key,
@@ -921,7 +968,7 @@ async fn gemini_transcribe(
             Ok(text) => {
                 return Ok(CloudResult {
                     text,
-                    model: model.into(),
+                    model,
                     raw: None,
                     fallback_from: fell_back_from,
                 })
@@ -930,7 +977,12 @@ async fn gemini_transcribe(
                 if fell_back_from.is_none() {
                     fell_back_from = Some(format!("{model}: {}", error.message));
                 }
-                last_error = error.message
+                last_error = error.message;
+                i += 1;
+                if i >= models.len() && !dynamic_done {
+                    dynamic_done = true;
+                    models.extend(gemini_dynamic_fallbacks(&client, &key, &models).await);
+                }
             }
             Err(error) => return Err(error.message),
         }
@@ -1195,6 +1247,18 @@ mod tests {
             gemini_chain(Some("gemini-flash-lite-latest".into())),
             ["gemini-flash-lite-latest", "gemini-flash-latest"]
         );
+    }
+
+    #[test]
+    fn dynamic_fallback_picks_untried_flash_models() {
+        let tried = vec!["gemini-flash-latest".to_string()];
+        assert!(is_dynamic_fallback_candidate("gemini-flash-lite-latest", &tried));
+        assert!(is_dynamic_fallback_candidate("gemini-2.5-flash", &tried));
+        // Tried, non-flash, and image models are excluded.
+        assert!(!is_dynamic_fallback_candidate("gemini-flash-latest", &tried));
+        assert!(!is_dynamic_fallback_candidate("gemini-2.5-pro", &tried));
+        assert!(!is_dynamic_fallback_candidate("gemini-3.1-flash-image-preview", &tried));
+        assert!(!is_dynamic_fallback_candidate("whisper-large-v3-turbo", &tried));
     }
     #[test]
     fn vision_capability_matches_known_catalog() {
