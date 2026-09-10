@@ -16,7 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 const KEYCHAIN_SERVICE: &str = "com.hibachi.voicelatte.cloud";
 const GEMINI_MODELS: [&str; 2] = ["gemini-flash-latest", "gemini-flash-lite-latest"];
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
-const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_REFINEMENT_MODELS: [&str; 2] = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"];
+const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
 const GEMINI_MAX_AUDIO_BYTES: usize = 14_000_000;
 const GROQ_MAX_AUDIO_BYTES: usize = 25_000_000;
 // 短すぎる録音はGroqに蹴られる(4096Bでaudio_too_shortを確認)。16kHz/16bit/monoで約0.25秒分。
@@ -586,28 +586,18 @@ pub async fn cloud_refine(
     };
     match provider.as_str() {
         "groq" => {
-            let mut last_error = "cloud.groq_failed".to_string();
-            let mut fell_back_from: Option<String> = None;
-            for model in dedup_chain(&GROQ_REFINEMENT_MODELS, &explicit) {
-                match stream_groq_refinement(&client, &key, &model, &input, image.as_deref(), &app).await {
-                    Ok(text) => {
-                return Ok(CloudResult {
+            // モデル内フォールバックはしない。120B→20Bと繋いでも出力差がなく
+            // 待ち時間だけ増えるため。失敗時は呼び出し側のローカル整形に委ねる。
+            let model = explicit.clone().unwrap_or_else(|| GROQ_DEFAULT_MODEL.to_string());
+            match stream_groq_refinement(&client, &key, &model, &input, image.as_deref(), &app).await {
+                Ok(text) => Ok(CloudResult {
                     text,
-                    model: model.clone(),
+                    model,
                     raw: None,
-                    fallback_from: fell_back_from,
-                })
-                    }
-                    Err(error) if error.fallback => {
-                        if fell_back_from.is_none() {
-                            fell_back_from = Some(format!("{model}: {}", error.message));
-                        }
-                        last_error = error.message
-                    }
-                    Err(error) => return Err(error.message),
-                }
+                    fallback_from: None,
+                }),
+                Err(error) => Err(error.message),
             }
-            Err(last_error)
         }
         "gemini" => {
             let mut last_error = "cloud.gemini_failed".to_string();
@@ -1232,11 +1222,8 @@ mod tests {
     }
 
     #[test]
-    fn groq_refinement_fallback_and_stream_parser_are_stable() {
-        assert_eq!(
-            GROQ_REFINEMENT_MODELS,
-            ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
-        );
+    fn groq_default_model_and_stream_parser_are_stable() {
+        assert_eq!(GROQ_DEFAULT_MODEL, "openai/gpt-oss-120b");
         assert_eq!(
             groq_sse_chunk(r#"data: {"choices":[{"delta":{"content":"整形済み"}}]}"#.as_bytes()),
             Some("整形済み".into())
