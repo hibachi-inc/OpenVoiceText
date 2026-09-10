@@ -39,7 +39,7 @@ import {
   type UiLanguagePreference,
 } from "./i18n";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
-import { appLog, downloadLog } from "./applog";
+import { appLog, getLogText, subscribeLog } from "./applog";
 import voicelatteCow from "./assets/voicelatte-cow.png";
 import {
   DEFAULT_PROMPT_KEY,
@@ -944,6 +944,7 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
   onRerunSetup: () => void;
 }) {
   const { t } = useI18n();
+  const [logOpen, setLogOpen] = useState(false);
   const locales = [
     ["system", "general.systemDefault"], ["ja-JP", "language.ja"], ["en-US", "language.enUS"], ["en-GB", "language.enGB"],
     ["zh-Hans", "language.zhHans"], ["zh-Hant", "language.zhHant"], ["ko-KR", "language.ko"],
@@ -992,8 +993,9 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
       </Card>
     </>}
     <p className="settings-group-label">{t("general.errorLog")}</p>
-    <SettingRow label={t("general.errorLog")} detail={t("general.errorLogDetail")}><Button variant="outline" size="sm" onClick={() => downloadLog()}>{t("general.exportLog")}</Button></SettingRow>
+    <SettingRow label={t("general.errorLog")} detail={t("general.errorLogDetail")}><Button variant="outline" size="sm" onClick={() => setLogOpen(true)}>{t("general.showLog")}</Button></SettingRow>
     <SettingRow label={t("general.rerunSetup")} detail={t("general.rerunSetupDetail")}><Button variant="outline" size="sm" onClick={onRerunSetup}>{t("general.rerunSetupAction")}</Button></SettingRow>
+    {logOpen && <LogDialog onClose={() => setLogOpen(false)} />}
   </div>;
 }
 
@@ -1716,6 +1718,41 @@ function PromptField({ label, value, defaultOpen, onChange, onRemove }: {
     </div>
     <CollapsibleContent><Textarea autoFocus={defaultOpen} value={value} placeholder={t("prompt.placeholder")} onChange={(e) => onChange(e.target.value)} rows={4} /></CollapsibleContent>
   </Collapsible>;
+}
+
+function LogDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
+  const [text, setText] = useState(() => getLogText());
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    setText(getLogText());
+    const unsubscribe = subscribeLog(() => setText(getLogText()));
+    return () => {
+      unsubscribe();
+      window.clearTimeout(copyTimer.current);
+    };
+  }, []);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      return;
+    }
+    setCopied(true);
+    window.clearTimeout(copyTimer.current);
+    copyTimer.current = window.setTimeout(() => setCopied(false), 1600);
+  };
+  return <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <DialogContent className="modal sm:max-w-[560px]">
+      <DialogHeader><DialogTitle>{t("general.errorLog")}</DialogTitle><DialogDescription>{t("general.errorLogDetail")}</DialogDescription></DialogHeader>
+      <div className="log-body">{text || t("general.errorLogEmpty")}</div>
+      <DialogFooter className="dialog-actions">
+        <Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("action.copied") : t("action.copy")}</Button>
+        <Button onClick={onClose}>{t("action.done")}</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () => void }) {

@@ -25,15 +25,3 @@ export const appLog = {
 export function getLogText() {
   return entries.map((entry) => `${entry.at} [${entry.level}] ${entry.tag}: ${entry.message}`).join("\n");
 }
-
-export function downloadLog() {
-  const blob = new Blob([getLogText() || "(empty)\n"], { type: "text/plain" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `voicelatte-log-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
