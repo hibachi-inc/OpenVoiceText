@@ -1175,6 +1175,7 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, task, linkActiv
       <span>{t("ai.modelSelectDetail")}</span>
       {stale && <small className="api-key-error">{t("ai.modelStale")}</small>}
       {!hasKey && <small>{t("apiKey.notConfigured")}</small>}
+      {provider === "gemini" && <Button variant="link" size="xs" className="api-key-link" onClick={() => void invoke("open_url", { url: "https://aistudio.google.com/rate-limit?timeRange=last-28-days" }).catch(() => undefined)}>{t("ai.rateLimit")}</Button>}
       {linkActive === true && <small>{t("ai.linkHidesModels")}</small>}
       {error && <small className="api-key-error">{error}</small>}
     </div>
