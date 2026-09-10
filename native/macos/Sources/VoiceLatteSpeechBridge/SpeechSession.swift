@@ -141,7 +141,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
                     self.emit(.error("録音を保存できませんでした"))
                 }
             }
-            audioEngine.prepare()
+            try prepareAudioEngineWithWatchdog()
             try startAudioEngineWithWatchdog()
             emit(.engine(provider))
             reply()
@@ -194,7 +194,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
             }
             if !audioEngine.isRunning {
                 do {
-                    audioEngine.prepare()
+                    try prepareAudioEngineWithWatchdog()
                     try startAudioEngineWithWatchdog()
                 } catch {
                     emit(.error(error.localizedDescription))
@@ -335,7 +335,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
         }
         sttLogger.notice("[STTService] enhanced: tap installed")
         do {
-            audioEngine.prepare()
+            try prepareAudioEngineWithWatchdog()
             // engine.startが戻らない機種・状態があるため番犬タイマーを付ける
             try startAudioEngineWithWatchdog()
             sttLogger.notice("[STTService] enhanced: engine started")
@@ -644,6 +644,21 @@ final class SpeechSession: NSObject, @unchecked Sendable {
     // engine.start()が戻らない機種・状態に備えた番犬付き開始。呼び出し側がcatchしてcleanupする。
     private struct EngineStartTimeout: LocalizedError {
         var errorDescription: String? { "マイクの開始がタイムアウトしました" }
+    }
+
+    // audioEngine.prepare()もstart()と同様に戻らないことがあるため番犬付きで実行する。
+    // 素のprepare()が固まるとcatchにもerror送信にも届かず完全沈黙になる。
+    private func prepareAudioEngineWithWatchdog(timeout: TimeInterval = 5) throws {
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            defer { group.leave() }
+            self?.audioEngine.prepare()
+        }
+        if group.wait(timeout: .now() + timeout) == .timedOut {
+            sttLogger.error("[STTService] engine.prepare timed out")
+            throw EngineStartTimeout()
+        }
     }
 
     private func startAudioEngineWithWatchdog(timeout: TimeInterval = 5) throws {
