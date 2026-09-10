@@ -1151,7 +1151,6 @@ function RefineModelCatalog({ provider, hasKey, value, onChange }: {
           {visibleModels.map((m) => <SelectItem value={m.id} key={m.id}>{m.vision ? `${m.id}（${t("ai.modelVision")}）` : m.id}</SelectItem>)}
         </SelectContent>
       </Select>
-      <Button variant="ghost" size="sm" disabled={!hasKey || loading} onClick={() => void load()}>{t("ai.modelsRefresh")}</Button>
     </div>
   </div>;
 }
