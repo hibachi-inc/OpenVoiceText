@@ -45,6 +45,7 @@ struct AppContext: Sendable {
             screenContext: screenContext(
                 pid: app.processIdentifier,
                 bundleID: app.bundleIdentifier,
+                appName: appName,
                 category: category
             ),
             displayX: displayPoint.map { Double($0.x) },
@@ -70,11 +71,52 @@ struct AppContext: Sendable {
 
     // MARK: - Visible window context via AXUIElement
 
-    private static let sensitiveBundleIDs = [
-        "com.1password.1password",
-        "com.bitwarden.desktop",
-        "com.apple.keychainaccess",
+    // Dayflow方式：パスワード・認証・暗号資産系は文脈対象外。
+    // bundleID・アプリ名の部分一致（小文字化して比較）。
+    private static let sensitiveBundleHints = [
+        "1password",
+        "authy",
+        "bitwarden",
+        "dashlane",
+        "enpass",
+        "keeper",
+        "keepass",
+        "keychainaccess",
+        "lastpass",
+        "ledger",
+        "nordpass",
+        "passwords",
+        "protonpass",
+        "secrets",
+        "trezor",
+        "yubico",
     ]
+    private static let sensitiveNameHints = [
+        "1password",
+        "authy",
+        "bitwarden",
+        "dashlane",
+        "enpass",
+        "keeper",
+        "keepassxc",
+        "keychain access",
+        "lastpass",
+        "ledger live",
+        "nordpass",
+        "passwords",
+        "proton pass",
+        "secrets",
+        "trezor suite",
+        "yubico authenticator",
+    ]
+
+    static func isSensitiveApp(bundleID: String?, appName: String?) -> Bool {
+        let bid = (bundleID ?? "").lowercased()
+        if !bid.isEmpty, sensitiveBundleHints.contains(where: { bid.contains($0) }) { return true }
+        let name = (appName ?? "").lowercased()
+        if !name.isEmpty, sensitiveNameHints.contains(where: { name.contains($0) }) { return true }
+        return false
+    }
     private static let contextRoles: Set<String> = ["AXStaticText", "AXHeading", "AXTextArea", "AXTextField", "AXLink"]
 
     private static func activeDisplayPoint(pid: pid_t) -> CGPoint? {
@@ -101,9 +143,9 @@ struct AppContext: Sendable {
         var roles: [String: Int] = [:]
     }
 
-    private static func screenContext(pid: pid_t, bundleID: String?, category: Category) -> String? {
+    private static func screenContext(pid: pid_t, bundleID: String?, appName: String?, category: Category) -> String? {
         guard AXIsProcessTrusted(), category != .terminal else { return nil }
-        if let bundleID, sensitiveBundleIDs.contains(where: { bundleID.hasPrefix($0) }) { return nil }
+        if isSensitiveApp(bundleID: bundleID, appName: appName) { return nil }
 
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, 0.3)

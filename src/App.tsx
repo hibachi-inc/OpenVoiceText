@@ -1154,17 +1154,52 @@ function bridgeMessageCode(error: unknown) {
 
 const IMAGE_RETENTION_MS = 24 * 3600 * 1000;
 
-// 撮影対象外（ターミナル・パスワード管理系）。ネイティブ側の除外と合わせる。
-const SCREEN_CAPTURE_BLOCKED_BUNDLE_IDS = [
-  "com.1password.1password",
-  "com.bitwarden.desktop",
-  "com.apple.keychainaccess",
+// 撮影対象外（Dayflow方式：パスワード・認証・暗号資産系）。
+// bundleID・アプリ名の部分一致（小文字化して比較）。
+const SCREEN_CAPTURE_BLOCKED_BUNDLE_HINTS = [
+  "1password",
+  "authy",
+  "bitwarden",
+  "dashlane",
+  "enpass",
+  "keeper",
+  "keepass",
+  "keychainaccess",
+  "lastpass",
+  "ledger",
+  "nordpass",
+  "passwords",
+  "protonpass",
+  "secrets",
+  "trezor",
+  "yubico",
+];
+const SCREEN_CAPTURE_BLOCKED_NAME_HINTS = [
+  "1password",
+  "authy",
+  "bitwarden",
+  "dashlane",
+  "enpass",
+  "keeper",
+  "keepassxc",
+  "keychain access",
+  "lastpass",
+  "ledger live",
+  "nordpass",
+  "passwords",
+  "proton pass",
+  "secrets",
+  "trezor suite",
+  "yubico authenticator",
 ];
 
-function isScreenCaptureAllowed(context: { category?: string; bundleID?: string }): boolean {
+function isScreenCaptureAllowed(context: { category?: string; bundleID?: string; appName?: string }): boolean {
   if (context.category === "terminal") return false;
-  const id = context.bundleID ?? "";
-  return !SCREEN_CAPTURE_BLOCKED_BUNDLE_IDS.some((prefix) => id.startsWith(prefix));
+  const id = (context.bundleID ?? "").toLowerCase();
+  if (id && SCREEN_CAPTURE_BLOCKED_BUNDLE_HINTS.some((hint) => id.includes(hint))) return false;
+  const name = (context.appName ?? "").toLowerCase();
+  if (name && SCREEN_CAPTURE_BLOCKED_NAME_HINTS.some((hint) => name.includes(hint))) return false;
+  return true;
 }
 
 // 履歴保存用にスクショを縮小する（localStorage肥大防止）。失敗時はnull。
