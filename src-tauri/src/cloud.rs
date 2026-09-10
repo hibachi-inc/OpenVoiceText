@@ -645,7 +645,7 @@ struct GroqError {
 /// モデル別のreasoning設定。GPT-OSS以外にlow等を送ると400になる。
 /// Qwen系はinstructモード（none）が整形向きで速くて安い。
 fn groq_reasoning_effort(model: &str) -> Option<&'static str> {
-    let lower = model.to_lowercase();
+    let lower = model.trim().to_lowercase();
     if lower.starts_with("openai/gpt-oss") {
         Some("low")
     } else if lower.contains("qwen") {
