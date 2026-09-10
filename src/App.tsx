@@ -1956,14 +1956,16 @@ function Hud() {
     // 表示上の高さ制限から独立させる
     const label = copy.querySelector("small") as HTMLElement | null;
     const chrome = 20 + (label?.offsetHeight ?? 14);
+    // 行増減でギチギチにならないよう固定余白を足す（初回表示の余裕を維持）。
+    const SLACK = 12;
     const capped = view.scrollHeight + chrome > 320;
     view.classList.toggle("capped", capped);
     // 上限時は本文の最大高さをウィンドウ内に収まる値に合わせる
-    if (capped) view.style.maxHeight = `${320 - chrome}px`;
+    if (capped) view.style.maxHeight = `${320 - chrome - SLACK}px`;
     else view.style.removeProperty("max-height");
     // 上限到達後はテキスト領域だけを末尾へ自動スクロールさせる
     if (capped) view.scrollTop = view.scrollHeight;
-    const barHeight = Math.max(64, Math.min(view.scrollHeight + chrome, 320));
+    const barHeight = Math.max(64, Math.min(view.scrollHeight + chrome + SLACK, 320));
     // 選択肢表示中はその分だけ上へ伸ばす（同一ウィンドウなので追従ズレなし）
     let logicalHeight = barHeight;
     const box = choiceBoxRef.current;
