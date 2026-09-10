@@ -887,10 +887,19 @@ async fn stream_groq_refinement(
     let mut response = response;
     let mut pending = Vec::new();
     let mut text = String::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| GroqError {
-        message: "cloud.stream_stopped".into(),
-        fallback: text.is_empty(),
-    })? {
+    // チャンクが一定時間来なければ停滞とみなして打ち切る（次モデルへ）。
+    // 整形のみのGroq経路は15秒。
+    loop {
+        let chunk = match tokio::time::timeout(std::time::Duration::from_secs(15), response.chunk()).await {
+            Ok(Ok(chunk)) => chunk,
+            Ok(Err(_)) | Err(_) => {
+                return Err(GroqError {
+                    message: "cloud.stream_stopped".into(),
+                    fallback: text.is_empty(),
+                })
+            }
+        };
+        let Some(chunk) = chunk else { break };
         pending.extend_from_slice(&chunk);
         while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
             let line = pending.drain(..=newline).collect::<Vec<_>>();
@@ -1238,10 +1247,20 @@ async fn stream_gemini_model(
     let mut response = response;
     let mut pending = Vec::new();
     let mut text = String::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| GeminiError {
-        message: "cloud.stream_stopped".into(),
-        fallback: text.is_empty(),
-    })? {
+    // チャンクが一定時間来なければ停滞とみなして打ち切る（次モデルへ）。
+    // 音声ありは取り込みに時間がかかるため長めに取る。
+    let stall_timeout = std::time::Duration::from_secs(if audio.is_some() { 45 } else { 15 });
+    loop {
+        let chunk = match tokio::time::timeout(stall_timeout, response.chunk()).await {
+            Ok(Ok(chunk)) => chunk,
+            Ok(Err(_)) | Err(_) => {
+                return Err(GeminiError {
+                    message: "cloud.stream_stopped".into(),
+                    fallback: text.is_empty(),
+                })
+            }
+        };
+        let Some(chunk) = chunk else { break };
         pending.extend_from_slice(&chunk);
         while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
             let line = pending.drain(..=newline).collect::<Vec<_>>();

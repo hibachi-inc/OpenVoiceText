@@ -81,7 +81,7 @@ type Settings = {
   screenshotContext: boolean;
   promptDefaultsVersion: number;
 };
-type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; choice?: { raw: string; refined: string } };
+type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; elapsed?: number; choice?: { raw: string; refined: string } };
 type PendingChoice = { text: string; raw: string; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string; image?: string };
 type PreparedCapture = { captureId: string; audioPath: string };
 type CloudResult = { text: string; model: string; fallbackFrom?: string; raw?: string };
@@ -212,6 +212,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const messageRef = useRef("");
   const spaceHintRef = useRef(false);
   const refiningRef = useRef(false);
+  const elapsedRef = useRef(0);
+  const processingStartRef = useRef(0);
   const hudVisibleRef = useRef(false);
   const onboardingTestRef = useRef(false);
   const holdTimer = useRef<number | undefined>(undefined);
@@ -290,6 +292,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     if (next.spaceHint !== undefined) spaceHintRef.current = next.spaceHint;
     if (next.raw !== undefined) rawRef.current = next.raw;
     if (next.refining !== undefined) refiningRef.current = next.refining;
+    if (next.elapsed !== undefined) elapsedRef.current = next.elapsed;
     if (next.phase === "idle") { spaceHintRef.current = false; refiningRef.current = false; rawRef.current = ""; }
     if (!onboardingTestRef.current) {
       const pending = choiceRef.current;
@@ -304,6 +307,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         message: next.message ?? messageRef.current,
         spaceHint: spaceHintRef.current,
         refining: refiningRef.current,
+        elapsed: elapsedRef.current,
         choice: pending ? { raw: pending.raw, refined: pending.text } : undefined,
       });
     }
@@ -379,7 +383,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     if (phaseRef.current !== "listening" && phaseRef.current !== "preparing") return;
     // AI整形しない停止では「整形中」と出さず「文字起こし中」にする
     const willRefine = withAiRefinement && settings.refinement;
-    setRecordingState({ phase: "processing", level: 0, refining: willRefine, message: willRefine ? (recordingProviderRef.current === "local" ? t("record.processing") : t("record.cloudProcessing")) : t("state.transcribing") });
+    setRecordingState({ phase: "processing", level: 0, refining: willRefine, elapsed: 0, message: willRefine ? (recordingProviderRef.current === "local" ? t("record.processing") : t("record.cloudProcessing")) : t("state.transcribing") });
+    processingStartRef.current = Date.now();
     const gen = stopGenRef.current;
     const stale = () => gen !== stopGenRef.current;
     try {
@@ -711,6 +716,16 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       if (phaseRef.current === "processing") setRecordingState({ transcript: event.payload.text, engine: event.payload.model });
     }).then((fn) => { unlisten = fn; });
     return () => unlisten?.();
+  }, [setRecordingState]);
+
+  // 処理中の経過秒をHUDへ送る。停滞の予兆として見せる。
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (phaseRef.current !== "processing") return;
+      const elapsed = Math.floor((Date.now() - processingStartRef.current) / 1000);
+      if (elapsed !== elapsedRef.current) setRecordingState({ elapsed });
+    }, 1000);
+    return () => window.clearInterval(timer);
   }, [setRecordingState]);
 
   useEffect(() => () => { void bridge.close(); }, [bridge]);
@@ -2041,7 +2056,7 @@ function Hud() {
       </div>
     </div>}
     <div className="hud-orb"><span className="hud-pulse" /><span className="hud-mic">●</span></div>
-    <div className="hud-copy" ref={copyRef}><small>{phaseLabel(state.phase, t, deferred, state.refining)}{state.phase === "listening" && state.spaceHint ? ` ・ ${t("hud.spaceHint")}` : ""}</small><b ref={transcriptViewRef} className={placeholder ? "placeholder" : undefined}>{displayText}</b></div>
+    <div className="hud-copy" ref={copyRef}><small>{phaseLabel(state.phase, t, deferred, state.refining)}{state.phase === "listening" && state.spaceHint ? ` ・ ${t("hud.spaceHint")}` : ""}{state.phase === "processing" && (state.elapsed ?? 0) > 0 ? ` · ${state.elapsed}s` : ""}</small><b ref={transcriptViewRef} className={placeholder ? "placeholder" : undefined}>{displayText}</b></div>
     <div className="hud-meter" aria-label={t("hud.audioLevel")}>{Array.from({ length: 7 }, (_, i) => <i key={i} className={i / 7 < state.level ? "lit" : ""} />)}</div>
     {(state.phase === "listening" || state.phase === "preparing") && <Button variant="ghost" className="hud-stop h-9 rounded-none" onClick={() => void emitTo("main", "hud-stop")}><Square />{t("hud.stop")}</Button>}
   </main>;
