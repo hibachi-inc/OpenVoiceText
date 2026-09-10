@@ -113,6 +113,7 @@ body {
 .permission-mark.granted { background: #e1f4e8; color: #2d8d55; }
 .permission-state { color: #85888d; font-size: 10px; }
 .permission-row .secondary-button { margin-top: 0; padding: 6px 9px; font-size: 10px; }
+.setting-row .secondary-button { margin-top: 0; padding: 6px 9px; font-size: 10px; }
 .history-screenshot-wrap { margin-top: 10px; }
 .history-screenshot-wrap small { display: block; margin-bottom: 4px; color: #85888d; font-size: 9px; }
 .history-screenshot { display: block; max-width: 100%; border-radius: 8px; border: 1px solid rgba(45,48,54,.1); }

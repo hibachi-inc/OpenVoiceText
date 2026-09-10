@@ -996,8 +996,8 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
       </Card>
     </>}
     <p className="settings-group-label">{t("general.errorLog")}</p>
-    <SettingRow label={t("general.errorLog")} detail={t("general.errorLogDetail")}><Button variant="outline" size="sm" onClick={() => setLogOpen(true)}>{t("general.showLog")}</Button></SettingRow>
-    <SettingRow label={t("general.rerunSetup")} detail={t("general.rerunSetupDetail")}><Button variant="outline" size="sm" onClick={onRerunSetup}>{t("general.rerunSetupAction")}</Button></SettingRow>
+    <SettingRow label={t("general.errorLog")} detail={t("general.errorLogDetail")}><Button variant="outline" size="xs" className="secondary-button" onClick={() => setLogOpen(true)}>{t("general.showLog")}</Button></SettingRow>
+    <SettingRow label={t("general.rerunSetup")} detail={t("general.rerunSetupDetail")}><Button variant="outline" size="xs" className="secondary-button" onClick={onRerunSetup}>{t("general.rerunSetupAction")}</Button></SettingRow>
     {logOpen && <LogDialog onClose={() => setLogOpen(false)} />}
   </div>;
 }
