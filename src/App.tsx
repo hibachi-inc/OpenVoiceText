@@ -1848,7 +1848,7 @@ function Hud() {
   const deferred = state.captureMode === "deferred";
   const placeholder = !state.transcript && state.phase === "listening";
   const displayText = state.transcript || (placeholder ? t(deferred ? "hud.deferredPrompt" : "hud.prompt") : state.message) || t("hud.prompt");
-  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}${hasChoice ? " tall" : ""}`}>
+  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}${hasChoice ? " tall" : ""}${state.phase === "processing" && state.refining ? " ai" : ""}`}>
     <div className="hud-drag-layer" data-tauri-drag-region />
     {hasChoice && state.choice && <div className="hud-choice" ref={choiceBoxRef}>
       <div className="hud-choice-title">{t("record.choose")}</div>
