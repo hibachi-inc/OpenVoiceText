@@ -26,6 +26,26 @@ const GEMINI_MODELS: [&str; 5] = [
 // 将来2.5-flashも同様になったらここから外す。フォールバックが拾う。
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
 const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
+/// Qwen同士の連鎖用。混雑時の安定のため明示Qwenの次にもう片方を試す。
+const GROQ_QWEN_MODELS: [&str; 2] = ["qwen/qwen3.6-27b", "qwen/qwen3.8-27b"];
+
+/// Groq整形の試行順。明示Qwenだけペアでもう片方に繋ぐ。
+/// それ以外（デフォルト含む）は単発で、失敗時はローカル整形に委ねる。
+fn groq_refine_chain(explicit: Option<String>) -> Vec<String> {
+    let first = explicit
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| GROQ_DEFAULT_MODEL.to_string());
+    let mut models = vec![first.clone()];
+    if first.to_lowercase().contains("qwen") {
+        for alt in GROQ_QWEN_MODELS {
+            if alt != first {
+                models.push(alt.to_string());
+            }
+        }
+    }
+    models
+}
 const GEMINI_MAX_AUDIO_BYTES: usize = 14_000_000;
 const GROQ_MAX_AUDIO_BYTES: usize = 25_000_000;
 // 短すぎる録音はGroqに蹴られる(4096Bでaudio_too_shortを確認)。16kHz/16bit/monoで約0.25秒分。
@@ -709,18 +729,32 @@ pub async fn cloud_refine(
         .filter(|m| !m.is_empty());
     match provider.as_str() {
         "groq" => {
-            // モデル内フォールバックはしない。120B→20Bと繋いでも出力差がなく
-            // 待ち時間だけ増えるため。失敗時は呼び出し側のローカル整形に委ねる。
-            let model = explicit.clone().unwrap_or_else(|| GROQ_DEFAULT_MODEL.to_string());
-            match stream_groq_refinement(&client, &key, &model, &input, image.as_deref(), &app).await {
-                Ok(text) => Ok(CloudResult {
-                    text,
-                    model,
-                    raw: None,
-                    fallback_from: None,
-                }),
-                Err(error) => Err(error.message),
+            let mut last_error = "cloud.groq_failed".to_string();
+            let mut fell_back_from: Option<String> = None;
+            let mut models = groq_refine_chain(explicit.clone());
+            let mut i = 0;
+            while i < models.len() {
+                let model = models[i].clone();
+                match stream_groq_refinement(&client, &key, &model, &input, image.as_deref(), &app).await {
+                    Ok(text) => {
+                        return Ok(CloudResult {
+                            text,
+                            model,
+                            raw: None,
+                            fallback_from: fell_back_from,
+                        })
+                    }
+                    Err(error) if error.fallback => {
+                        if fell_back_from.is_none() {
+                            fell_back_from = Some(format!("{model}: {}", error.message));
+                        }
+                        last_error = error.message;
+                        i += 1;
+                    }
+                    Err(error) => return Err(error.message),
+                }
             }
+            Err(last_error)
         }
         "gemini" => {
             let mut last_error = "cloud.gemini_failed".to_string();
@@ -761,6 +795,7 @@ pub async fn cloud_refine(
 
 struct GroqError {
     message: String,
+    fallback: bool,
 }
 
 /// モデル別のreasoning設定。GPT-OSS以外にlow等を送ると400になる。
@@ -814,16 +849,22 @@ async fn stream_groq_refinement(
         .await
         .map_err(|_| GroqError {
             message: "cloud.groq_connect".into(),
+            fallback: true,
         })?;
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         return Err(GroqError {
             message: "cloud.groq_key".into(),
+            fallback: false,
         });
     }
     if !status.is_success() {
+        // 鍵系以外は次モデルへ進める（Qwen同士の混雑回避を含む）。
+        let fallback = status != reqwest::StatusCode::UNAUTHORIZED
+            && status != reqwest::StatusCode::FORBIDDEN;
         return Err(GroqError {
             message: format!("cloud.groq_failed:{}", status.as_u16()),
+            fallback,
         });
     }
 
@@ -832,6 +873,7 @@ async fn stream_groq_refinement(
     let mut text = String::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| GroqError {
         message: "cloud.stream_stopped".into(),
+        fallback: text.is_empty(),
     })? {
         pending.extend_from_slice(&chunk);
         while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
@@ -846,6 +888,7 @@ async fn stream_groq_refinement(
     if text.is_empty() {
         return Err(GroqError {
             message: "cloud.no_speech".into(),
+            fallback: true,
         });
     }
     Ok(text)
@@ -1344,6 +1387,24 @@ mod tests {
         assert!(!is_dynamic_fallback_candidate("gemini-2.5-pro", &tried));
         assert!(!is_dynamic_fallback_candidate("gemini-3.1-flash-image-preview", &tried));
         assert!(!is_dynamic_fallback_candidate("whisper-large-v3-turbo", &tried));
+    }
+
+    #[test]
+    fn groq_refine_chain_pairs_qwen_models() {
+        // 明示Qwenはもう片方へ繋ぐ。デフォルトと非Qwenは単発。
+        assert_eq!(
+            groq_refine_chain(Some("qwen/qwen3.8-27b".into())),
+            ["qwen/qwen3.8-27b", "qwen/qwen3.6-27b"]
+        );
+        assert_eq!(
+            groq_refine_chain(Some("qwen/qwen3.6-27b".into())),
+            ["qwen/qwen3.6-27b", "qwen/qwen3.8-27b"]
+        );
+        assert_eq!(
+            groq_refine_chain(Some("openai/gpt-oss-120b".into())),
+            ["openai/gpt-oss-120b"]
+        );
+        assert_eq!(groq_refine_chain(None), ["openai/gpt-oss-120b"]);
     }
 
     #[test]
