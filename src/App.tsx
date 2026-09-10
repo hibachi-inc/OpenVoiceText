@@ -77,6 +77,7 @@ type Settings = {
   refinementProvider: RefinementProvider;
   refinementModel: string;
   transcriptionModel: string;
+  linkModels: boolean;
   screenshotContext: boolean;
   promptDefaultsVersion: number;
 };
@@ -102,6 +103,7 @@ const DEFAULT_SETTINGS: Settings = {
   refinementProvider: "gemini",
   refinementModel: "",
   transcriptionModel: "",
+  linkModels: true,
   screenshotContext: true,
   promptDefaultsVersion: 1,
 };
@@ -460,10 +462,11 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         : undefined;
       // Geminiで文字起こしも整形も行う場合は専用ルートで一本化する
       // （音声・画像・プロンプトを同時投入）。それ以外は従来の2段構成。
-      // 結合ルートは音声を扱うため、音声非対応のGemma指定時は2段構成に回す。
+      // 結合ルートは両方が同じGeminiモデルのときだけ使う。
+      // 値が一致すれば音声対応が保証される（転写側は対応モデルのみ保持）。
       const useGeminiCombined = provider === "gemini"
         && cloudRefinementProvider === "gemini"
-        && !settings.refinementModel.toLowerCase().includes("gemma");
+        && settings.refinementModel === settings.transcriptionModel;
       let cloud: CloudResult | undefined;
       if (provider !== "local") {
         const onKeyDenied = (error: unknown) => {
@@ -1046,6 +1049,7 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
         provider="gemini"
         hasKey={apiKeyHints.gemini !== null}
         value={settings.transcriptionModel}
+        task="transcribe"
         onChange={(transcriptionModel) => setSettings((s) => withLinkedTranscriptionModel(s, transcriptionModel))}
       />}
       <p className="settings-note">{settings.transcriptionProvider === "local"
@@ -1074,9 +1078,11 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
             provider={settings.refinementProvider}
             hasKey={apiKeyHints[settings.refinementProvider] !== null}
             value={settings.refinementModel}
-            includeGemma
+            task="refine"
+            linkActive={settings.linkModels && settings.transcriptionProvider === "gemini" && settings.refinementProvider === "gemini"}
             onChange={(refinementModel) => setSettings((s) => withLinkedRefinementModel(s, refinementModel))}
           />
+          {settings.transcriptionProvider === "gemini" && settings.refinementProvider === "gemini" && <SettingRow label={t("ai.linkModels")} detail={t("ai.linkModelsDetail")}><Switch checked={settings.linkModels} onCheckedChange={(linkModels) => setSettings((s) => ({ ...s, linkModels }))} /></SettingRow>}
           <SettingRow label={t("ai.screenshotContext")} detail={t("ai.screenshotContextDetail")}><Switch checked={settings.screenshotContext} onCheckedChange={(screenshotContext) => setSettings((s) => ({ ...s, screenshotContext }))} /></SettingRow>
         </>}
     </Card>}
@@ -1113,24 +1119,32 @@ function ApiKeyRow({ provider, label, keyHint, onSave, onClear }: {
   </div>;
 }
 
-// 整形モデルのカタログ。キー保存後に利用可能一覧を取り、失効・廃止の検出と選び直しに使う。
-function RefineModelCatalog({ provider, hasKey, value, onChange, includeGemma }: {
+// モデル選択カタログ。表示可否はサーバ返却の eligibility に従う（ID判定を書かない）。
+function RefineModelCatalog({ provider, hasKey, value, onChange, task, linkActive }: {
   provider: "groq" | "gemini";
   hasKey: boolean;
   value: string;
   onChange: (model: string) => void;
-  // 整形側のみ：Gemma（画像OK・音声NG）を選択肢に含める。転写側はflashのみ。
-  includeGemma?: boolean;
+  task: "transcribe" | "refine";
+  // 連動中は転写対応モデルのみ表示する（整形側）。
+  linkActive?: boolean;
 }) {
   const { language, t } = useI18n();
-  const [models, setModels] = useState<{ id: string; vision: boolean }[] | null>(null);
+  type CatalogModel = {
+    id: string;
+    vision?: boolean;
+    audio?: boolean;
+    transcriptionEligible?: boolean;
+    refinementEligible?: boolean;
+  };
+  const [models, setModels] = useState<CatalogModel[] | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      setModels(await invoke<{ id: string; vision: boolean }[]>("list_provider_models", { provider }));
+      setModels(await invoke<CatalogModel[]>("list_provider_models", { provider }));
     } catch (reason) {
       setModels(null);
       setError(localizeBridgeMessage(reason instanceof Error ? reason.message : String(reason), language, t));
@@ -1147,9 +1161,10 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, includeGemma }:
     void load();
   }, [hasKey, load]);
   const visibleModels = (models ?? []).filter((m) => {
-    if (provider !== "gemini") return true;
-    const id = m.id.toLowerCase();
-    return id.includes("flash") || (includeGemma === true && id.includes("gemma"));
+    const eligible = task === "transcribe" ? m.transcriptionEligible === true : m.refinementEligible === true;
+    if (!eligible) return false;
+    if (linkActive === true && m.transcriptionEligible !== true) return false;
+    return true;
   });
   const ids = visibleModels.map((m) => m.id);
   const stale = value !== "" && models !== null && !ids.includes(value);
@@ -1160,6 +1175,7 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, includeGemma }:
       <span>{t("ai.modelSelectDetail")}</span>
       {stale && <small className="api-key-error">{t("ai.modelStale")}</small>}
       {!hasKey && <small>{t("apiKey.notConfigured")}</small>}
+      {linkActive === true && <small>{t("ai.linkHidesModels")}</small>}
       {error && <small className="api-key-error">{error}</small>}
     </div>
     <div className="api-key-actions">
@@ -1167,7 +1183,11 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, includeGemma }:
         <SelectTrigger size="sm" className="settings-select"><SelectValue placeholder={loading ? t("ai.modelsLoading") : t("ai.modelAuto")} /></SelectTrigger>
         <SelectContent>
           <SelectItem value="__auto__">{t("ai.modelAuto")}</SelectItem>
-          {visibleModels.map((m) => <SelectItem value={m.id} key={m.id}>{m.vision ? `${m.id}（${t("ai.modelVision")}）` : m.id}</SelectItem>)}
+          {visibleModels.map((m) => <SelectItem value={m.id} key={m.id}>
+            {m.id}
+            {m.vision === true && <Badge variant="secondary" title={t("ai.modelVisionDetail")}>{t("ai.modelVision")}</Badge>}
+            {m.audio === true && <Badge variant="secondary" title={t("ai.modelAudioDetail")}>{t("ai.modelAudio")}</Badge>}
+          </SelectItem>)}
         </SelectContent>
       </Select>
     </div>
@@ -1582,6 +1602,7 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
             provider="gemini"
             hasKey={apiKeyHints.gemini !== null}
             value={settings.transcriptionModel}
+            task="transcribe"
             onChange={(transcriptionModel) => setSettings((s) => withLinkedTranscriptionModel(s, transcriptionModel))}
           />}
         </Card>
@@ -1632,9 +1653,14 @@ function OnboardingDialog({ dismissible, phase, transcript, level, message, sett
             provider={settings.refinementProvider}
             hasKey={apiKeyHints[settings.refinementProvider] !== null}
             value={settings.refinementModel}
-            includeGemma
+            task="refine"
+            linkActive={settings.linkModels && settings.transcriptionProvider === "gemini" && settings.refinementProvider === "gemini"}
             onChange={(refinementModel) => setSettings((s) => withLinkedRefinementModel(s, refinementModel))}
           />}
+          {settings.transcriptionProvider === "gemini" && settings.refinementProvider === "gemini" && <div className="onboarding-method-row">
+            <div><b>{t("ai.linkModels")}</b><span>{t("ai.linkModelsDetail")}</span></div>
+            <Switch checked={settings.linkModels} onCheckedChange={(linkModels) => setSettings((s) => ({ ...s, linkModels }))} />
+          </div>}
         </Card>}
 
         <Card className="onboarding-section gap-0 py-0">
@@ -1843,17 +1869,19 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
 }
 
 // 両方がGeminiのときは転写・整形で同じモデルを使うよう連動させる。
+// 連動OFFやGemma選択時は独立に動かせる（分岐は値の一致で決める）。
 function withLinkedTranscriptionModel(current: Settings, transcriptionModel: string): Settings {
   return {
     ...current,
     transcriptionModel,
-    ...(current.refinementProvider === "gemini" ? { refinementModel: transcriptionModel } : {}),
+    ...(current.linkModels && current.refinementProvider === "gemini" ? { refinementModel: transcriptionModel } : {}),
   };
 }
 
 function withLinkedRefinementModel(current: Settings, refinementModel: string): Settings {
-  // Gemmaは音声非対応のため転写側には連動させない。
-  const linkable = current.transcriptionProvider === "gemini"
+  // Gemmaは音声非対応のため転写側には連動させない（結合ルートの成立条件を保つ）。
+  const linkable = current.linkModels
+    && current.transcriptionProvider === "gemini"
     && !refinementModel.toLowerCase().includes("gemma");
   return {
     ...current,
@@ -2147,6 +2175,10 @@ function normalizeSettings(stored: unknown): Settings {
   const transcriptionModel = typeof legacy.transcriptionModel === "string"
     ? legacy.transcriptionModel.slice(0, 120)
     : DEFAULT_SETTINGS.transcriptionModel;
+  // 連動フラグの移行：値が一致している既存設定だけオンにする。
+  const linkModels = typeof legacy.linkModels === "boolean"
+    ? legacy.linkModels
+    : transcriptionModel === refinementModel;
   const screenshotContext = typeof legacy.screenshotContext === "boolean"
     ? legacy.screenshotContext
     : DEFAULT_SETTINGS.screenshotContext;
@@ -2162,7 +2194,7 @@ function normalizeSettings(stored: unknown): Settings {
     customPrompts[DEFAULT_PROMPT_KEY] = defaultRefinementPrompt(resolveUiLanguage(appLanguage));
   }
   const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, ...current } = legacy;
-  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, screenshotContext, promptDefaultsVersion: 1, customPrompts };
+  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, linkModels, screenshotContext, promptDefaultsVersion: 1, customPrompts };
   if (legacy.appLanguage === undefined) {
     return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
   }

@@ -167,9 +167,9 @@ pub fn api_key_present(provider: String) -> Result<bool, String> {
 
 /// モデル能力規則（集約）。モデル別の振る舞い差異はここに集める。
 /// - 画像添付可否: model_supports_vision（Geminiは全対応、Groqは既知IDのみ）
-/// - 音声入力可否: model_supports_audio（Gemma 26B/31Bは非対応）
-/// - 抽出対象: is_gemini_flash_text_model（動的フォールバック用。
-///   UI側 RefineModelCatalog の flash 絞り込みと同規則。変えたら両方直すこと）
+/// - 音声入力可否: model_supports_audio（provider別。未知はfalse）
+/// - 一覧表示可否: model_transcription_eligible / model_refinement_eligible
+///   （UIの一覧フィルタはこの返却値に従う。ID文字列判定をUIに書かないこと）
 /// - 思考設定: gemini_generation_config 内の世代分岐
 ///   （2.5系=thinkingBudget:0、3.x系=thinkingLevel:minimal、世代不明lite系=省略、
 ///   その他エイリアス=budget:0試行。拒否時は400フォールバックで次へ進む）
@@ -211,6 +211,9 @@ fn is_fallback_status(status: reqwest::StatusCode) -> bool {
 pub struct ModelInfo {
     id: String,
     vision: bool,
+    audio: bool,
+    transcription_eligible: bool,
+    refinement_eligible: bool,
 }
 
 #[tauri::command]
@@ -233,7 +236,10 @@ pub async fn list_provider_models(
         .into_iter()
         .map(|id| {
             let vision = model_supports_vision(&provider, &id);
-            ModelInfo { id, vision }
+            let audio = model_supports_audio(&provider, &id);
+            let transcription_eligible = model_transcription_eligible(&provider, &id);
+            let refinement_eligible = model_refinement_eligible(&provider, &id);
+            ModelInfo { id, vision, audio, transcription_eligible, refinement_eligible }
         })
         .collect())
 }
@@ -415,11 +421,34 @@ fn is_gemini_flash_text_model(id: &str) -> bool {
     lower.contains("flash") && !lower.contains("image") && is_refine_candidate(id)
 }
 
-/// 音声入力に対応するモデルか。Gemma 26B/31Bに音声エンコーダはない。
-/// 転写・結合経路では音声非対応モデルを候補から外す。
-fn model_supports_audio(id: &str) -> bool {
+/// 音声入力に対応するモデルか。「このモデル自身が音声入力を受け取れる」の意味。
+/// 未知モデルはfalse（安全側）。転写・結合経路では非対応を候補から外す。
+fn model_supports_audio(provider: &str, id: &str) -> bool {
     let lower = id.to_lowercase();
-    !(lower.contains("gemma-4-26b") || lower.contains("gemma-4-31b"))
+    match provider {
+        "gemini" => lower.contains("flash") && !lower.contains("image"),
+        "groq" => lower.contains("whisper"),
+        _ => false,
+    }
+}
+
+/// 整形に使えるモデルか（UIの一覧表示用）。
+fn model_refinement_eligible(provider: &str, id: &str) -> bool {
+    match provider {
+        "gemini" => {
+            let lower = id.to_lowercase();
+            (lower.contains("flash") || lower.contains("gemma"))
+                && !lower.contains("image")
+                && is_refine_candidate(id)
+        }
+        "groq" => is_refine_candidate(id),
+        _ => false,
+    }
+}
+
+/// 転写モデル選択に使えるモデルか（UIの一覧表示用）。
+fn model_transcription_eligible(provider: &str, id: &str) -> bool {
+    model_supports_audio(provider, id) && is_refine_candidate(id)
 }
 
 /// 動的フォールバックの候補か。一覧からflash系だけ拾う。
@@ -537,6 +566,8 @@ pub async fn cloud_transcribe_refine(
             models.push(m.to_string());
         }
     }
+    // 音声非対応モデルは結合ルートで試さない（フロントでも弾くが保険）。
+    models.retain(|m| model_supports_audio("gemini", m));
     let mut last_error = "cloud.gemini_failed".to_string();
     let mut fell_back_from: Option<String> = None;
     let mut dynamic_done = false;
@@ -730,7 +761,6 @@ pub async fn cloud_refine(
 
 struct GroqError {
     message: String,
-    fallback: bool,
 }
 
 /// モデル別のreasoning設定。GPT-OSS以外にlow等を送ると400になる。
@@ -784,21 +814,16 @@ async fn stream_groq_refinement(
         .await
         .map_err(|_| GroqError {
             message: "cloud.groq_connect".into(),
-            fallback: true,
         })?;
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         return Err(GroqError {
             message: "cloud.groq_key".into(),
-            fallback: false,
         });
     }
     if !status.is_success() {
         return Err(GroqError {
             message: format!("cloud.groq_failed:{}", status.as_u16()),
-            fallback: status == reqwest::StatusCode::NOT_FOUND
-                || status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                || status.is_server_error(),
         });
     }
 
@@ -807,7 +832,6 @@ async fn stream_groq_refinement(
     let mut text = String::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| GroqError {
         message: "cloud.stream_stopped".into(),
-        fallback: text.is_empty(),
     })? {
         pending.extend_from_slice(&chunk);
         while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
@@ -822,7 +846,6 @@ async fn stream_groq_refinement(
     if text.is_empty() {
         return Err(GroqError {
             message: "cloud.no_speech".into(),
-            fallback: true,
         });
     }
     Ok(text)
@@ -981,7 +1004,7 @@ async fn gemini_transcribe(
     // 音声非対応モデル（Gemma 26B/31B等）は転写では試さない。
     let mut models: Vec<String> = gemini_chain(model)
         .into_iter()
-        .filter(|m| model_supports_audio(m))
+        .filter(|m| model_supports_audio("gemini", m))
         .collect();
     let mut dynamic_done = false;
     let mut i = 0;
@@ -1375,10 +1398,24 @@ mod tests {
         // Gemma 26B/31B は思考パラメータも音声入力も非対応。
         let gen = gemini_generation_config(false, "gemma-4-31b-it");
         assert!(gen.get("thinkingConfig").is_none());
-        assert!(!model_supports_audio("gemma-4-26b-a4b-it"));
-        assert!(!model_supports_audio("gemma-4-31b-it"));
-        assert!(model_supports_audio("gemini-2.5-flash"));
-        assert!(model_supports_audio("gemini-3.5-flash"));
+        assert!(!model_supports_audio("gemini", "gemma-4-26b-a4b-it"));
+        assert!(!model_supports_audio("gemini", "gemma-4-31b-it"));
+        assert!(model_supports_audio("gemini", "gemini-2.5-flash"));
+        assert!(model_supports_audio("gemini", "gemini-3.5-flash"));
+        assert!(model_supports_audio("groq", "whisper-large-v3-turbo"));
+        assert!(!model_supports_audio("groq", "openai/gpt-oss-120b"));
+        assert!(!model_supports_audio("unknown", "anything"));
+    }
+
+    #[test]
+    fn model_eligibility_matches_task() {
+        assert!(model_transcription_eligible("gemini", "gemini-2.5-flash"));
+        assert!(!model_transcription_eligible("gemini", "gemma-4-31b-it"));
+        assert!(model_refinement_eligible("gemini", "gemma-4-31b-it"));
+        assert!(model_refinement_eligible("gemini", "gemini-2.5-flash"));
+        assert!(!model_refinement_eligible("gemini", "gemini-3.1-flash-image-preview"));
+        assert!(model_refinement_eligible("groq", "openai/gpt-oss-120b"));
+        assert!(!model_refinement_eligible("groq", "whisper-large-v3-turbo"));
     }
 
     #[test]
