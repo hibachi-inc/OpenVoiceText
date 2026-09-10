@@ -14,7 +14,12 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 
 const KEYCHAIN_SERVICE: &str = "com.hibachi.voicelatte.cloud";
-const GEMINI_MODELS: [&str; 2] = ["gemini-flash-latest", "gemini-flash-lite-latest"];
+const GEMINI_MODELS: [&str; 4] = [
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+];
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
 const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
 const GEMINI_MAX_AUDIO_BYTES: usize = 14_000_000;
@@ -554,11 +559,17 @@ pub async fn cloud_transcribe_refine(
 }
 
 /// Geminiの生成設定。結合ルートではJSON強制モード＋スキーマで形を固定する。
-/// thinkingBudget:0 は Lite 系（Gemini 3世代）で400になるため付けない。
-/// 非Liteは思考オフで安く速くする。
+/// 思考設定は世代別：2.5系はthinkingBudget:0、3.x系はthinkingLevel:minimal、
+/// 世代不明のlite系は省略、その他のエイリアス等は従来通りbudget:0を試す
+/// （拒否されたら400フォールバックで次へ進む）。
 fn gemini_generation_config(json_output: bool, model: &str) -> Value {
     let mut config = json!({ "temperature": 0 });
-    if !model.to_lowercase().contains("lite") {
+    let lower = model.to_lowercase();
+    if lower.contains("2.5") {
+        config["thinkingConfig"] = json!({ "thinkingBudget": 0 });
+    } else if lower.contains("3.") {
+        config["thinkingConfig"] = json!({ "thinkingLevel": "minimal" });
+    } else if !lower.contains("lite") {
         config["thinkingConfig"] = json!({ "thinkingBudget": 0 });
     }
     if json_output {
@@ -1232,9 +1243,15 @@ mod tests {
 
     #[test]
     fn gemini_fallback_chain_is_stable() {
+        // 安い順：2.5 Lite → 2.5 → 3.5 Lite → 3.5。
         assert_eq!(
             GEMINI_MODELS,
-            ["gemini-flash-latest", "gemini-flash-lite-latest"]
+            [
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash",
+            ]
         );
     }
 
@@ -1242,15 +1259,31 @@ mod tests {
     fn gemini_chain_puts_explicit_model_first() {
         assert_eq!(
             gemini_chain(None),
-            ["gemini-flash-latest", "gemini-flash-lite-latest"]
+            [
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash",
+            ]
         );
         assert_eq!(
             gemini_chain(Some("custom-model".into())),
-            ["custom-model", "gemini-flash-latest", "gemini-flash-lite-latest"]
+            [
+                "custom-model",
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash",
+            ]
         );
         assert_eq!(
-            gemini_chain(Some("gemini-flash-lite-latest".into())),
-            ["gemini-flash-lite-latest", "gemini-flash-latest"]
+            gemini_chain(Some("gemini-2.5-flash".into())),
+            [
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash",
+            ]
         );
     }
 
@@ -1304,12 +1337,22 @@ mod tests {
     }
 
     #[test]
-    fn gemini_lite_omits_thinking_budget() {
-        // Lite系（Gemini 3世代）は thinkingBudget:0 で400になる。
-        let lite = gemini_generation_config(false, "gemini-flash-lite-latest");
-        assert!(lite.get("thinkingConfig").is_none());
-        let full = gemini_generation_config(false, "gemini-flash-latest");
-        assert!(full.get("thinkingConfig").is_some());
+    fn gemini_thinking_config_matches_generation() {
+        // 2.5系はthinkingBudget:0、3.x系はthinkingLevel:minimal、
+        // 世代不明のlite系は省略、その他は従来通りbudget:0。
+        let lite25 = gemini_generation_config(false, "gemini-2.5-flash-lite");
+        assert_eq!(lite25["thinkingConfig"]["thinkingBudget"], json!(0));
+        let full25 = gemini_generation_config(false, "gemini-2.5-flash");
+        assert_eq!(full25["thinkingConfig"]["thinkingBudget"], json!(0));
+        let lite35 = gemini_generation_config(false, "gemini-3.5-flash-lite");
+        assert_eq!(lite35["thinkingConfig"]["thinkingLevel"], json!("minimal"));
+        assert!(lite35["thinkingConfig"].get("thinkingBudget").is_none());
+        let full35 = gemini_generation_config(false, "gemini-3.5-flash");
+        assert_eq!(full35["thinkingConfig"]["thinkingLevel"], json!("minimal"));
+        let alias_lite = gemini_generation_config(false, "gemini-flash-lite-latest");
+        assert!(alias_lite.get("thinkingConfig").is_none());
+        let alias = gemini_generation_config(false, "gemini-flash-latest");
+        assert_eq!(alias["thinkingConfig"]["thinkingBudget"], json!(0));
     }
 
     #[test]
