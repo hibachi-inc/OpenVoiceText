@@ -1492,10 +1492,40 @@ function XMark() {
   return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" /></svg>;
 }
 
+function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; version: string; onClose: () => void }) {
+  const { t } = useI18n();
+  const [summary, setSummary] = useState("");
+  const [copied, setCopied] = useState(false);
+  const template = kind === "bug" ? "bug_report.yml" : "feature_request.yml";
+  const copy = async () => {
+    const prompt = t(kind === "bug" ? "about.reportPromptBug" : "about.reportPromptRequest", {
+      summary: summary.trim() || t("about.reportNoSummary"),
+      version: version || "?",
+    });
+    try { await navigator.clipboard.writeText(prompt); } catch { return; }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  };
+  return <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <DialogContent className="modal sm:max-w-[480px]">
+      <DialogHeader>
+        <DialogTitle>{t(kind === "bug" ? "about.reportBugTitle" : "about.reportRequestTitle")}</DialogTitle>
+        <DialogDescription>{t("about.reportHint")}</DialogDescription>
+      </DialogHeader>
+      <Textarea value={summary} placeholder={t("about.reportSummaryPlaceholder")} onChange={(e) => setSummary(e.target.value)} rows={3} />
+      <DialogFooter className="dialog-actions">
+        <Button variant="outline" onClick={() => void invoke("open_url", { url: `https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=${template}` }).catch(() => undefined)}>{t("about.reportManual")}</Button>
+        <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("about.reportCopied") : t("about.reportCopy")}</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
+}
+
 function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onToggleDebugMode }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void; debugMode: boolean; onToggleDebugMode: (debugMode: boolean) => void }) {
   const { t } = useI18n();
   const [version, setVersion] = useState("");
   const [logOpen, setLogOpen] = useState(false);
+  const [reportKind, setReportKind] = useState<null | "bug" | "request">(null);
   useEffect(() => { void getVersion().then(setVersion).catch(() => undefined); }, []);
   const openExternal = (url: string) => () => void invoke("open_url", { url }).catch(() => undefined);
   return <>
@@ -1518,12 +1548,12 @@ function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onToggleDeb
         <span><b>OpenVoiceText</b><small>hibachi-inc/OpenVoiceText</small></span>
         <ChevronRight className="chevron" />
       </Button>
-      <Button variant="ghost" className="refine-strip h-auto" onClick={openExternal("https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=bug_report.yml")}>
+      <Button variant="ghost" className="refine-strip h-auto" onClick={() => setReportKind("bug")}>
         <span className="strip-icon"><Bug /></span>
         <span><b>{t("about.bugReport")}</b><small>{t("about.bugReportDetail")}</small></span>
         <ChevronRight className="chevron" />
       </Button>
-      <Button variant="ghost" className="refine-strip h-auto" onClick={openExternal("https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=feature_request.yml")}>
+      <Button variant="ghost" className="refine-strip h-auto" onClick={() => setReportKind("request")}>
         <span className="strip-icon"><Lightbulb /></span>
         <span><b>{t("about.featureRequest")}</b><small>{t("about.featureRequestDetail")}</small></span>
         <ChevronRight className="chevron" />
@@ -1536,6 +1566,7 @@ function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onToggleDeb
       </Button>
     </div>
     <SettingRow label={t("about.debugMode")} detail={t("about.debugModeDetail")}><Switch checked={debugMode} onCheckedChange={onToggleDebugMode} /></SettingRow>
+    {reportKind && <ReportDialog kind={reportKind} version={version} onClose={() => setReportKind(null)} />}
   </>;
 }
 
