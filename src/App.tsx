@@ -1189,10 +1189,6 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, task, linkActiv
     }
     void load();
   }, [hasKey, load]);
-  // 一時診断：プルダウン不応の切り分け用。原因特定後に消す。
-  useEffect(() => {
-    appLog.info("catalog", `${provider}/${task} hasKey=${hasKey} models=${models === null ? "null" : models.length} value=${value}`);
-  }, [provider, task, hasKey, models, value]);
   const visibleModels = (models ?? []).filter((m) => {
     const eligible = task === "transcribe" ? m.transcriptionEligible === true : m.refinementEligible === true;
     if (!eligible) return false;
@@ -1219,7 +1215,7 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, task, linkActiv
     <div className="api-key-actions">
       <Select value={selectValue} disabled={!hasKey || models === null} onValueChange={(v) => onChange(v === "__auto__" ? "" : v)} onOpenChange={(open) => appLog.info("catalog", `${provider}/${task} dropdown open=${open}`)}>
         <SelectTrigger size="sm" className="settings-select"><span className="model-trigger-label">{triggerLabel}</span></SelectTrigger>
-        <SelectContent>
+        <SelectContent position="popper" sideOffset={4} align="start">
           <SelectItem value="__auto__">{t("ai.modelAuto")}</SelectItem>
           {visibleModels.map((m) => <SelectItem value={m.id} key={m.id}>
             <span className="model-option"><span className="model-option-id">{m.id}</span>
