@@ -22,7 +22,7 @@
 ---
 
 <p align="center">
-  <video src="https://raw.githubusercontent.com/hibachi-inc/OpenVoiceText/main/assets/demo.mp4" width="860" controls></video>
+  <video src="https://github.com/user-attachments/assets/aa8930ee-a219-4eea-9b18-37c88dd65abd" width="860" controls></video>
 </p>
 
 ## ✨ Features
