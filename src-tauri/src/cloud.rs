@@ -187,6 +187,8 @@ pub fn api_key_present(provider: String) -> Result<bool, String> {
 
 /// モデル能力規則（集約）。モデル別の振る舞い差異はここに集める。
 /// - 画像添付可否: model_supports_vision（Geminiは全対応、Groqは既知IDのみ）
+/// - 添付時のテキスト省略: image_will_attach（画像と画面テキストの重複排除。
+///   stream側の添付条件と一致させること）
 /// - 音声入力可否: model_supports_audio（provider別。未知はfalse）
 /// - 一覧表示可否: model_transcription_eligible / model_refinement_eligible
 ///   （UIの一覧フィルタはこの返却値に従う。ID文字列判定をUIに書かないこと）
@@ -434,6 +436,27 @@ fn gemini_chain(explicit: Option<String>) -> Vec<String> {
     models
 }
 
+/// 画像添付が見込まれるか。見込まれる場合は画面テキストを送らない。
+/// stream側の添付条件（サイズ＋vision）と一致させること。
+/// 画像つきの判断材料が二重になると順序なし・鮮度違いの重複で精度が落ちるため。
+fn image_will_attach(provider: &str, explicit_model: Option<&str>, image: &Option<String>) -> bool {
+    let ok = image
+        .as_deref()
+        .map(|s| !s.is_empty() && s.len() <= 1_400_000)
+        .unwrap_or(false);
+    if !ok {
+        return false;
+    }
+    match provider {
+        "gemini" => true,
+        "groq" => {
+            let m = explicit_model.unwrap_or(GROQ_DEFAULT_MODEL);
+            model_supports_vision("groq", m)
+        }
+        _ => false,
+    }
+}
+
 /// Geminiの動的フォールバック対象（flash系テキストモデル）。
 /// UI側の一覧フィルタと同規則。変えたら両方直すこと。
 fn is_gemini_flash_text_model(id: &str) -> bool {
@@ -572,6 +595,12 @@ pub async fn cloud_transcribe_refine(
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|_| "cloud.connect".to_string())?;
+    // 画像添付が見込まれる場合は画面テキストを送らない（重複・矛盾の元）。
+    let screen_context = if image_will_attach("gemini", model.as_deref(), &image) {
+        String::new()
+    } else {
+        screen_context
+    };
     let audio = BASE64.encode(audio);
     let instruction = format!(
         "Transcribe the attached audio in {locale}, then apply the refinement instruction below to the transcript. Return ONLY a JSON object like {{\"transcript\": \"...\", \"refined\": \"...\"}} holding the raw transcript and the refined text. Do not add explanations.\n\n{prompt}"
@@ -725,6 +754,13 @@ pub async fn cloud_refine(
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|_| "cloud.connect".to_string())?;
+    // 画像添付が見込まれる場合は画面テキストを送らない（重複・矛盾の元）。
+    // 履歴への保存は呼び出し側で行うため確認用途には残る。
+    let screen_context = if image_will_attach(&provider, model.as_deref(), &image) {
+        String::new()
+    } else {
+        screen_context
+    };
     let input = refinement_input(&prompt, &text, &screen_context);
     // 設定画面で明示指定があれば先頭に足す。失敗時は内蔵チェーンに委ね、呼び出し側はlocalへさらに委ねる。
     // 内蔵候補との重複は除く。
@@ -1502,6 +1538,21 @@ mod tests {
         assert!(line.contains("12ms"));
         let plain = diag_gemini_line("m", 0, None, "image/jpeg", false, "503", 3);
         assert!(plain.contains("image=-"));
+    }
+
+    #[test]
+    fn image_attach_supersedes_screen_text() {
+        let big = Some("x".repeat(100));
+        let huge = Some("x".repeat(1_400_001));
+        assert!(image_will_attach("gemini", None, &big));
+        assert!(!image_will_attach("gemini", None, &None));
+        assert!(!image_will_attach("gemini", None, &huge));
+        assert!(!image_will_attach("gemini", None, &Some(String::new())));
+        // Groqはvision対応モデルのときだけ省く。
+        assert!(image_will_attach("groq", Some("qwen/qwen3.6-27b"), &big));
+        assert!(!image_will_attach("groq", Some("openai/gpt-oss-120b"), &big));
+        assert!(!image_will_attach("groq", None, &big));
+        assert!(!image_will_attach("local", None, &big));
     }
 
     #[test]
