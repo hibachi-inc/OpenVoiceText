@@ -9,8 +9,8 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import {
-  AlertCircle, ArrowDown, AtSign, Bug, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
-  Download, ExternalLink, Info, Keyboard, Lightbulb, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
+  AlertCircle, ArrowDown, Bug, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
+  Download, Info, Keyboard, Lightbulb, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -1482,41 +1482,60 @@ function ShortcutRecorder({ value, active, disabled = false, onStart, onChange }
   return <Button variant="outline" size="sm" disabled={disabled} className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? t("shortcuts.press") : prettyShortcut(value)}</Button>;
 }
 
+function GithubMark() {
+  return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>;
+}
+
+function XMark() {
+  return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" /></svg>;
+}
+
 function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void }) {
   const { t } = useI18n();
   const [version, setVersion] = useState("");
   const [logOpen, setLogOpen] = useState(false);
   useEffect(() => { void getVersion().then(setVersion).catch(() => undefined); }, []);
-  return <Card className="glass-card about gap-0 py-0">
-    <img className="about-character" src={voicelatteCow} alt="" />
-    <b>Voice Latte</b>
-    <p>{t("about.tagline")}</p>
-    <small>{version ? t("about.version", { version }) : ""}</small>
-    <UpdateRow state={update} onCheck={() => void runUpdateCheck(setUpdate, true)} onInstall={() => void installUpdate(update, setUpdate)} />
-    <div className="about-sections">
-      <div className="about-group">
-        <span className="about-label">{t("about.sectionAbout")}</span>
-        <div className="about-actions">
-          <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText" }).catch(() => undefined)}><ExternalLink />GitHub</Button>
-        </div>
-      </div>
-      <div className="about-actions">
-        <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=bug_report.yml" }).catch(() => undefined)}><Bug />{t("about.bugReport")}</Button>
-        <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=feature_request.yml" }).catch(() => undefined)}><Lightbulb />{t("about.featureRequest")}</Button>
-      </div>
-      <div className="about-group">
-        <span className="about-label">{t("about.maintainer")}</span>
-        <div className="about-actions">
-          <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://x.com/tanakaisworking" }).catch(() => undefined)}><AtSign />tanakaisworking</Button>
-        </div>
-      </div>
+  const openExternal = (url: string) => () => void invoke("open_url", { url }).catch(() => undefined);
+  return <>
+    <Card className="glass-card about gap-0 py-0">
+      <img className="about-character" src={voicelatteCow} alt="" />
+      <b>Voice Latte</b>
+      <p>{t("about.tagline")}</p>
+      <small>{version ? t("about.version", { version }) : ""}</small>
+      <UpdateRow state={update} onCheck={() => void runUpdateCheck(setUpdate, true)} onInstall={() => void installUpdate(update, setUpdate)} />
       <div className="about-actions">
         <Button variant="outline" size="sm" className="about-setup" onClick={onOpenOnboarding}><Settings2 />{t("about.openOnboarding")}</Button>
         <Button variant="outline" size="sm" className="about-setup" onClick={() => setLogOpen(true)}>{t("general.errorLog")}</Button>
       </div>
+      {logOpen && <LogDialog onClose={() => setLogOpen(false)} />}
+    </Card>
+    <div className="about-groups">
+      <span className="settings-group-label">{t("about.sectionAbout")}</span>
+      <Button variant="ghost" className="refine-strip h-auto" onClick={openExternal("https://github.com/hibachi-inc/OpenVoiceText")}>
+        <span className="strip-icon brand"><GithubMark /></span>
+        <span><b>OpenVoiceText</b><small>hibachi-inc/OpenVoiceText</small></span>
+        <ChevronRight className="chevron" />
+      </Button>
+      <span className="settings-group-label">{t("about.bugReport")}</span>
+      <Button variant="ghost" className="refine-strip h-auto" onClick={openExternal("https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=bug_report.yml")}>
+        <span className="strip-icon"><Bug /></span>
+        <span><b>{t("about.bugReport")}</b><small>{t("about.bugReportDetail")}</small></span>
+        <ChevronRight className="chevron" />
+      </Button>
+      <span className="settings-group-label">{t("about.featureRequest")}</span>
+      <Button variant="ghost" className="refine-strip h-auto" onClick={openExternal("https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=feature_request.yml")}>
+        <span className="strip-icon"><Lightbulb /></span>
+        <span><b>{t("about.featureRequest")}</b><small>{t("about.featureRequestDetail")}</small></span>
+        <ChevronRight className="chevron" />
+      </Button>
+      <span className="settings-group-label">{t("about.maintainer")}</span>
+      <Button variant="ghost" className="refine-strip h-auto" onClick={openExternal("https://x.com/tanakaisworking")}>
+        <span className="strip-icon brand"><XMark /></span>
+        <span><b>@tanakaisworking</b><small>{t("about.maintainerDetail")}</small></span>
+        <ChevronRight className="chevron" />
+      </Button>
     </div>
-    {logOpen && <LogDialog onClose={() => setLogOpen(false)} />}
-  </Card>;
+  </>;
 }
 
 type UpdateState =

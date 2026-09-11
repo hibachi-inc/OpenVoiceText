@@ -151,10 +151,12 @@ body {
 .about-setup { margin-top: 18px; }
 .about-actions { display: flex; gap: 8px; margin-top: 18px; }
 .about-actions .about-setup { margin-top: 0; }
-.about-sections { display: grid; gap: 14px; justify-items: center; margin-top: 18px; }
-.about-sections .about-actions { margin-top: 0; }
-.about-group { display: grid; gap: 6px; justify-items: center; }
-.about-label { color: #9a9ca0; font-size: 11px; }
+.about-groups { display: grid; gap: 8px; margin-top: 14px; }
+.about-groups .settings-group-label { margin: 8px 5px -4px; }
+.about-groups .settings-group-label:first-child { margin-top: 0; }
+.about-groups .refine-strip { margin-top: 0; }
+.strip-icon.brand { color: #1f2328; }
+.strip-icon.brand svg { width: 15px; height: 15px; fill: currentColor; stroke: none; }
 
 .modal.onboarding-modal { width: min(560px, calc(100% - 32px)); }
 .onboarding-sections { display: grid; gap: 10px; }
