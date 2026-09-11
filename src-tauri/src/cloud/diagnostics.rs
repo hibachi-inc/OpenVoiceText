@@ -8,7 +8,9 @@ fn diag_log(app: &AppHandle, line: String) {
     };
     let _ = std::fs::create_dir_all(&dir);
     let path = dir.join("diagnostics.log");
-    let append = std::fs::metadata(&path).map(|m| m.len() < 1_000_000).unwrap_or(true);
+    let append = std::fs::metadata(&path)
+        .map(|m| m.len() < 1_000_000)
+        .unwrap_or(true);
     let mut opts = std::fs::OpenOptions::new();
     opts.create(true);
     if append {

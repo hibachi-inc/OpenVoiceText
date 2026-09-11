@@ -53,21 +53,25 @@ async fn stream_groq_refinement(
         .json(&body)
         .send()
         .await;
-    diag_log(app, format!(
-        "groq model={} image={} status={} {}ms",
-        model,
-        image.map(|i| format!("{}B", i.len())).unwrap_or_else(|| "-".into()),
-        match &response {
-            Ok(r) => r.status().to_string(),
-            Err(_) => "connect-fail".into(),
-        },
-        started.elapsed().as_millis(),
-    ));
-    let response = response
-        .map_err(|_| GroqError {
-            message: "cloud.groq_connect".into(),
-            fallback: true,
-        })?;
+    diag_log(
+        app,
+        format!(
+            "groq model={} image={} status={} {}ms",
+            model,
+            image
+                .map(|i| format!("{}B", i.len()))
+                .unwrap_or_else(|| "-".into()),
+            match &response {
+                Ok(r) => r.status().to_string(),
+                Err(_) => "connect-fail".into(),
+            },
+            started.elapsed().as_millis(),
+        ),
+    );
+    let response = response.map_err(|_| GroqError {
+        message: "cloud.groq_connect".into(),
+        fallback: true,
+    })?;
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
         return Err(GroqError {
@@ -77,8 +81,8 @@ async fn stream_groq_refinement(
     }
     if !status.is_success() {
         // 鍵系以外は次モデルへ進める（Qwen同士の混雑回避を含む）。
-        let fallback = status != reqwest::StatusCode::UNAUTHORIZED
-            && status != reqwest::StatusCode::FORBIDDEN;
+        let fallback =
+            status != reqwest::StatusCode::UNAUTHORIZED && status != reqwest::StatusCode::FORBIDDEN;
         return Err(GroqError {
             message: format!("cloud.groq_failed:{}", status.as_u16()),
             fallback,
@@ -91,7 +95,9 @@ async fn stream_groq_refinement(
     // チャンクが一定時間来なければ停滞とみなして打ち切る（次モデルへ）。
     // 整形のみのGroq経路は15秒。
     loop {
-        let chunk = match tokio::time::timeout(std::time::Duration::from_secs(15), response.chunk()).await {
+        let chunk = match tokio::time::timeout(std::time::Duration::from_secs(15), response.chunk())
+            .await
+        {
             Ok(Ok(chunk)) => chunk,
             Ok(Err(_)) | Err(_) => {
                 return Err(GroqError {

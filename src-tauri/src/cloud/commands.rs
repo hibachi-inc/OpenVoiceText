@@ -129,7 +129,7 @@ pub async fn cloud_transcribe_refine(
                     model,
                     raw: transcript,
                     fallback_from: fell_back_from,
-                })
+                });
             }
             Err(error) if error.fallback => {
                 if fell_back_from.is_none() {
@@ -190,7 +190,9 @@ pub async fn cloud_refine(
             let mut i = 0;
             while i < models.len() {
                 let model = models[i].clone();
-                match stream_groq_refinement(&client, &key, &model, &input, image.as_deref(), &app).await {
+                match stream_groq_refinement(&client, &key, &model, &input, image.as_deref(), &app)
+                    .await
+                {
                     Ok(text) => {
                         return Ok(CloudResult {
                             text,
@@ -219,14 +221,27 @@ pub async fn cloud_refine(
             let mut i = 0;
             while i < models.len() {
                 let model = models[i].clone();
-                match stream_gemini_model(&client, &key, &model, None, &input, "", image.as_deref(), &sanitize_image_mime(image_mime.clone()), false, &app).await {
+                match stream_gemini_model(
+                    &client,
+                    &key,
+                    &model,
+                    None,
+                    &input,
+                    "",
+                    image.as_deref(),
+                    &sanitize_image_mime(image_mime.clone()),
+                    false,
+                    &app,
+                )
+                .await
+                {
                     Ok(text) => {
-                return Ok(CloudResult {
-                    text,
-                    model,
-                    raw: None,
-                    fallback_from: fell_back_from,
-                })
+                        return Ok(CloudResult {
+                            text,
+                            model,
+                            raw: None,
+                            fallback_from: fell_back_from,
+                        })
                     }
                     Err(error) if error.fallback => {
                         if fell_back_from.is_none() {

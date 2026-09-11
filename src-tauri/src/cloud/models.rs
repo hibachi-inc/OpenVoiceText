@@ -44,10 +44,7 @@ fn groq_refine_chain(explicit: Option<String>) -> Vec<String> {
 fn model_supports_vision(provider: &str, model: &str) -> bool {
     match provider {
         "gemini" => true,
-        "groq" => matches!(
-            model,
-            "qwen/qwen3.6-27b" | "qwen/qwen3.8-27b"
-        ),
+        "groq" => matches!(model, "qwen/qwen3.6-27b" | "qwen/qwen3.8-27b"),
         _ => false,
     }
 }
@@ -103,7 +100,13 @@ pub async fn list_provider_models(
             let audio = model_supports_audio(&provider, &id);
             let transcription_eligible = model_transcription_eligible(&provider, &id);
             let refinement_eligible = model_refinement_eligible(&provider, &id);
-            ModelInfo { id, vision, audio, transcription_eligible, refinement_eligible }
+            ModelInfo {
+                id,
+                vision,
+                audio,
+                transcription_eligible,
+                refinement_eligible,
+            }
         })
         .collect())
 }
@@ -156,7 +159,9 @@ fn gemini_model_ids(body: &Value) -> Vec<String> {
                     item.get("supportedGenerationMethods")
                         .and_then(Value::as_array)
                         .is_some_and(|methods| {
-                            methods.iter().any(|m| m.as_str() == Some("generateContent"))
+                            methods
+                                .iter()
+                                .any(|m| m.as_str() == Some("generateContent"))
                         })
                 })
                 .filter_map(|item| item.get("name")?.as_str())
@@ -171,10 +176,7 @@ fn gemini_model_ids(body: &Value) -> Vec<String> {
     ids
 }
 
-async fn list_groq_models(
-    client: &reqwest::Client,
-    key: &str,
-) -> Result<Vec<String>, String> {
+async fn list_groq_models(client: &reqwest::Client, key: &str) -> Result<Vec<String>, String> {
     let response = client
         .get("https://api.groq.com/openai/v1/models")
         .bearer_auth(key)
@@ -195,10 +197,7 @@ async fn list_groq_models(
     Ok(groq_model_ids(&body))
 }
 
-async fn list_gemini_models(
-    client: &reqwest::Client,
-    key: &str,
-) -> Result<Vec<String>, String> {
+async fn list_gemini_models(client: &reqwest::Client, key: &str) -> Result<Vec<String>, String> {
     let response = client
         .get("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200")
         .header("x-goog-api-key", key)
@@ -225,7 +224,10 @@ async fn list_gemini_models(
 /// 明示モデルを先頭にしたGeminiチェーン。重複は除く。
 fn gemini_chain(explicit: Option<String>) -> Vec<String> {
     let mut models = Vec::new();
-    if let Some(m) = explicit.map(|m| m.trim().to_string()).filter(|m| !m.is_empty()) {
+    if let Some(m) = explicit
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+    {
         models.push(m);
     }
     for m in GEMINI_MODELS {

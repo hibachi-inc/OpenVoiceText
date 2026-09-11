@@ -55,13 +55,25 @@ mod tests {
     #[test]
     fn dynamic_fallback_picks_untried_flash_models() {
         let tried = vec!["gemini-flash-latest".to_string()];
-        assert!(is_dynamic_fallback_candidate("gemini-flash-lite-latest", &tried));
+        assert!(is_dynamic_fallback_candidate(
+            "gemini-flash-lite-latest",
+            &tried
+        ));
         assert!(is_dynamic_fallback_candidate("gemini-2.5-flash", &tried));
         // Tried, non-flash, and image models are excluded.
-        assert!(!is_dynamic_fallback_candidate("gemini-flash-latest", &tried));
+        assert!(!is_dynamic_fallback_candidate(
+            "gemini-flash-latest",
+            &tried
+        ));
         assert!(!is_dynamic_fallback_candidate("gemini-2.5-pro", &tried));
-        assert!(!is_dynamic_fallback_candidate("gemini-3.1-flash-image-preview", &tried));
-        assert!(!is_dynamic_fallback_candidate("whisper-large-v3-turbo", &tried));
+        assert!(!is_dynamic_fallback_candidate(
+            "gemini-3.1-flash-image-preview",
+            &tried
+        ));
+        assert!(!is_dynamic_fallback_candidate(
+            "whisper-large-v3-turbo",
+            &tried
+        ));
     }
 
     #[test]
@@ -102,7 +114,11 @@ mod tests {
         assert!(!image_will_attach("gemini", None, &Some(String::new())));
         // Groqはvision対応モデルのときだけ省く。
         assert!(image_will_attach("groq", Some("qwen/qwen3.6-27b"), &big));
-        assert!(!image_will_attach("groq", Some("openai/gpt-oss-120b"), &big));
+        assert!(!image_will_attach(
+            "groq",
+            Some("openai/gpt-oss-120b"),
+            &big
+        ));
         assert!(!image_will_attach("groq", None, &big));
         assert!(!image_will_attach("local", None, &big));
     }
@@ -112,7 +128,9 @@ mod tests {
         assert!(is_gemini_flash_text_model("gemini-2.5-flash"));
         assert!(is_gemini_flash_text_model("gemini-3.5-flash-lite"));
         assert!(!is_gemini_flash_text_model("gemini-2.5-pro"));
-        assert!(!is_gemini_flash_text_model("gemini-3.1-flash-image-preview"));
+        assert!(!is_gemini_flash_text_model(
+            "gemini-3.1-flash-image-preview"
+        ));
         assert!(!is_gemini_flash_text_model("whisper-large-v3-turbo"));
     }
 
@@ -174,7 +192,10 @@ mod tests {
         assert!(!model_transcription_eligible("gemini", "gemma-4-31b-it"));
         assert!(model_refinement_eligible("gemini", "gemma-4-31b-it"));
         assert!(model_refinement_eligible("gemini", "gemini-2.5-flash"));
-        assert!(!model_refinement_eligible("gemini", "gemini-3.1-flash-image-preview"));
+        assert!(!model_refinement_eligible(
+            "gemini",
+            "gemini-3.1-flash-image-preview"
+        ));
         assert!(model_refinement_eligible("groq", "openai/gpt-oss-120b"));
         assert!(!model_refinement_eligible("groq", "whisper-large-v3-turbo"));
     }
@@ -236,10 +257,7 @@ mod tests {
             { "name": "models/embedding-001", "supportedGenerationMethods": ["embedContent"] },
             { "name": "models/gemini-flash-lite-latest", "supportedGenerationMethods": ["generateContent"] },
         ] }));
-        assert_eq!(
-            gemini,
-            ["gemini-flash-latest", "gemini-flash-lite-latest"]
-        );
+        assert_eq!(gemini, ["gemini-flash-latest", "gemini-flash-lite-latest"]);
         assert!(gemini_model_ids(&json!({})).is_empty());
     }
 

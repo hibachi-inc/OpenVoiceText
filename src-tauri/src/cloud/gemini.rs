@@ -183,8 +183,30 @@ async fn stream_gemini_model(
     )).header("x-goog-api-key", key).json(&body).send().await;
     let elapsed_ms = started.elapsed().as_millis();
     match &response {
-        Ok(r) => diag_log(app, diag_gemini_line(model, audio.map(|a| a.len()).unwrap_or(0), image, image_mime, json_output, &r.status().to_string(), elapsed_ms)),
-        Err(_) => diag_log(app, diag_gemini_line(model, audio.map(|a| a.len()).unwrap_or(0), image, image_mime, json_output, "connect-fail", elapsed_ms)),
+        Ok(r) => diag_log(
+            app,
+            diag_gemini_line(
+                model,
+                audio.map(|a| a.len()).unwrap_or(0),
+                image,
+                image_mime,
+                json_output,
+                &r.status().to_string(),
+                elapsed_ms,
+            ),
+        ),
+        Err(_) => diag_log(
+            app,
+            diag_gemini_line(
+                model,
+                audio.map(|a| a.len()).unwrap_or(0),
+                image,
+                image_mime,
+                json_output,
+                "connect-fail",
+                elapsed_ms,
+            ),
+        ),
     }
     let response = response.map_err(|_| GeminiError {
         message: "cloud.gemini_connect".into(),

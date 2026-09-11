@@ -16,7 +16,8 @@ use tauri::{AppHandle, Emitter, Manager, State};
 // Gemma 26B/31B は音声非対応のため転写には使わない（model_supports_audio）。
 // 将来2.5-flashも同様になったらここから外す。フォールバックが拾う。
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
-const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
+const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";
+const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";
 const GEMINI_MAX_AUDIO_BYTES: usize = 14_000_000;
 const GROQ_MAX_AUDIO_BYTES: usize = 25_000_000;
 // 短すぎる録音はGroqに蹴られる(4096Bでaudio_too_shortを確認)。16kHz/16bit/monoで約0.25秒分。
