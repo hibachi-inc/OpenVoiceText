@@ -15,7 +15,7 @@
 
 ![License](https://img.shields.io/github/license/hibachi-inc/OpenVoiceText?style=flat-square)
 ![macOS](https://img.shields.io/badge/macOS-Tahoe_%26_later-black?style=flat-square&logo=apple)
-![Version](https://img.shields.io/badge/version-0.4.7-blue?style=flat-square)
+![Version](https://img.shields.io/badge/version-0.4.8-blue?style=flat-square)
 
 </div>
 
