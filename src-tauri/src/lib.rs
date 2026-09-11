@@ -19,11 +19,14 @@ fn hud_resize(window: tauri::WebviewWindow, height: f64, bottom: f64) -> Result<
 /// 外部ブラウザで開く。許可リスト外のURLは拒否する。
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
-    const ALLOWED: [&str; 4] = [
+    const ALLOWED: [&str; 7] = [
         "https://aistudio.google.com/",
         "https://console.groq.com/",
         "https://github.com/hibachi-inc/OpenVoiceText",
         "https://x.com/tanakaisworking",
+        "https://chatgpt.com/",
+        "https://claude.ai/",
+        "https://gemini.google.com/",
     ];
     if !ALLOWED.iter().any(|prefix| url.starts_with(prefix)) {
         return Err("cloud.invalid_url".into());

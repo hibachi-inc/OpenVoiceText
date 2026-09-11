@@ -9,7 +9,7 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import {
-  AlertCircle, ArrowDown, Bug, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
+  AlertCircle, ArrowDown, Bot, Bug, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
   Download, Info, Keyboard, Lightbulb, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
   type LucideIcon,
 } from "lucide-react";
@@ -1492,6 +1492,14 @@ function XMark() {
   return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" /></svg>;
 }
 
+function AnthropicMark() {
+  return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" /></svg>;
+}
+
+function GeminiMark() {
+  return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81" /></svg>;
+}
+
 function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; version: string; onClose: () => void }) {
   const { t } = useI18n();
   const [summary, setSummary] = useState("");
@@ -1507,6 +1515,13 @@ function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; ver
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
   };
+  // 指示文をコピーしてAIを開く。URLが長すぎて反映されない機種でも貼り付け一発で送れる。
+  const openAi = async (base: string) => {
+    try { await navigator.clipboard.writeText(prompt); } catch { /* 開くだけ続行 */ }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+    void invoke("open_url", { url: `${base}${encodeURIComponent(prompt)}` }).catch(() => undefined);
+  };
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="modal sm:max-w-[480px]">
       <DialogHeader>
@@ -1520,6 +1535,14 @@ function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; ver
         </CollapsibleTrigger>
         <CollapsibleContent><div className="report-preview">{prompt}</div></CollapsibleContent>
       </Collapsible>
+      <div className="report-ai">
+        <span className="report-ai-label">{t("about.reportAiRow")}</span>
+        <div className="report-ai-buttons">
+          <Button variant="outline" size="sm" onClick={() => void openAi("https://chatgpt.com/?q=")}><Bot />ChatGPT</Button>
+          <Button variant="outline" size="sm" onClick={() => void openAi("https://claude.ai/new?q=")}><AnthropicMark />Claude</Button>
+          <Button variant="outline" size="sm" onClick={() => void openAi("https://gemini.google.com/app?q=")}><GeminiMark />Gemini</Button>
+        </div>
+      </div>
       <DialogFooter className="dialog-actions">
         <Button variant="outline" onClick={() => void invoke("open_url", { url: `https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=${template}` }).catch(() => undefined)}>{t("about.reportManual")}</Button>
         <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("about.reportCopied") : t("about.reportCopy")}</Button>
