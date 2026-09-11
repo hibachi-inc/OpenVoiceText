@@ -4,123 +4,272 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="description" content="VoiceLatte / OpenVoiceText — 無料で、有料級の音声入力体験を。AIと一緒に育てるオープンソースプロジェクト。" />
-  <meta name="theme-color" content="#ffffff" />
+  <meta name="theme-color" content="#f7f8fb" />
+  <meta property="og:title" content="VoiceLatte / OpenVoiceText" />
+  <meta property="og:description" content="無料で、有料級の音声入力体験を。AIと一緒に育てるオープンソースプロジェクト。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://hibachi-inc.github.io/OpenVoiceText/" />
+  <link rel="icon" href="https://raw.githubusercontent.com/hibachi-inc/OpenVoiceText/main/assets/logo.png" />
   <title>VoiceLatte / OpenVoiceText</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {
       color-scheme: light dark;
-      --bg: #ffffff;
-      --fg: #1f2328;
-      --muted: #656d76;
-      --border: #d0d7de;
-      --soft: #f6f8fa;
+      --page: #f7f8fb;
+      --surface: rgba(255, 255, 255, .92);
+      --surface-solid: #ffffff;
+      --fg: #20242a;
+      --muted: #6b7280;
+      --subtle: #8b93a1;
+      --border: rgba(31, 35, 40, .10);
+      --border-strong: rgba(31, 35, 40, .16);
+      --soft: #f5f6f8;
       --link: #0969da;
-      --code: #f6f8fa;
+      --code: #f5f6f8;
+      --shadow: 0 1px 2px rgba(20, 25, 35, .04), 0 14px 42px rgba(20, 25, 35, .07);
+      --header-bg: rgba(247, 248, 251, .82);
     }
 
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0d1117;
-        --fg: #e6edf3;
-        --muted: #8d96a0;
-        --border: #30363d;
-        --soft: #161b22;
-        --link: #58a6ff;
-        --code: #161b22;
+        --page: #0b0d10;
+        --surface: rgba(18, 21, 26, .92);
+        --surface-solid: #12151a;
+        --fg: #e7eaf0;
+        --muted: #9ba3af;
+        --subtle: #7e8794;
+        --border: rgba(255, 255, 255, .09);
+        --border-strong: rgba(255, 255, 255, .15);
+        --soft: #191d23;
+        --link: #68a9ff;
+        --code: #191d23;
+        --shadow: 0 1px 2px rgba(0, 0, 0, .15), 0 18px 50px rgba(0, 0, 0, .25);
+        --header-bg: rgba(11, 13, 16, .82);
       }
     }
 
     * { box-sizing: border-box; }
-
     html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
-      background: var(--bg);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 18% -12%, rgba(79, 126, 255, .10), transparent 29rem),
+        radial-gradient(circle at 88% 2%, rgba(138, 92, 246, .08), transparent 25rem),
+        var(--page);
       color: var(--fg);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", Helvetica, Arial, sans-serif;
-      line-height: 1.65;
+      line-height: 1.68;
       overflow-wrap: anywhere;
+      -webkit-font-smoothing: antialiased;
     }
 
-    .topbar {
+    .site-header {
       position: sticky;
       top: 0;
-      z-index: 10;
+      z-index: 20;
       border-bottom: 1px solid var(--border);
-      background: color-mix(in srgb, var(--bg) 92%, transparent);
-      backdrop-filter: blur(12px);
+      background: var(--header-bg);
+      backdrop-filter: blur(18px) saturate(1.35);
+      -webkit-backdrop-filter: blur(18px) saturate(1.35);
     }
 
-    .topbar-inner {
-      max-width: 920px;
+    .nav {
+      width: min(1040px, calc(100% - 32px));
+      height: 64px;
       margin: 0 auto;
-      padding: 10px 20px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 11px;
+      color: var(--fg);
+      text-decoration: none;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      flex: 0 0 auto;
+      object-fit: contain;
+      border-radius: 9px;
+    }
+
+    .brand-copy {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+    }
+
+    .brand-name {
+      font-size: 14px;
+      font-weight: 750;
+      letter-spacing: -.01em;
+    }
+
+    .brand-subtitle {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sync-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 32px;
+      padding: 0 11px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      background: var(--surface);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .sync-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #31a354;
+      box-shadow: 0 0 0 3px rgba(49, 163, 84, .10);
+    }
+
+    .github-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 0 13px;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      color: var(--fg);
+      background: var(--surface-solid);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+      box-shadow: 0 1px 2px rgba(20, 25, 35, .04);
+      transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+    }
+
+    .github-button:hover {
+      transform: translateY(-1px);
+      border-color: color-mix(in srgb, var(--fg) 25%, transparent);
+      box-shadow: 0 5px 16px rgba(20, 25, 35, .08);
+    }
+
+    .github-button svg {
+      width: 17px;
+      height: 17px;
+      fill: currentColor;
+    }
+
+    .page-shell {
+      width: min(1040px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0 56px;
+    }
+
+    .readme-card {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 48px 52px 58px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .loading {
+      min-height: 240px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
       font-size: 14px;
     }
 
-    .topbar strong { white-space: nowrap; }
-
-    .topbar a {
-      color: var(--link);
-      text-decoration: none;
-      font-weight: 600;
+    .loading-inner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
 
-    main {
-      max-width: 920px;
-      margin: 0 auto;
-      padding: 42px 24px 80px;
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border-strong);
+      border-top-color: var(--fg);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
     }
 
-    .sync-note {
-      color: var(--muted);
-      font-size: 13px;
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     #content > :first-child { margin-top: 0; }
 
-    h1, h2, h3, h4, h5, h6 {
-      line-height: 1.25;
-      margin-top: 1.8em;
-      margin-bottom: .7em;
-      scroll-margin-top: 72px;
+    #content h1, #content h2, #content h3, #content h4, #content h5, #content h6 {
+      line-height: 1.28;
+      margin-top: 1.85em;
+      margin-bottom: .72em;
+      scroll-margin-top: 82px;
+      letter-spacing: -.018em;
     }
 
-    h1, h2 {
-      padding-bottom: .3em;
+    #content h1, #content h2 {
+      padding-bottom: .34em;
       border-bottom: 1px solid var(--border);
     }
 
-    h1 { font-size: 2em; }
-    h2 { font-size: 1.5em; }
-    h3 { font-size: 1.25em; }
+    #content h1 { font-size: 2.05em; }
+    #content h2 { font-size: 1.48em; }
+    #content h3 { font-size: 1.22em; }
 
-    p, ul, ol, blockquote, pre, table { margin-top: 0; margin-bottom: 16px; }
+    #content p,
+    #content ul,
+    #content ol,
+    #content blockquote,
+    #content pre,
+    #content table { margin-top: 0; margin-bottom: 17px; }
 
-    a { color: var(--link); }
-    a:hover { text-decoration-thickness: 2px; }
+    #content a { color: var(--link); text-underline-offset: 2px; }
+    #content a:hover { text-decoration-thickness: 2px; }
 
-    img, video {
+    #content img,
+    #content video {
       max-width: 100%;
       height: auto;
-      border-radius: 10px;
+      border-radius: 12px;
     }
 
-    hr {
+    #content hr {
       height: 1px;
       padding: 0;
-      margin: 28px 0;
+      margin: 30px 0;
       background: var(--border);
       border: 0;
     }
 
-    code {
+    #content code {
       padding: .15em .35em;
       border-radius: 6px;
       background: var(--code);
@@ -128,24 +277,24 @@
       font-size: 85%;
     }
 
-    pre {
+    #content pre {
       overflow: auto;
       padding: 16px;
-      border-radius: 10px;
-      background: var(--code);
       border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--code);
     }
 
-    pre code { padding: 0; background: transparent; font-size: 90%; }
+    #content pre code { padding: 0; background: transparent; font-size: 90%; }
 
-    blockquote {
-      padding: 0 1em;
+    #content blockquote {
+      padding: 1px 0 1px 1em;
       margin-left: 0;
       color: var(--muted);
-      border-left: .25em solid var(--border);
+      border-left: .22em solid var(--border-strong);
     }
 
-    table {
+    #content table {
       width: 100%;
       border-spacing: 0;
       border-collapse: collapse;
@@ -153,49 +302,103 @@
       overflow: auto;
     }
 
-    th, td {
-      padding: 6px 13px;
+    #content th, #content td {
+      padding: 7px 13px;
       border: 1px solid var(--border);
     }
 
-    tr:nth-child(2n) { background: var(--soft); }
+    #content tr:nth-child(2n) { background: var(--soft); }
 
-    details {
-      margin-bottom: 16px;
-      padding: 12px 14px;
+    #content details {
+      margin-bottom: 17px;
+      padding: 13px 15px;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 11px;
+      background: color-mix(in srgb, var(--soft) 68%, transparent);
     }
 
-    summary { cursor: pointer; font-weight: 600; }
+    #content summary { cursor: pointer; font-weight: 650; }
 
     .error {
-      padding: 18px;
+      padding: 22px;
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 12px;
       background: var(--soft);
     }
 
-    @media (max-width: 640px) {
-      main { padding: 28px 18px 64px; }
-      .topbar-inner { padding: 9px 16px; }
-      .sync-note { display: none; }
-      h1 { font-size: 1.7em; }
-      h2 { font-size: 1.35em; }
+    .site-footer {
+      max-width: 920px;
+      margin: 18px auto 0;
+      padding: 0 8px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: var(--subtle);
+      font-size: 11px;
+    }
+
+    .site-footer a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .site-footer a:hover { color: var(--fg); }
+
+    @media (max-width: 720px) {
+      .nav { width: min(100% - 24px, 1040px); height: 58px; }
+      .brand-mark { width: 30px; height: 30px; }
+      .brand-subtitle { display: none; }
+      .sync-badge { display: none; }
+      .github-label { display: none; }
+      .github-button { width: 36px; padding: 0; border-radius: 9px; }
+      .page-shell { width: min(100% - 20px, 1040px); padding-top: 16px; }
+      .readme-card { padding: 28px 20px 38px; border-radius: 14px; }
+      #content h1 { font-size: 1.72em; }
+      #content h2 { font-size: 1.32em; }
+      .site-footer { padding: 0 4px; flex-direction: column; gap: 4px; }
+    }
+
+    @media (max-width: 430px) {
+      .brand-name { font-size: 13px; }
+      .readme-card { padding-left: 16px; padding-right: 16px; }
     }
   </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
-      <strong>OpenVoiceText</strong>
-      <span class="sync-note">README.md と自動同期</span>
-      <a href="https://github.com/hibachi-inc/OpenVoiceText" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-    </div>
+  <header class="site-header">
+    <nav class="nav" aria-label="サイトナビゲーション">
+      <a class="brand" href="./" aria-label="OpenVoiceText トップへ">
+        <img class="brand-mark" src="https://raw.githubusercontent.com/hibachi-inc/OpenVoiceText/main/assets/logo.png" alt="" />
+        <span class="brand-copy">
+          <span class="brand-name">VoiceLatte / OpenVoiceText</span>
+          <span class="brand-subtitle">AIと一緒に育てるオープンソースプロジェクト</span>
+        </span>
+      </a>
+
+      <div class="nav-actions">
+        <span class="sync-badge" title="このページはGitHubのREADME.mdを直接読み込んで表示しています">
+          <span class="sync-dot" aria-hidden="true"></span>
+          READMEと同期
+        </span>
+        <a class="github-button" href="https://github.com/hibachi-inc/OpenVoiceText" target="_blank" rel="noopener noreferrer" aria-label="GitHubでOpenVoiceTextを開く">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.72 1.27 3.38.97.1-.75.4-1.27.74-1.56-2.57-.3-5.28-1.29-5.28-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18A10.9 10.9 0 0 1 12 6.1c.98 0 1.95.13 2.86.39 2.2-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.12 3.05.74.81 1.18 1.83 1.18 3.09 0 4.42-2.71 5.39-5.29 5.68.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>
+          <span class="github-label">GitHubで開く</span>
+        </a>
+      </div>
+    </nav>
   </header>
 
-  <main>
-    <article id="content" aria-live="polite">READMEを読み込んでいます…</article>
+  <main class="page-shell">
+    <article class="readme-card" id="content" aria-live="polite">
+      <div class="loading">
+        <div class="loading-inner"><span class="spinner" aria-hidden="true"></span>READMEを読み込んでいます</div>
+      </div>
+    </article>
+
+    <footer class="site-footer">
+      <span>README.md を正本として自動表示しています</span>
+      <a href="https://github.com/hibachi-inc/OpenVoiceText/blob/main/README.md" target="_blank" rel="noopener noreferrer">READMEの原文を見る ↗</a>
+    </footer>
   </main>
 
   <script>
@@ -237,14 +440,14 @@
         const href = link.getAttribute('href');
         if (!href) return;
 
-        if (href.startsWith('#')) {
-          return;
-        }
+        if (href.startsWith('#')) return;
 
         if (!isAbsolute(href)) {
           link.href = `${REPO}/blob/main/${href.replace(/^\.\//, '').replace(/^\//, '')}`;
         }
 
+        // PagesではREADME内の外部遷移をすべて別タブにする。
+        // GitHub上のREADME自体は通常のMarkdownリンクのまま維持できる。
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
       });
