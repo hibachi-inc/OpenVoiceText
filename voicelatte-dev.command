@@ -7,7 +7,17 @@
 # 製品版を再利用して修正が反映されないため、dev版を確実に落としてから開く。
 set -u
 
-PROJECT_DIR="/Users/kotatsu/AI-BASE/ai-dev/dev/OpenVoiceText-Pro"
+# 配置場所に依存しないよう、 symlink 解決つきで自身の場所を特定する。
+SOURCE="$0"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
+  LINK="$(readlink "$SOURCE")"
+  case "$LINK" in
+    /*) SOURCE="$LINK" ;;
+    *) SOURCE="$DIR/$LINK" ;;
+  esac
+done
+PROJECT_DIR="$(cd "$(dirname "$SOURCE")" && pwd)"
 DEBUG_APP="$PROJECT_DIR/src-tauri/target/debug/bundle/macos/VoiceLatte.app"
 DEBUG_BIN="$DEBUG_APP/Contents/MacOS/voicelatte"
 cd "$PROJECT_DIR" || exit 1

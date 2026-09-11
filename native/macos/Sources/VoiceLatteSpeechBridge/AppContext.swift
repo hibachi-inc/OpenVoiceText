@@ -71,6 +71,8 @@ struct AppContext: Sendable {
     // MARK: - Visible window context via AXUIElement
 
     // Dayflow方式：パスワード・認証・暗号資産系は文脈対象外。
+    // 除外リストは Dayflow (MIT, (c) 2025 Jerry Liu,
+    // https://github.com/JerryZLiu/Dayflow) の選定を流用。
     // bundleID・アプリ名の部分一致（小文字化して比較）。
     private static let sensitiveBundleHints = [
         "1password",
