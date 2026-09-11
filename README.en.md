@@ -7,8 +7,8 @@
 ### Push-to-talk voice input for macOS. Transcribe on-device, refine with AI.
 
 [Download](https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg) ·
-[Features](#-features) ·
-[Privacy](#-privacy) ·
+[Features](#features) ·
+[Privacy](#privacy) ·
 [日本語](./README.md)
 
 <br>
@@ -25,23 +25,23 @@
   <video src="https://github.com/user-attachments/assets/aa8930ee-a219-4eea-9b18-37c88dd65abd" width="860" controls></video>
 </p>
 
-## ✨ Features
+## Features
 
-- 🎙 **Push-to-talk & hold-to-talk** — tap `Control` to record, hold it to keep talking. Confirm with `Space`, cancel with `Esc`, right from the floating HUD.
-- 🧠 **On-device transcription first** — Apple SpeechAnalyzer with automatic fallback to SFSpeechRecognizer. Your voice never has to leave the Mac.
-- ✍️ **AI refinement that knows your screen** — Gemini / Groq polish the transcript using a screenshot of the app you're typing into. Apps that can't be captured fall back to accessibility text.
-- 🪟 **Per-app prompts** — different refinement styles for chat, email, code, terminal, notes, and browser, switched automatically by the frontmost app.
-- 📚 **Vocabulary & formatting** — your terms, plus automatic fixes like amount notation, applied on every pass.
-- 🕘 **History with receipts** — every result keeps its raw text, refined text, and a thumbnail of the screen it came from (thumbnails auto-delete after 1 day).
+- **Push-to-talk & hold-to-talk** — tap `Control` to record, hold it to keep talking. Confirm with `Space`, cancel with `Esc`, right from the floating HUD.
+- **On-device transcription first** — Apple SpeechAnalyzer with automatic fallback to SFSpeechRecognizer. Your voice never has to leave the Mac.
+- **AI refinement that knows your screen** — Gemini / Groq polish the transcript using a screenshot of the app you're typing into. Apps that can't be captured fall back to accessibility text.
+- **Per-app prompts** — different refinement styles for chat, email, code, terminal, notes, and browser, switched automatically by the frontmost app.
+- **Vocabulary & formatting** — your terms, plus automatic fixes like amount notation, applied on every pass.
+- **History with receipts** — every result keeps its raw text, refined text, and a thumbnail of the screen it came from (thumbnails auto-delete after 1 day).
 
-## 🔒 Privacy
+## Privacy
 
 - Transcription runs on-device by default.
 - API keys live in the macOS Keychain — never in config files.
 - Screen thumbnails are downscaled and purged after 24 hours, together with history cleanup.
 - Password managers, auth apps, and crypto wallets are excluded from screen capture.
 
-## 🚀 Download
+## Download
 
 <p align="center">
   <a href="https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg">
@@ -65,7 +65,7 @@ On first launch, the onboarding walks through microphone, accessibility, and scr
 
 </details>
 
-## 🛠 Tech Stack
+## Tech Stack
 
 Tauri 2 (Rust) · React · TypeScript · Swift sidecar bridge (JSON Lines over stdio)
 
@@ -75,7 +75,7 @@ src-tauri/      Tauri core, distribution config, sidecar wiring
 native/macos/   Apple Speech / SpeechAnalyzer bridge (Swift)
 ```
 
-## 🤝 Contribute
+## Contribute
 
 Bug reports, feature requests, and code contributions all go through GitHub — there is no contact form.
 
@@ -89,6 +89,6 @@ npx skills add hibachi-inc/OpenVoiceText --skill voicelatte-contributor -g
 
 After installing, invoke `$voicelatte-contributor` in your agent and it will walk you through report formats, evidence collection, and development steps.
 
-## 📄 License
+## License
 
 MIT — see [`LICENSE`](./LICENSE). Third-party attributions in [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md).
