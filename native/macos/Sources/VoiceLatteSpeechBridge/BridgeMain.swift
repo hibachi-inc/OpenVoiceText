@@ -359,6 +359,9 @@ private final class Bridge: @unchecked Sendable {
 
     private func insert(_ text: String, autoPaste: Bool) {
         let pasteboard = NSPasteboard.general
+        // 自動ペーストで上書きする前の文字列を覚えておき、後で戻す（コピー内容の破壊防止）。
+        // 手動ペースト時はクリップボードに残すのが期待動作なので戻さない。
+        let previous = pasteboard.string(forType: .string)
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         guard autoPaste, AXIsProcessTrusted() else { return }
@@ -379,6 +382,14 @@ private final class Bridge: @unchecked Sendable {
         up?.flags = .maskCommand
         down?.post(tap: .cghidEventTap)
         up?.post(tap: .cghidEventTap)
+        // Cmd+Vが処理されるのを待ってから戻す。間に別コピーが入っていたら触らない。
+        Thread.sleep(forTimeInterval: 0.3)
+        if pasteboard.string(forType: .string) == text {
+            pasteboard.clearContents()
+            if let previous {
+                pasteboard.setString(previous, forType: .string)
+            }
+        }
     }
 
     /// 親プロセス（Tauri本体）を前面に出し、直前の前面アプリを覚える。

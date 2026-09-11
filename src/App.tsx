@@ -457,8 +457,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       // 内容は保存・記録せず文字数のみ。0なら取得失敗、0超なら送信済みで用途側の問題に切り分けられる。
       const screenChars = screenContext.length;
       if (shouldRefine) appLog.info("refine", `screen context ${screenChars} chars from ${appName} (${refreshed ? "stop" : "start"})${shot ? ` + shot ${Math.round(shot.data.length / 1024)}KB ${shot.mime}` : ""}`);
-      // 詳細表示用に先頭だけ残す。画面内容なのでlocalStorageの履歴消去と一緒に消える。
-      const screenText = shouldRefine && screenChars > 0 ? screenContext.slice(0, 2000) : undefined;
+      // 詳細表示用に先頭だけ残す。デバッグモードのときだけ保存する。画面内容なのでlocalStorageの履歴消去と一緒に消える。
+      const screenText = settings.debugMode && shouldRefine && screenChars > 0 ? screenContext.slice(0, 2000) : undefined;
       const customPrompt = resolveCustomPrompt(settings.customPrompts, contextRef.current);
       const refinementPrompt = shouldRefine
         ? buildRefinementPrompt(customPrompt, vocabulary, speechLocale)

@@ -330,7 +330,12 @@ struct AppContext: Sendable {
 
     private static func maskSensitiveText(_ text: String) -> String {
         [
-            #"(?i)\b(?:sk-|ghp_|github_pat_|AIzaSy)[A-Za-z0-9_\-]{8,}\b"#,
+            #"(?i)\b(?:sk-|ghp_|github_pat_|gho_|AIzaSy|sk-ant-|xai-|gsk_)[A-Za-z0-9_\-]{8,}\b"#,
+            #"\bAKIA[0-9A-Z]{16}\b"#,
+            #"\bxox[baprs]-[A-Za-z0-9\-]+(?:-[A-Za-z0-9\-]+)*"#,
+            #"\bBearer\s+[A-Za-z0-9._~+\/=:-]+"#,
+            #"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"#,
+            #"-----BEGIN [A-Z ]*PRIVATE KEY-----"#,
             #"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"#,
             #"\b\d{12,}\b"#,
         ].reduce(text) { result, pattern in
@@ -362,13 +367,13 @@ struct AppContext: Sendable {
         // Pass 1: address bar (most reliable source of current page URL)
         if let url = findAddressBarURL(window, maxDepth: 6) {
             let key = siteKeyFrom(url)
-            axLogger.info("siteKey(addressBar): url=\(url) → key=\(key ?? "nil")")
+            axLogger.info("siteKey(addressBar): key=\(key ?? "nil")")
             return key
         }
         // Pass 2: AXURL attribute on any element (Safari AXWebArea, Comet AXGroup, etc.)
         if let url = findAXURL(window, maxDepth: 8) {
             let key = siteKeyFrom(url)
-            axLogger.info("siteKey(AXURL): url=\(url) → key=\(key ?? "nil")")
+            axLogger.info("siteKey(AXURL): key=\(key ?? "nil")")
             return key
         }
         axLogger.debug("siteKey: no URL found in AX tree for pid \(pid)")

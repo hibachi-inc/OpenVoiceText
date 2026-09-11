@@ -541,7 +541,7 @@ final class SpeechSession: NSObject, @unchecked Sendable {
                                 through: CMTimeGetSeconds(CMTimeRangeGetEnd(result.range))
                             )
                             if isFinal {
-                                sttLogger.notice("[STTService] final: \(text, privacy: .public)")
+                                sttLogger.notice("[STTService] final chars=\(text.count)")
                                 if unsafeSelf.confirmedText.isEmpty {
                                     unsafeSelf.confirmedText = text
                                 } else {

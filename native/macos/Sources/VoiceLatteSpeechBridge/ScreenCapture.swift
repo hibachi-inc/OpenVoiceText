@@ -9,7 +9,7 @@ import os
 private let shotLogger = Logger(subsystem: "com.hibachi.voicelatte", category: "ScreenCapture")
 
 /// 入力先アプリのウィンドウだけを撮影する（他アプリは写さない）。
-/// 取れなければディスプレイ全体にフォールバックする。
+/// 取れなければnilを返す（fail closed。全画面フォールバックはしない）。
 /// 画面収録の権限がなければnilを返し、文脈なしで続行する。保存はしない。
 enum ScreenCapture {
     static let maxEdge: CGFloat = 1568
@@ -22,12 +22,10 @@ enum ScreenCapture {
            let shot = validated(data) {
             return shot
         }
-        // フォールバック：ディスプレイ全体
-        guard let image = CGDisplayCreateImage(fallbackDisplay),
-              let scaled = scaled(image, maxEdge: maxEdge),
-              let data = jpeg(scaled, quality: 0.7),
-              let shot = validated(data) else { return nil }
-        return shot
+        // 対象窓が撮れないときは画像なしで続行する（AX文言に縮退）。
+        // ディスプレイ全体のフォールバックはしない。他アプリの画面をAIに送らないため。
+        shotLogger.notice("app window capture failed, continuing without image")
+        return nil
     }
 
     private static func validated(_ data: Data) -> String? {

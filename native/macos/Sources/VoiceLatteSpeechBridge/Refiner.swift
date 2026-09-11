@@ -56,7 +56,7 @@ enum FoundationModelsRefiner {
             let response = try await session.respond(to: taskPrompt)
             let refined = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
             let sanitized = sanitizeOutput(refined, original: text)
-            logger.info("Refined: \(refined.prefix(50))...")
+            logger.info("Refined chars=\(refined.count)")
             return sanitized.isEmpty ? text : sanitized
         } catch {
             logger.error("Refine error: \(error.localizedDescription)")
