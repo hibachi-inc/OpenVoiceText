@@ -3,7 +3,7 @@ import { emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, LogicalPosition, monitorFromPoint, PhysicalPosition } from "@tauri-apps/api/window";
-import { register, unregister, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
+import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -742,7 +742,6 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     let alive = true;
     setShortcutError("");
     void (async () => {
-      await unregisterAll();
       await bridge.configureModifierShortcuts([], () => undefined);
       const toggleModifierOnly = isModifierOnlyShortcut(settings.toggleShortcut);
       const holdModifierOnly = isModifierOnlyShortcut(settings.holdShortcut);
@@ -787,16 +786,31 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         });
       }
     })().catch((error) => alive && setShortcutError(t("error.shortcut", { message: localizedError(error) })));
-    return () => { alive = false; void unregisterAll(); };
+    // 他effectの登録（Esc/Space）を巻き込まないよう対象だけ外す
+    return () => {
+      alive = false;
+      const { toggleShortcut, holdShortcut } = settings;
+      void (async () => {
+        await unregister(toggleShortcut).catch(() => undefined);
+        if (holdShortcut !== toggleShortcut) await unregister(holdShortcut).catch(() => undefined);
+      })();
+    };
   }, [bridge, localizedError, settings.holdShortcut, settings.toggleShortcut, t]);
 
   useEffect(() => {
     if (phase !== "listening" || showOnboarding || !settings.refinement
       || settings.toggleShortcut === "Space" || settings.holdShortcut === "Space") return;
     let active = true;
-    void register("Space", (event) => {
-      if (active && event.state === "Pressed" && !shortcutCaptureRef.current) actionRef.current("refine-stop");
-    }).catch(() => undefined);
+    // 先に解除してから登録する。解除漏れの残骸があると登録が失敗してEscが死ぬため。
+    void (async () => {
+      await unregister("Space").catch(() => undefined);
+      if (!active) return;
+      await register("Space", (event) => {
+        if (active && event.state === "Pressed" && !shortcutCaptureRef.current) actionRef.current("refine-stop");
+      }).catch((error) => {
+        appLog.warn("shortcut", `space register failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    })();
     return () => {
       active = false;
       void unregister("Space").catch(() => undefined);
@@ -807,9 +821,16 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     if ((phase !== "listening" && phase !== "preparing" && phase !== "processing")
       || settings.toggleShortcut === "Escape" || settings.holdShortcut === "Escape") return;
     let active = true;
-    void register("Escape", (event) => {
-      if (active && event.state === "Pressed" && !shortcutCaptureRef.current) actionRef.current("cancel");
-    }).catch(() => undefined);
+    // 先に解除してから登録する。解除漏れの残骸があると登録が失敗してEscが死ぬため。
+    void (async () => {
+      await unregister("Escape").catch(() => undefined);
+      if (!active) return;
+      await register("Escape", (event) => {
+        if (active && event.state === "Pressed" && !shortcutCaptureRef.current) actionRef.current("cancel");
+      }).catch((error) => {
+        appLog.warn("shortcut", `escape register failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    })();
     return () => {
       active = false;
       void unregister("Escape").catch(() => undefined);
