@@ -6,7 +6,7 @@
 
 ### Push-to-talk voice input for macOS. Transcribe on-device, refine with AI.
 
-[Download](https://github.com/hibachi-inc/OpenVoiceText/releases) ·
+[Download](https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg) ·
 [Features](#-features) ·
 [Privacy](#-privacy) ·
 [日本語](./README.md)
@@ -43,7 +43,13 @@
 
 ## 🚀 Download
 
-Prebuilt binaries will be attached to [Releases](https://github.com/hibachi-inc/OpenVoiceText/releases). Until then, build from source:
+<p align="center">
+  <a href="https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg">
+    <img src="https://img.shields.io/badge/Download_for_Mac-Apple_Silicon-black?style=for-the-badge&logo=apple" alt="Download for Mac">
+  </a>
+</p>
+
+macOS Tahoe or later, Apple Silicon only. Intel Macs are not supported. Older versions and changelogs live in [Releases](https://github.com/hibachi-inc/OpenVoiceText/releases).
 
 <details>
 <summary>Build from source (macOS, Xcode + Rust required)</summary>

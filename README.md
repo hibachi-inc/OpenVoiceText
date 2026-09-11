@@ -6,7 +6,7 @@
 
 ### Macのためのプッシュトーク音声入力。端末内で文字起こし、AIで整形。
 
-[ダウンロード](https://github.com/hibachi-inc/OpenVoiceText/releases) ·
+[ダウンロード](https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg) ·
 [機能](#-機能) ·
 [プライバシー](#-プライバシー) ·
 [English](./README.en.md)
@@ -43,7 +43,13 @@
 
 ## 🚀 ダウンロード
 
-配布バイナリは[Releases](https://github.com/hibachi-inc/OpenVoiceText/releases)に置く予定です。それまではソースからビルドしてください。
+<p align="center">
+  <a href="https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg">
+    <img src="https://img.shields.io/badge/Mac版をダウンロード-Apple_Silicon-black?style=for-the-badge&logo=apple" alt="Mac版をダウンロード">
+  </a>
+</p>
+
+macOS Tahoe以降・Apple Silicon専用。Intel Macには対応していません。過去版や更新履歴は[Releases](https://github.com/hibachi-inc/OpenVoiceText/releases)からどうぞ。
 
 <details>
 <summary>ソースからビルド（macOS、Xcode + Rustが必要）</summary>
