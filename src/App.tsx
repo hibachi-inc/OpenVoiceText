@@ -1516,13 +1516,11 @@ function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateStat
         <span><b>OpenVoiceText</b><small>hibachi-inc/OpenVoiceText</small></span>
         <ChevronRight className="chevron" />
       </Button>
-      <span className="settings-group-label">{t("about.bugReport")}</span>
       <Button variant="ghost" className="refine-strip h-auto" onClick={openExternal("https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=bug_report.yml")}>
         <span className="strip-icon"><Bug /></span>
         <span><b>{t("about.bugReport")}</b><small>{t("about.bugReportDetail")}</small></span>
         <ChevronRight className="chevron" />
       </Button>
-      <span className="settings-group-label">{t("about.featureRequest")}</span>
       <Button variant="ghost" className="refine-strip h-auto" onClick={openExternal("https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=feature_request.yml")}>
         <span className="strip-icon"><Lightbulb /></span>
         <span><b>{t("about.featureRequest")}</b><small>{t("about.featureRequestDetail")}</small></span>
