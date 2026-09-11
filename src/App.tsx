@@ -1535,6 +1535,10 @@ function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; ver
         </CollapsibleTrigger>
         <CollapsibleContent><div className="report-preview">{prompt}</div></CollapsibleContent>
       </Collapsible>
+      <DialogFooter className="dialog-actions">
+        <Button variant="outline" onClick={() => void invoke("open_url", { url: `https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=${template}` }).catch(() => undefined)}>{t("about.reportManual")}</Button>
+        <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("about.reportCopied") : t("about.reportCopy")}</Button>
+      </DialogFooter>
       <div className="report-ai">
         <span className="report-ai-label">{t("about.reportAiRow")}</span>
         <div className="report-ai-buttons">
@@ -1543,10 +1547,6 @@ function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; ver
           <Button variant="outline" size="sm" onClick={() => void openAi("https://gemini.google.com/app?q=")}><GeminiMark />Gemini</Button>
         </div>
       </div>
-      <DialogFooter className="dialog-actions">
-        <Button variant="outline" onClick={() => void invoke("open_url", { url: `https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=${template}` }).catch(() => undefined)}>{t("about.reportManual")}</Button>
-        <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("about.reportCopied") : t("about.reportCopy")}</Button>
-      </DialogFooter>
     </DialogContent>
   </Dialog>;
 }
@@ -1595,7 +1595,7 @@ function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onToggleDeb
         <ChevronRight className="chevron" />
       </Button>
     </div>
-    <SettingRow label={t("about.debugMode")} detail={t("about.debugModeDetail")}><Switch checked={debugMode} onCheckedChange={onToggleDebugMode} /></SettingRow>
+    <div className="about-debug"><SettingRow label={t("about.debugMode")} detail={t("about.debugModeDetail")}><Switch checked={debugMode} onCheckedChange={onToggleDebugMode} /></SettingRow></div>
     {reportKind && <ReportDialog kind={reportKind} version={version} onClose={() => setReportKind(null)} />}
   </>;
 }

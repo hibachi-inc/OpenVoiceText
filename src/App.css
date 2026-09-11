@@ -155,12 +155,13 @@ body {
 .about-groups .settings-group-label { margin: 8px 5px -4px; }
 .about-groups .settings-group-label:first-child { margin-top: 0; }
 .about-groups .refine-strip { margin-top: 0; }
+.about-debug { margin-top: 14px; }
 .strip-icon.brand { color: #1f2328; }
 .strip-icon.brand svg { width: 15px; height: 15px; fill: currentColor; stroke: none; }
 .report-preview-trigger { color: #85888d; font-size: 10px; }
 .report-preview-trigger svg { width: 12px; height: 12px; }
 .report-preview { max-height: 140px; overflow-y: auto; white-space: pre-wrap; font-size: 10px; line-height: 1.6; color: #73767b; }
-.report-ai { display: grid; gap: 6px; }
+.report-ai { display: grid; gap: 6px; margin-top: 12px; }
 .report-ai-label { color: #9a9ca0; font-size: 10px; }
 .report-ai-buttons { display: flex; gap: 8px; }
 .report-ai-buttons svg { width: 14px; height: 14px; }
