@@ -78,6 +78,7 @@ type Settings = {
   refinementModel: string;
   transcriptionModel: string;
   linkModels: boolean;
+  debugMode: boolean;
   promptDefaultsVersion: number;
 };
 type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; elapsed?: number; choice?: { raw: string; refined: string } };
@@ -103,6 +104,7 @@ const DEFAULT_SETTINGS: Settings = {
   refinementModel: "",
   transcriptionModel: "",
   linkModels: true,
+  debugMode: false,
   promptDefaultsVersion: 1,
 };
 
@@ -540,8 +542,8 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       }
       // 整形結果がプロンプトや文脈のコピーになっていたら生テキストに戻す
       const text = postProcessTranscript(shouldDiscardRefinement(refined, source, screenContext) ? source : refined, vocabulary);
-      // 履歴確認用に撮影画像の縮小版を残す（1日保持）。失敗時はなしで続行。
-      const image = (shot ? await makeHistoryThumbnail(shot.data, shot.mime) : undefined) ?? undefined;
+      // 履歴確認用に撮影画像の縮小版を残す（1日保持）。デバッグモードのときだけ。失敗時はなしで続行。
+      const image = settings.debugMode && shot ? (await makeHistoryThumbnail(shot.data, shot.mime)) ?? undefined : undefined;
       // Space確定のときは自動ペーストせず、前後見比べの選択肢としてHUDに残す
       if (shouldRefine) {
         choiceRef.current = { text, raw: cloudRaw ?? source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner, screenChars, screenText, image };
@@ -902,7 +904,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         />}
         {section === "vocabulary" && <VocabularyPage entries={vocabulary} setEntries={setVocabulary} />}
         {section === "shortcuts" && <ShortcutPage settings={settings} setSettings={setSettings} error={shortcutError} onCaptureChange={setShortcutCapturing} />}
-        {section === "about" && <AboutPage update={update} setUpdate={setUpdate} onOpenOnboarding={() => {
+        {section === "about" && <AboutPage update={update} setUpdate={setUpdate} debugMode={settings.debugMode} onToggleDebugMode={(debugMode) => setSettings((s) => ({ ...s, debugMode }))} onOpenOnboarding={() => {
           setOnboardingShortcutChosen(false);
           setOnboardingTestPassed(false);
           setShowOnboarding(true);
@@ -947,7 +949,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         }}
       />}
       {showPrompts && <PromptDialog settings={settings} setSettings={setSettings} history={history} onClose={() => setShowPrompts(false)} />}
-      {selected && <HistoryDialog entry={selected} onClose={() => setSelected(null)} />}
+      {selected && <HistoryDialog entry={selected} debugMode={settings.debugMode} onClose={() => setSelected(null)} />}
       {message && phase === "error" && <div className="toast error-toast">{message}</div>}
     </main>
   );
@@ -1490,7 +1492,7 @@ function XMark() {
   return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" /></svg>;
 }
 
-function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void }) {
+function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onToggleDebugMode }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void; debugMode: boolean; onToggleDebugMode: (debugMode: boolean) => void }) {
   const { t } = useI18n();
   const [version, setVersion] = useState("");
   const [logOpen, setLogOpen] = useState(false);
@@ -1533,6 +1535,7 @@ function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateStat
         <ChevronRight className="chevron" />
       </Button>
     </div>
+    <SettingRow label={t("about.debugMode")} detail={t("about.debugModeDetail")}><Switch checked={debugMode} onCheckedChange={onToggleDebugMode} /></SettingRow>
   </>;
 }
 
@@ -1887,7 +1890,7 @@ function LogDialog({ onClose }: { onClose: () => void }) {
   </Dialog>;
 }
 
-function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () => void }) {
+function HistoryDialog({ entry, debugMode, onClose }: { entry: HistoryEntry; debugMode: boolean; onClose: () => void }) {
   const { language, t } = useI18n();
   const [copied, setCopied] = useState<"original" | "refined" | null>(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -1919,7 +1922,7 @@ function HistoryDialog({ entry, onClose }: { entry: HistoryEntry; onClose: () =>
         {details.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}
       </dl>}
       {showInfo && entry.screenText && <div className="history-full original history-context-body">{entry.screenText}</div>}
-      {entry.image && <div className="history-screenshot-wrap">
+      {debugMode && entry.image && <div className="history-screenshot-wrap">
         <small>{t("historyDialog.image")}</small>
         <img className="history-screenshot" src={`data:image/jpeg;base64,${entry.image}`} alt="" />
       </div>}
@@ -2254,6 +2257,7 @@ function normalizeSettings(stored: unknown): Settings {
   const linkModels = typeof legacy.linkModels === "boolean"
     ? legacy.linkModels
     : transcriptionModel === refinementModel;
+  const debugMode = legacy.debugMode === true;
   const jaDefaults = legacyDefaultPrompts("ja");
   const enDefaults = legacyDefaultPrompts("en");
   const customPrompts = migrateLegacyCustomPrompts(legacy, {
@@ -2266,7 +2270,7 @@ function normalizeSettings(stored: unknown): Settings {
     customPrompts[DEFAULT_PROMPT_KEY] = defaultRefinementPrompt(resolveUiLanguage(appLanguage));
   }
   const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, screenshotContext: _screenshotContext, ...current } = legacy;
-  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, linkModels, promptDefaultsVersion: 1, customPrompts };
+  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, linkModels, debugMode, promptDefaultsVersion: 1, customPrompts };
   if (legacy.appLanguage === undefined) {
     return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
   }
