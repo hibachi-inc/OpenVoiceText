@@ -1,17 +1,52 @@
-# VoiceLatte (Tauri)
+<div align="center">
 
-オープンソースのMac向け音声入力と高精度変換アプリ。UIと状態管理はTauri + React、音声認識は小さなネイティブブリッジに分離する。
+<img src="./assets/logo.png" width="120" alt="VoiceLatte logo">
 
-- `src/`: 共通UI
-- `src-tauri/`: Tauri本体、配布設定、サイドカー権限
-- `native/macos/`: Apple Speech / SpeechAnalyzerブリッジ（Swift）
-- `scripts/build-native.mjs`: 実行OS用ブリッジをTauri sidecar名へ配置
+# VoiceLatte
 
-ブリッジは標準入力でJSON Linesを受け、標準出力にJSON Linesを返す。録音・逐次文字起こし・モデル確認/追加・整形・貼り付け・前面アプリ判定・修飾キー単体の長押しを実装している。
+### Push-to-talk voice input for macOS. Transcribe on-device, refine with AI.
 
-共通UIには、常駐HUD、履歴と長文詳細、辞書登録、金額表記の補正、アプリ種別ごとの整形プロンプト、通常/長押しショートカットがある。設定と履歴は端末内のWebViewストレージへ保存する。
+[Download](https://github.com/hibachi-inc/OpenVoiceText/releases) ·
+[Features](#-features) ·
+[Privacy](#-privacy) ·
+[日本語](./README.ja.md)
 
-## 開発
+<br>
+
+![License](https://img.shields.io/github/license/hibachi-inc/OpenVoiceText?style=flat-square)
+![macOS](https://img.shields.io/badge/macOS-Tahoe_%26_later-black?style=flat-square&logo=apple)
+![Version](https://img.shields.io/badge/version-0.4.6-blue?style=flat-square)
+
+</div>
+
+---
+
+<p align="center">
+  <img src="./assets/hero.png" width="860" alt="VoiceLatte settings">
+</p>
+
+## ✨ Features
+
+- 🎙 **Push-to-talk & hold-to-talk** — tap `Control` to record, hold it to keep talking. Confirm with `Space`, cancel with `Esc`, right from the floating HUD.
+- 🧠 **On-device transcription first** — Apple SpeechAnalyzer with automatic fallback to SFSpeechRecognizer. Your voice never has to leave the Mac.
+- ✍️ **AI refinement that knows your screen** — Gemini / Groq polish the transcript using a screenshot of the app you're typing into. Apps that can't be captured fall back to accessibility text.
+- 🪟 **Per-app prompts** — different refinement styles for chat, email, code, terminal, notes, and browser, switched automatically by the frontmost app.
+- 📚 **Vocabulary & formatting** — your terms, plus automatic fixes like amount notation, applied on every pass.
+- 🕘 **History with receipts** — every result keeps its raw text, refined text, and a thumbnail of the screen it came from (thumbnails auto-delete after 1 day).
+
+## 🔒 Privacy
+
+- Transcription runs on-device by default.
+- API keys live in the macOS Keychain — never in config files.
+- Screen thumbnails are downscaled and purged after 24 hours, together with history cleanup.
+- Password managers, auth apps, and crypto wallets are excluded from screen capture.
+
+## 🚀 Download
+
+Prebuilt binaries will be attached to [Releases](https://github.com/hibachi-inc/OpenVoiceText/releases). Until then, build from source:
+
+<details>
+<summary>Build from source (macOS, Xcode + Rust required)</summary>
 
 ```bash
 npm install
@@ -20,8 +55,20 @@ npm run test:native
 npm run tauri dev
 ```
 
-macOSはSpeechAnalyzerを優先し、準備中の音声を最大15秒保持してSFSpeechRecognizerへ自動フォールバックする。
+On first launch, the onboarding walks through microphone, accessibility, and screen-recording permissions.
 
-## ライセンス
+</details>
 
-MIT License（`LICENSE` 参照）。第三者コードの帰属は `THIRD-PARTY-NOTICES.md` 参照。
+## 🛠 Tech Stack
+
+Tauri 2 (Rust) · React · TypeScript · Swift sidecar bridge (JSON Lines over stdio)
+
+```
+src/            shared UI (HUD, history, settings)
+src-tauri/      Tauri core, distribution config, sidecar wiring
+native/macos/   Apple Speech / SpeechAnalyzer bridge (Swift)
+```
+
+## 📄 License
+
+MIT — see [`LICENSE`](./LICENSE). Third-party attributions in [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md).
