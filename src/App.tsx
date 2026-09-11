@@ -78,7 +78,6 @@ type Settings = {
   refinementModel: string;
   transcriptionModel: string;
   linkModels: boolean;
-  screenshotContext: boolean;
   promptDefaultsVersion: number;
 };
 type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; elapsed?: number; choice?: { raw: string; refined: string } };
@@ -104,7 +103,6 @@ const DEFAULT_SETTINGS: Settings = {
   refinementModel: "",
   transcriptionModel: "",
   linkModels: true,
-  screenshotContext: true,
   promptDefaultsVersion: 1,
 };
 
@@ -391,12 +389,13 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       // 停止と並行で文脈を取り直す。録音中にAXツリーが温まるため開始時より取れる。
       // 別アプリに移っていたら開始時のものを優先する。遅延を増やさないよう並列実行。
       const startedCtx = contextRef.current;
-      // 画面キャプチャも並列で取る。整形への添付は対応モデルのみだが、
-      // 履歴確認用に方式問わず残す。画像不要な構成では撮らない。
+      // 画面キャプチャも並列で取る。撮れれば画像を添付し（対応モデルのみ）、
+      // 撮れない・非対応のときはAXツリー文言で大体する（画像添付時はRust側でAX文言を省く）。
+      // 履歴確認用に撮影画像の縮小版は方式問わず残す。
       // Gemini向けはWebPに変換して帯域を節約する（失敗時はJPEGのまま）。
       const wantWebp = settings.refinementProvider === "gemini" && apiKeyHints.gemini !== null;
       const shotPromise: Promise<{ data: string; mime: string } | null> = (async () => {
-        if (!withAiRefinement || !settings.refinement || !settings.screenshotContext) return null;
+        if (!withAiRefinement || !settings.refinement) return null;
         if (!isScreenCaptureAllowed(startedCtx)) return null;
         try {
           const jpeg = await bridge.screenshot(startedCtx.displayX, startedCtx.displayY, startedCtx.bundleID);
@@ -1112,7 +1111,6 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
             onChange={(refinementModel) => setSettings((s) => withLinkedRefinementModel(s, refinementModel))}
           />
           {settings.transcriptionProvider === "gemini" && settings.refinementProvider === "gemini" && <SettingRow label={t("ai.linkModels")} detail={t("ai.linkModelsDetail")}><Switch checked={settings.linkModels} onCheckedChange={(linkModels) => setSettings((s) => ({ ...s, linkModels }))} /></SettingRow>}
-          <SettingRow label={t("ai.screenshotContext")} detail={t("ai.screenshotContextDetail")}><Switch checked={settings.screenshotContext} onCheckedChange={(screenshotContext) => setSettings((s) => ({ ...s, screenshotContext }))} /></SettingRow>
         </>}
     </Card>}
     <Button variant="ghost" className="refine-strip ai-refine-strip h-auto" onClick={onPrompts}>
@@ -2204,7 +2202,7 @@ function settingsWithAppLanguage(settings: Settings, appLanguage: UiLanguagePref
 
 function normalizeSettings(stored: unknown): Settings {
   if (!stored || typeof stored !== "object") return DEFAULT_SETTINGS;
-  const legacy = stored as Partial<Settings> & { defaultPrompt?: string; chatPrompt?: string; codePrompt?: string; screenContextEnabled?: boolean };
+  const legacy = stored as Partial<Settings> & { defaultPrompt?: string; chatPrompt?: string; codePrompt?: string; screenContextEnabled?: boolean; screenshotContext?: boolean };
   const appLanguage: UiLanguagePreference = ["system", "ja", "en"].includes(legacy.appLanguage ?? "")
     ? legacy.appLanguage as UiLanguagePreference
     : "system";
@@ -2221,9 +2219,6 @@ function normalizeSettings(stored: unknown): Settings {
   const linkModels = typeof legacy.linkModels === "boolean"
     ? legacy.linkModels
     : transcriptionModel === refinementModel;
-  const screenshotContext = typeof legacy.screenshotContext === "boolean"
-    ? legacy.screenshotContext
-    : DEFAULT_SETTINGS.screenshotContext;
   const jaDefaults = legacyDefaultPrompts("ja");
   const enDefaults = legacyDefaultPrompts("en");
   const customPrompts = migrateLegacyCustomPrompts(legacy, {
@@ -2235,8 +2230,8 @@ function normalizeSettings(stored: unknown): Settings {
   if (promptDefaultsVersion < 1 && !(DEFAULT_PROMPT_KEY in customPrompts)) {
     customPrompts[DEFAULT_PROMPT_KEY] = defaultRefinementPrompt(resolveUiLanguage(appLanguage));
   }
-  const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, ...current } = legacy;
-  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, linkModels, screenshotContext, promptDefaultsVersion: 1, customPrompts };
+  const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, screenshotContext: _screenshotContext, ...current } = legacy;
+  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, linkModels, promptDefaultsVersion: 1, customPrompts };
   if (legacy.appLanguage === undefined) {
     return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
   }
