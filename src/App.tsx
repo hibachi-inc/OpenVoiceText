@@ -1497,11 +1497,12 @@ function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; ver
   const [summary, setSummary] = useState("");
   const [copied, setCopied] = useState(false);
   const template = kind === "bug" ? "bug_report.yml" : "feature_request.yml";
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const prompt = t(kind === "bug" ? "about.reportPromptBug" : "about.reportPromptRequest", {
+    summary: summary.trim() || t("about.reportNoSummary"),
+    version: version || "?",
+  });
   const copy = async () => {
-    const prompt = t(kind === "bug" ? "about.reportPromptBug" : "about.reportPromptRequest", {
-      summary: summary.trim() || t("about.reportNoSummary"),
-      version: version || "?",
-    });
     try { await navigator.clipboard.writeText(prompt); } catch { return; }
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
@@ -1513,6 +1514,12 @@ function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; ver
         <DialogDescription>{t("about.reportHint")}</DialogDescription>
       </DialogHeader>
       <Textarea value={summary} placeholder={t("about.reportSummaryPlaceholder")} onChange={(e) => setSummary(e.target.value)} rows={3} />
+      <Collapsible open={previewOpen} onOpenChange={setPreviewOpen}>
+        <CollapsibleTrigger asChild>
+          <Button variant="ghost" size="xs" className="report-preview-trigger"><span>{t("about.reportPreview")}</span>{previewOpen ? <ChevronUp /> : <ChevronDown />}</Button>
+        </CollapsibleTrigger>
+        <CollapsibleContent><div className="report-preview">{prompt}</div></CollapsibleContent>
+      </Collapsible>
       <DialogFooter className="dialog-actions">
         <Button variant="outline" onClick={() => void invoke("open_url", { url: `https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=${template}` }).catch(() => undefined)}>{t("about.reportManual")}</Button>
         <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("about.reportCopied") : t("about.reportCopy")}</Button>

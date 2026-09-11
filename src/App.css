@@ -157,6 +157,9 @@ body {
 .about-groups .refine-strip { margin-top: 0; }
 .strip-icon.brand { color: #1f2328; }
 .strip-icon.brand svg { width: 15px; height: 15px; fill: currentColor; stroke: none; }
+.report-preview-trigger { color: #85888d; font-size: 10px; }
+.report-preview-trigger svg { width: 12px; height: 12px; }
+.report-preview { max-height: 140px; overflow-y: auto; white-space: pre-wrap; font-size: 10px; line-height: 1.6; color: #73767b; }
 
 .modal.onboarding-modal { width: min(560px, calc(100% - 32px)); }
 .onboarding-sections { display: grid; gap: 10px; }
