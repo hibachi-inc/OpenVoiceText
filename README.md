@@ -1,15 +1,15 @@
 <div align="center">
 
-<img src="./assets/logo.png" width="120" alt="VoiceLatte logo">
+<img src="./assets/logo.png" width="120" alt="VoiceLatte ロゴ">
 
 # VoiceLatte
 
-### Push-to-talk voice input for macOS. Transcribe on-device, refine with AI.
+### Macのためのプッシュトーク音声入力。端末内で文字起こし、AIで整形。
 
-[Download](https://github.com/hibachi-inc/OpenVoiceText/releases) ·
-[Features](#-features) ·
-[Privacy](#-privacy) ·
-[日本語](./README.ja.md)
+[ダウンロード](https://github.com/hibachi-inc/OpenVoiceText/releases) ·
+[機能](#-機能) ·
+[プライバシー](#-プライバシー) ·
+[English](./README.en.md)
 
 <br>
 
@@ -22,37 +22,31 @@
 ---
 
 <p align="center">
-  <img src="./assets/hero.png" width="860" alt="VoiceLatte settings">
-</p>
-
-## ✨ Features
-
-- 🎙 **Push-to-talk & hold-to-talk** — tap `Control` to record, hold it to keep talking. Confirm with `Space`, cancel with `Esc`, right from the floating HUD.
-- 🧠 **On-device transcription first** — Apple SpeechAnalyzer with automatic fallback to SFSpeechRecognizer. Your voice never has to leave the Mac.
-- ✍️ **AI refinement that knows your screen** — Gemini / Groq polish the transcript using a screenshot of the app you're typing into. Apps that can't be captured fall back to accessibility text.
-- 🪟 **Per-app prompts** — different refinement styles for chat, email, code, terminal, notes, and browser, switched automatically by the frontmost app.
-- 📚 **Vocabulary & formatting** — your terms, plus automatic fixes like amount notation, applied on every pass.
-- 🕘 **History with receipts** — every result keeps its raw text, refined text, and a thumbnail of the screen it came from (thumbnails auto-delete after 1 day).
-
-## 🎬 Demo
-
-<p align="center">
   <video src="https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.6/demo.mp4" width="860" controls></video>
 </p>
 
-## 🔒 Privacy
+## ✨ 機能
 
-- Transcription runs on-device by default.
-- API keys live in the macOS Keychain — never in config files.
-- Screen thumbnails are downscaled and purged after 24 hours, together with history cleanup.
-- Password managers, auth apps, and crypto wallets are excluded from screen capture.
+- 🎙 **プッシュトーク＆長押し** — `Control`を押して話す、長押しで話し続ける。フローティングHUDで`Space`確定・`Esc`取消。
+- 🧠 **端末内文字起こしが優先** — Apple SpeechAnalyzerを第一に、SFSpeechRecognizerへ自動縮退。音声をMacの外に出さない。
+- ✍️ **画面を見て整形するAI** — 入力先アプリのスクショを参考にGemini / Groqが整形。撮れない相手だけアクセシビリティ文言で大体する。
+- 🪟 **アプリ別プロンプト** — チャット・メール・コード・ターミナル・メモ・ブラウザで整形方針を自動切替。
+- 📚 **単語登録と表記補正** — 用語集と金額表記の自動補正を毎回適用。
+- 🕘 **証跡つき履歴** — 整形前・整形後・入力先画面の縮小版をセットで保存（縮小版は1日で自動消去）。
 
-## 🚀 Download
+## 🔒 プライバシー
 
-Prebuilt binaries will be attached to [Releases](https://github.com/hibachi-inc/OpenVoiceText/releases). Until then, build from source:
+- 文字起こしは既定で端末内完結。
+- APIキーはmacOSキーチェーン保管。設定ファイルに書かない。
+- 画面の縮小版は24時間で消去。履歴消去と連動。
+- パスワード管理・認証・暗号資産系アプリは撮影対象外。
+
+## 🚀 ダウンロード
+
+配布バイナリは[Releases](https://github.com/hibachi-inc/OpenVoiceText/releases)に置く予定です。それまではソースからビルドしてください。
 
 <details>
-<summary>Build from source (macOS, Xcode + Rust required)</summary>
+<summary>ソースからビルド（macOS、Xcode + Rustが必要）</summary>
 
 ```bash
 npm install
@@ -61,20 +55,20 @@ npm run test:native
 npm run tauri dev
 ```
 
-On first launch, the onboarding walks through microphone, accessibility, and screen-recording permissions.
+初回起動時のオンボーディングでマイク・アクセシビリティ・画面収録の権限を案内します。
 
 </details>
 
-## 🛠 Tech Stack
+## 🛠 技術構成
 
-Tauri 2 (Rust) · React · TypeScript · Swift sidecar bridge (JSON Lines over stdio)
+Tauri 2（Rust）· React · TypeScript · Swift製サイドカーブリッジ（JSON Lines / stdio）
 
 ```
-src/            shared UI (HUD, history, settings)
-src-tauri/      Tauri core, distribution config, sidecar wiring
-native/macos/   Apple Speech / SpeechAnalyzer bridge (Swift)
+src/            共通UI（HUD・履歴・設定）
+src-tauri/      Tauri本体・配布設定・サイドカー配線
+native/macos/   Apple Speech / SpeechAnalyzerブリッジ（Swift）
 ```
 
-## 📄 License
+## 📄 ライセンス
 
-MIT — see [`LICENSE`](./LICENSE). Third-party attributions in [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md).
+MIT（[`LICENSE`](./LICENSE)参照）。第三者コードの帰属は[`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md)参照。
