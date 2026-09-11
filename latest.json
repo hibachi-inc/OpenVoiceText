@@ -1,0 +1,11 @@
+{
+  "version": "0.4.8",
+  "notes": "配布元を本リポジトリに一本化。レビュー指摘の修正を含む。",
+  "pub_date": "2026-09-11T06:56:39.000Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ckg2K3BtT0IycGRuWkpXdklHcFRUTmVxSm5EeWx6NkNPUGVkdnpSMXpNZ2hhc2h4S1lrUmFMTWdaRnNCTmxwOTVGdW8xODgxbEE5YitCS3lINFd0NVE0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MTA5NzA2CWZpbGU6Vm9pY2VMYXR0ZS5hcHAudGFyLmd6CjRFUmhzVDVZT0hVdE9CMW54cGFON0xCNUhDRXJRanBpbzV3Z0tjOW9iZHQ2MjV3VDNYaktreDlCUlpOb3NJVnZTVDhwSEVDL2tNWkZDcTJtaERFNURnPT0K",
+      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.8/VoiceLatte-048.tar.gz"
+    }
+  }
+}
