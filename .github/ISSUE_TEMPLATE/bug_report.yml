@@ -49,4 +49,4 @@ body:
     attributes:
       label: 作成方法 / How this was written
       options:
-        - label: Claude Code / Codex 等のAIエージェントと作成（推奨。`$voicelatte-contributor` と呼び出す）
+        - label: AIと作成（推奨）

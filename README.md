@@ -77,7 +77,11 @@ native/macos/   Apple Speech / SpeechAnalyzerブリッジ（Swift）
 
 ## 🤝 貢献する
 
-バグ報告・機能要望・コードの持ち込みはすべてGitHubで受け付けています。お問い合わせフォームはありません。Claude CodeやCodexなどのAIエージェントに接続して出すのがおすすめです。
+バグ報告・機能要望・コードの持ち込みはすべてGitHubで受け付けています。お問い合わせフォームはありません。
+
+**セットアップなし（おすすめ）**：アプリの「アプリについて」→「バグ報告／機能要望」→ AIボタンで開き、指示どおり進めます。GitHub連携があれば調査から起票までWebで完結します。
+
+**ローカルエージェント**：Claude CodeやCodexにスキルを入れると開発まで一気通貫です。
 
 ```bash
 npx skills add hibachi-inc/OpenVoiceText --skill voicelatte-contributor -g

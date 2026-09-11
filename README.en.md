@@ -77,7 +77,11 @@ native/macos/   Apple Speech / SpeechAnalyzer bridge (Swift)
 
 ## 🤝 Contribute
 
-Bug reports, feature requests, and code contributions all go through GitHub — there is no contact form. The easiest way is to file them with an AI coding agent like Claude Code or Codex.
+Bug reports, feature requests, and code contributions all go through GitHub — there is no contact form.
+
+**No setup (recommended)**: in the app, open About → Report a bug / Request a feature → open with an AI button and follow the instructions. With GitHub connected, investigation to filing completes on the web.
+
+**Local agents**: install the skill in Claude Code or Codex to go all the way to development.
 
 ```bash
 npx skills add hibachi-inc/OpenVoiceText --skill voicelatte-contributor -g
