@@ -34,6 +34,12 @@
 - 📚 **単語登録と表記補正** — 用語集と金額表記の自動補正を毎回適用。
 - 🕘 **証跡つき履歴** — 整形前・整形後・入力先画面の縮小版をセットで保存（縮小版は1日で自動消去）。
 
+## 🎬 デモ
+
+<p align="center">
+  <video src="https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.6/demo.mp4" width="860" controls></video>
+</p>
+
 ## 🔒 プライバシー
 
 - 文字起こしは既定で端末内完結。

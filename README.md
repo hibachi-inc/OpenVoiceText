@@ -34,6 +34,12 @@
 - 📚 **Vocabulary & formatting** — your terms, plus automatic fixes like amount notation, applied on every pass.
 - 🕘 **History with receipts** — every result keeps its raw text, refined text, and a thumbnail of the screen it came from (thumbnails auto-delete after 1 day).
 
+## 🎬 Demo
+
+<p align="center">
+  <video src="https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.6/demo.mp4" width="860" controls></video>
+</p>
+
 ## 🔒 Privacy
 
 - Transcription runs on-device by default.
