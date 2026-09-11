@@ -5,6 +5,7 @@ on:
     branches: [refactor/modularize-app]
     paths:
       - scripts/refactor-modularize.mjs
+      - scripts/refactor-trigger.txt
 
 permissions:
   contents: write
