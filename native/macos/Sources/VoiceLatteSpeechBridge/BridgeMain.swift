@@ -383,7 +383,7 @@ private final class Bridge: @unchecked Sendable {
         down?.post(tap: .cghidEventTap)
         up?.post(tap: .cghidEventTap)
         // Cmd+Vが処理されるのを待ってから戻す。間に別コピーが入っていたら触らない。
-        Thread.sleep(forTimeInterval: 0.3)
+        Thread.sleep(forTimeInterval: 0.5)
         if pasteboard.string(forType: .string) == text {
             pasteboard.clearContents()
             if let previous {

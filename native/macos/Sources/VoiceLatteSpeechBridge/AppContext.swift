@@ -335,6 +335,7 @@ struct AppContext: Sendable {
             #"\bxox[baprs]-[A-Za-z0-9\-]+(?:-[A-Za-z0-9\-]+)*"#,
             #"\bBearer\s+[A-Za-z0-9._~+\/=:-]+"#,
             #"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"#,
+            #"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----"#,
             #"-----BEGIN [A-Z ]*PRIVATE KEY-----"#,
             #"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"#,
             #"\b\d{12,}\b"#,

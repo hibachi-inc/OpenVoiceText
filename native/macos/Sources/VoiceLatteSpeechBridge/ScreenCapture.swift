@@ -205,29 +205,6 @@ enum ScreenCapture {
         return displays[0]
     }
 
-    private static func scaled(_ image: CGImage, maxEdge: CGFloat) -> CGImage? {
-        let width = CGFloat(image.width)
-        let height = CGFloat(image.height)
-        let longEdge = max(width, height)
-        guard longEdge > maxEdge else { return image }
-        let scale = maxEdge / longEdge
-        let newWidth = Int((width * scale).rounded())
-        let newHeight = Int((height * scale).rounded())
-        guard newWidth > 0, newHeight > 0,
-              let context = CGContext(
-                  data: nil,
-                  width: newWidth,
-                  height: newHeight,
-                  bitsPerComponent: 8,
-                  bytesPerRow: 0,
-                  space: CGColorSpaceCreateDeviceRGB(),
-                  bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
-              ) else { return nil }
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
-        return context.makeImage()
-    }
-
     private static func jpeg(_ image: CGImage, quality: CGFloat) -> Data? {
         encode(image, type: UTType.jpeg.identifier, quality: quality)
     }
