@@ -1217,7 +1217,7 @@ function RefineModelCatalog({ provider, hasKey, value, onChange, task, linkActiv
       {error && <small className="api-key-error">{error}</small>}
     </div>
     <div className="api-key-actions">
-      <Select value={selectValue} disabled={!hasKey || models === null} onValueChange={(v) => onChange(v === "__auto__" ? "" : v)}>
+      <Select value={selectValue} disabled={!hasKey || models === null} onValueChange={(v) => onChange(v === "__auto__" ? "" : v)} onOpenChange={(open) => appLog.info("catalog", `${provider}/${task} dropdown open=${open}`)}>
         <SelectTrigger size="sm" className="settings-select"><span className="model-trigger-label">{triggerLabel}</span></SelectTrigger>
         <SelectContent>
           <SelectItem value="__auto__">{t("ai.modelAuto")}</SelectItem>
