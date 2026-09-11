@@ -16,6 +16,12 @@ AIで一人でもかなり大きなものを作れるようになった今、次
 [機能](#機能) ·
 [English](./README.en.md)
 
+<p align="center">
+  <a href="https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg">
+    <img src="https://img.shields.io/badge/Mac版をダウンロード-Apple_Silicon-black?style=for-the-badge&logo=apple" alt="Mac版をダウンロード">
+  </a>
+</p>
+
 <br>
 
 ![License](https://img.shields.io/github/license/hibachi-inc/OpenVoiceText?style=flat-square)
