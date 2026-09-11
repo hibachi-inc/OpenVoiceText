@@ -10,7 +10,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import {
   AlertCircle, ArrowDown, Bot, Bug, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
-  Download, Info, Keyboard, Lightbulb, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
+  Download, Info, Keyboard, Lightbulb, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Star, Trash2, X,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -195,6 +195,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   const [onboardingShortcutChosen, setOnboardingShortcutChosen] = useState(Boolean(settings.toggleShortcut));
   const [onboardingTestPassed, setOnboardingTestPassed] = useState(false);
   const [selected, setSelected] = useState<HistoryEntry | null>(null);
+  const [starOpen, setStarOpen] = useState(false);
   const [shortcutError, setShortcutError] = useState("");
   const [installing, setInstalling] = useState(false);
   const [deviceStatus, setDeviceStatus] = useState<DeviceSettingsStatus | null>(null);
@@ -558,6 +559,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       }
       const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: cloudRaw ?? source, createdAt: Date.now(), category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner: shouldRefine ? refiner : undefined, screenChars: shouldRefine ? screenChars : undefined, screenText: shouldRefine ? screenText : undefined, image };
       setHistory((items) => purgeExpiredImages([entry, ...items]).slice(0, 500));
+      if (!starPromptShown() && bumpStarCount() >= 3) { markStarPromptShown(); setStarOpen(true); }
       await bridge.insert(text, settings.autoPaste);
       recordingProviderRef.current = "local";
       setRecordingState({ phase: "done", transcript: text, message: settings.autoPaste ? t("record.inserted") : t("record.completed") });
@@ -576,7 +578,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         onboardingTestRef.current = false;
       }, 2500);
     }
-  }, [bridge, localizedError, markKeyDenied, setHistory, setRecordingState, settings, speechLocale, t, vocabulary]);
+  }, [bridge, localizedError, markKeyDenied, setHistory, setRecordingState, setStarOpen, settings, speechLocale, t, vocabulary]);
 
   const cancelRecording = useCallback(async () => {
     await bridge.cancel().catch(() => undefined);
@@ -611,12 +613,13 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     const text = which === "raw" ? choice.raw : choice.text;
     const entry: HistoryEntry = { id: crypto.randomUUID(), text, raw: choice.raw, createdAt: Date.now(), category: choice.category, engine: choice.engine, appName: choice.appName, promptKey: choice.promptKey, refiner: choice.refiner, screenChars: choice.screenChars, screenText: choice.screenText, image: choice.image };
     setHistory((items) => purgeExpiredImages([entry, ...items]).slice(0, 500));
+    if (!starPromptShown() && bumpStarCount() >= 3) { markStarPromptShown(); setStarOpen(true); }
     await bridge.insert(text, settings.autoPaste);
     // 選択肢表示で前面に出した分は必ず戻す（insertが切替済みでも同アプリへの再送で無害）
     await bridge.restoreApp().catch(() => undefined);
     void releaseHudFocus().catch(() => undefined);
     setRecordingState({ phase: "idle", transcript: "", level: 0 });
-  }, [bridge, setHistory, setRecordingState, settings.autoPaste]);
+  }, [bridge, setHistory, setRecordingState, setStarOpen, settings.autoPaste]);
 
   // 見比べ選択の破棄。ペーストも履歴保存もしない。退かせた前面アプリに戻す。
   const discardChoice = useCallback(() => {
@@ -953,6 +956,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
       />}
       {showPrompts && <PromptDialog settings={settings} setSettings={setSettings} history={history} onClose={() => setShowPrompts(false)} />}
       {selected && <HistoryDialog entry={selected} debugMode={settings.debugMode} onClose={() => setSelected(null)} />}
+      {starOpen && <StarDialog onClose={() => setStarOpen(false)} />}
       {message && phase === "error" && <div className="toast error-toast">{message}</div>}
     </main>
   );
@@ -1239,6 +1243,24 @@ function bridgeMessageCode(error: unknown) {
 
 const IMAGE_RETENTION_MS = 24 * 3600 * 1000;
 
+// スター依頼の集計。完了した音声入力を数え、3回目に1度だけダイアログを出す。
+const STAR_COUNT_KEY = "voicelatte.inputCount";
+const STAR_SHOWN_KEY = "voicelatte.starPromptShown";
+function readStarCount(): number {
+  try { return Number(localStorage.getItem(STAR_COUNT_KEY)) || 0; } catch { return 0; }
+}
+function starPromptShown(): boolean {
+  try { return localStorage.getItem(STAR_SHOWN_KEY) === "1"; } catch { return true; }
+}
+function markStarPromptShown() {
+  try { localStorage.setItem(STAR_SHOWN_KEY, "1"); } catch { /* 保存できなければ出さない */ }
+}
+function bumpStarCount(): number {
+  const next = readStarCount() + 1;
+  try { localStorage.setItem(STAR_COUNT_KEY, String(next)); } catch { /* 集計のみ */ }
+  return next;
+}
+
 // 撮影対象外（Dayflow方式：パスワード・認証・暗号資産系）。
 // 除外リストは Dayflow (MIT, (c) 2025 Jerry Liu,
 // https://github.com/JerryZLiu/Dayflow) の選定を流用。
@@ -1497,6 +1519,22 @@ function XMark() {
 
 function AnthropicMark() {
   return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" /></svg>;
+}
+
+function StarDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
+  return <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <DialogContent className="modal sm:max-w-[420px]">
+      <DialogHeader>
+        <DialogTitle>{t("star.title")}</DialogTitle>
+        <DialogDescription>{t("star.body")}</DialogDescription>
+      </DialogHeader>
+      <DialogFooter className="dialog-actions">
+        <Button variant="outline" onClick={onClose}>{t("star.later")}</Button>
+        <Button onClick={() => { void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText" }).catch(() => undefined); onClose(); }}><Star />{t("star.action")}</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>;
 }
 
 function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; version: string; onClose: () => void }) {
