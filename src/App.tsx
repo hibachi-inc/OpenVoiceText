@@ -88,7 +88,10 @@ type CloudResult = { text: string; model: string; fallbackFrom?: string; raw?: s
 type CloudTranscript = { text: string; model: string };
 
 const systemUiLanguage = resolveUiLanguage("system");
-const DEFAULT_VOCABULARY: VocabularyEntry[] = [{ id: "default-ok", term: "OK", aliases: ["オーケー"] }];
+const DEFAULT_VOCABULARY: VocabularyEntry[] = [
+  { id: "default-ok", term: "OK", aliases: ["オーケー"] },
+  { id: "default-voicelatte", term: "VoiceLatte", aliases: ["ボイスラテ", "ボイスラッテ"] },
+];
 const DEFAULT_SETTINGS: Settings = {
   locale: "system",
   appLanguage: "system",
