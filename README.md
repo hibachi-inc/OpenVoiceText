@@ -6,16 +6,20 @@
 
 ### 話すだけで、きちんとした文章になるMacの音声入力。
 
-[ダウンロード](https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg) ·
+**OpenVoiceText は、VoiceLatteをみんなで育てるオープンソースプロジェクトです。**  
+初めてのOSS参加も、AIを使った開発も歓迎します。
+
+[Mac版をダウンロード](https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg) ·
+[開発に参加する](#一緒に作りませんか) ·
 [機能](#機能) ·
-[プライバシー](#プライバシー) ·
 [English](./README.en.md)
 
 <br>
 
 ![License](https://img.shields.io/github/license/hibachi-inc/OpenVoiceText?style=flat-square)
 ![macOS](https://img.shields.io/badge/macOS-Tahoe_%26_later-black?style=flat-square&logo=apple)
-![Version](https://img.shields.io/badge/version-0.4.8-blue?style=flat-square)
+![Release](https://img.shields.io/github/v/release/hibachi-inc/OpenVoiceText?style=flat-square)
+![Contributions welcome](https://img.shields.io/badge/初めてのOSS参加-歓迎-brightgreen?style=flat-square)
 
 </div>
 
@@ -25,6 +29,61 @@
   <video src="https://github.com/user-attachments/assets/aa8930ee-a219-4eea-9b18-37c88dd65abd" width="860" controls></video>
 </p>
 
+## 一緒に作りませんか？
+
+このリポジトリは、完成したアプリのソースコードを置くだけの場所ではありません。
+
+**AIを使えば、これまでOSS開発に参加したことがない人でも、一緒にプロダクトを作れる。**  
+OpenVoiceTextでは、その新しいOSS開発の形を試しています。
+
+- **OSSへの参加が初めてでも歓迎**です。
+- **Issue・PR・レビューは日本語でOK**です。
+- **ChatGPT / Codex / Claude Codeなど、AIを使った開発も歓迎**です。
+- コードを書かなくても、**「ここが使いづらい」「こんな機能がほしい」**という提案だけで立派なContributionです。
+
+### 🤖 AIに頼んで、そのまま参加できます
+
+GitHubと連携したAIやローカルのコーディングエージェントに、このリポジトリを渡して話しかけてみてください。
+
+たとえば：
+
+```text
+このリポジトリを読んで、初心者でも取り組みやすい改善案を3つ考えて。
+```
+
+```text
+このアプリに〇〇機能を追加したい。実装方法を調べて、必要ならIssueを作って。
+```
+
+```text
+このIssueを調査して、修正案を作って。テストまで確認してPRにできる状態にして。
+```
+
+「何を作ればいいかわからない」状態からでも大丈夫です。  
+まずはAIと一緒にリポジトリを読んで、小さな改善から参加してみてください。
+
+👉 [Issuesを見る](https://github.com/hibachi-inc/OpenVoiceText/issues)
+
+### AIエージェント向けContributor Skill
+
+Claude CodeやCodexなどのローカルエージェントでは、Contributor Skillを入れると、報告の型・証跡の集め方・開発手順まで案内できます。
+
+```bash
+npx skills add hibachi-inc/OpenVoiceText --skill voicelatte-contributor -g
+```
+
+インストール後、エージェントで `$voicelatte-contributor` と呼び出してください。
+
+---
+
+## VoiceLatteとは
+
+VoiceLatteは、**話した内容をそのまま入力するのではなく、AIで読みやすい文章に整えて入力する**Mac向け音声入力アプリです。
+
+会話のように自然に話しても、チャットならチャットらしく、メールならメールらしい文章に整えて入力できます。
+
+OpenVoiceTextはこのVoiceLatteを開発・公開するOSSプロジェクトです。
+
 ## 機能
 
 - **話すだけで文字になる** — `Control`を押して話すだけ。手はキーボードから離さない。`Space`で確定、`Esc`で取り消し。
@@ -33,13 +92,6 @@
 - **専門用語もそのまま残る** — 登録した用語や金額表記を正しく保つ。
 - **いつでも見返せる** — 整形前と整形後をセットで履歴に保存。
 - **音声はMacの外に出ない** — 文字起こしは端末内で完結する。
-
-## プライバシー
-
-- 文字起こしは既定で端末内完結。
-- APIキーはmacOSキーチェーン保管。設定ファイルに書かない。
-- 画面の縮小版は24時間で消去。履歴消去と連動。
-- パスワード管理・認証・暗号資産系アプリは撮影対象外。
 
 ## ダウンロード
 
@@ -51,8 +103,26 @@
 
 macOS Tahoe以降・Apple Silicon専用。Intel Macには対応していません。過去版と更新履歴は[Releases](https://github.com/hibachi-inc/OpenVoiceText/releases)にあります。
 
+## こんなContributionを歓迎しています
+
+大きな機能開発だけがContributionではありません。
+
+- バグを見つけてIssueを書く
+- 「こうしたら使いやすそう」というアイデアを出す
+- UIや文章を改善する
+- ドキュメントを直す
+- テストを追加する
+- 新しい機能を実装する
+- 既存Issueの原因をAIと一緒に調査する
+- 他の人のPRを試してフィードバックする
+
+**最初のContributionは小さいほど歓迎です。**  
+このリポジトリをきっかけに、一緒にものを作ったことがある人が増えていくことを大切にしています。
+
+## ソースから動かす
+
 <details>
-<summary>ソースからビルド（macOS、Xcode + Rustが必要）</summary>
+<summary>macOSでのセットアップ（Xcode + Rustが必要）</summary>
 
 ```bash
 npm install
@@ -69,25 +139,26 @@ npm run tauri dev
 
 Tauri 2（Rust）· React · TypeScript · Swift製サイドカーブリッジ（JSON Lines / stdio）
 
-```
+```text
 src/            共通UI（HUD・履歴・設定）
 src-tauri/      Tauri本体・配布設定・サイドカー配線
 native/macos/   Apple Speech / SpeechAnalyzerブリッジ（Swift）
 ```
 
-## 貢献する
+## プライバシー
 
-バグ報告・機能要望・コードの持ち込みはすべてGitHubで受け付けています。お問い合わせフォームはありません。
+- 文字起こしは既定で端末内完結。
+- APIキーはmacOSキーチェーン保管。設定ファイルに書かない。
+- 画面の縮小版は24時間で消去。履歴消去と連動。
+- パスワード管理・認証・暗号資産系アプリは撮影対象外。
 
-**セットアップなし（おすすめ）**：アプリの「アプリについて」→「バグ報告／機能要望」→ AIボタンで開き、指示どおり進めます。GitHub連携があれば調査から起票までWebで完結します。
+## バグ報告・機能要望
 
-**ローカルエージェント**：Claude CodeやCodexにスキルを入れると開発まで一気通貫です。
+バグ報告・機能要望・コードの持ち込みはすべてGitHubで受け付けています。
 
-```bash
-npx skills add hibachi-inc/OpenVoiceText --skill voicelatte-contributor -g
-```
+アプリからは **「アプリについて」→「バグ報告／機能要望」→ AIボタン** で進めます。GitHub連携があれば、調査からIssue作成までWeb上で進められます。
 
-インストール後にエージェントで `$voicelatte-contributor` と呼び出すと、報告の型・証跡の集め方・開発手順を案内します。
+もちろん、[GitHub Issues](https://github.com/hibachi-inc/OpenVoiceText/issues)へ直接投稿してもOKです。
 
 ## ライセンス
 
