@@ -1,0 +1,36 @@
+name: modularize-app-once
+
+on:
+  push:
+    branches: [refactor/modularize-app]
+    paths:
+      - scripts/refactor-modularize.mjs
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/modularize-app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Modularize React source
+        run: node scripts/refactor-modularize.mjs
+      - name: Commit generated refactor
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src
+          git commit -m "refactor: modularize React app structure" || exit 0
+          git push origin HEAD:refactor/modularize-app
+      - name: Typecheck and build
+        run: npm run build
+      - name: Text processing tests
+        run: npm run test:text
