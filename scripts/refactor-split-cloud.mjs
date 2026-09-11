@@ -80,7 +80,9 @@ for (let i = 0; i < lines.length; i++) {
   }
   let end = i;
   if (decl.kind === "const") {
-    while (end < lines.length - 1 && !lines.slice(i, end + 1).join("").includes(";")) end++;
+    // Rust array types contain semicolons (e.g. [&str; 5]); only a semicolon at
+    // the end of a source line terminates the top-level const item here.
+    while (end < lines.length - 1 && !lines[end].trimEnd().endsWith(";")) end++;
   } else {
     // Find first line that returns to top-level after this item has opened a brace.
     let opened = false;
