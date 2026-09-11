@@ -3,12 +3,16 @@
 import { readFileSync } from "node:fs";
 
 function stringsBetween(src, start, end) {
-  const from = src.indexOf(start) + start.length;
-  const body = src.slice(from, src.indexOf(end, from));
+  const startIndex = src.indexOf(start);
+  if (startIndex < 0) throw new Error(`marker not found: ${start}`);
+  const from = startIndex + start.length;
+  const to = src.indexOf(end, from);
+  if (to < 0) throw new Error(`end marker not found after: ${start}`);
+  const body = src.slice(from, to);
   return [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 }
 
-const ts = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+const ts = readFileSync(new URL("../src/features/privacy/screen-capture.ts", import.meta.url), "utf8");
 const swift = readFileSync(new URL("../native/macos/Sources/VoiceLatteSpeechBridge/AppContext.swift", import.meta.url), "utf8");
 
 const pairs = [
