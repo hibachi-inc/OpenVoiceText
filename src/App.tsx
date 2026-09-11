@@ -1496,6 +1496,7 @@ function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateStat
     <div className="about-actions">
       <Button variant="outline" size="sm" className="about-setup" onClick={onOpenOnboarding}><Settings2 />{t("about.openOnboarding")}</Button>
       <Button variant="outline" size="sm" className="about-setup" onClick={() => setLogOpen(true)}>{t("general.errorLog")}</Button>
+      <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText/issues/new" }).catch(() => undefined)}>{t("about.support")}</Button>
     </div>
     {logOpen && <LogDialog onClose={() => setLogOpen(false)} />}
   </Card>;
