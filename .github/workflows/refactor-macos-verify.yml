@@ -1,0 +1,28 @@
+name: refactor-macos-verify
+
+on:
+  push:
+    branches: [refactor/modularize-app]
+    paths:
+      - scripts/refactor-macos-verify-trigger.txt
+
+jobs:
+  verify:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/modularize-app
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build frontend
+        run: npm run build
+      - name: Run text tests
+        run: npm run test:text
+      - name: Build and test native bridge
+        run: npm run test:native
+      - name: Check Rust
+        run: cargo check --manifest-path src-tauri/Cargo.toml --lib
