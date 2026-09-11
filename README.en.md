@@ -4,7 +4,7 @@
 
 # VoiceLatte
 
-### Push-to-talk voice input for macOS. Transcribe on-device, refine with AI.
+### Talk, and get clean text. Voice input for macOS.
 
 [Download](https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg) ·
 [Features](#features) ·
@@ -27,12 +27,12 @@
 
 ## Features
 
-- **Push-to-talk & hold-to-talk** — tap `Control` to record, hold it to keep talking. Confirm with `Space`, cancel with `Esc`, right from the floating HUD.
-- **On-device transcription first** — Apple SpeechAnalyzer with automatic fallback to SFSpeechRecognizer. Your voice never has to leave the Mac.
-- **AI refinement that knows your screen** — Gemini / Groq polish the transcript using a screenshot of the app you're typing into. Apps that can't be captured fall back to accessibility text.
-- **Per-app prompts** — different refinement styles for chat, email, code, terminal, notes, and browser, switched automatically by the frontmost app.
-- **Vocabulary & formatting** — your terms, plus automatic fixes like amount notation, applied on every pass.
-- **History with receipts** — every result keeps its raw text, refined text, and a thumbnail of the screen it came from (thumbnails auto-delete after 1 day).
+- **Just talk to type** — hold `Control` and speak. Hands stay on the keyboard. `Space` to confirm, `Esc` to cancel.
+- **AI cleans up the rest** — removes fillers and shapes the text to fit the occasion.
+- **Writes the way each app expects** — casual in chat, polite in email. Switches automatically to match what's open.
+- **Keeps your terms intact** — registered vocabulary and amount formatting stay correct.
+- **Always reviewable** — before and after kept together in history.
+- **Your voice never leaves the Mac** — transcription finishes on-device.
 
 ## Privacy
 
