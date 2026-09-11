@@ -892,7 +892,6 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
             await bridge.requestPermission(permission);
             setDeviceStatus(await bridge.settingsStatus());
           }}
-          onRerunSetup={() => setShowOnboarding(true)}
         />}
         {section === "ai" && <AiPage
           status={status} settings={settings} setSettings={setSettings} installing={installing}
@@ -979,17 +978,15 @@ function HistoryPage(props: {
   </>;
 }
 
-function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLaunchAtLogin, onRequestPermission, onRerunSetup }: {
+function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLaunchAtLogin, onRequestPermission }: {
   settings: Settings;
   setSettings: React.Dispatch<React.SetStateAction<Settings>>;
   deviceStatus: DeviceSettingsStatus | null;
   launchAtLogin: boolean;
   onLaunchAtLogin: (enabled: boolean) => Promise<void>;
   onRequestPermission: (permission: "microphone" | "speech" | "accessibility" | "screencapture") => Promise<void>;
-  onRerunSetup: () => void;
 }) {
   const { t } = useI18n();
-  const [logOpen, setLogOpen] = useState(false);
   const locales = [
     ["system", "general.systemDefault"], ["ja-JP", "language.ja"], ["en-US", "language.enUS"], ["en-GB", "language.enGB"],
     ["zh-Hans", "language.zhHans"], ["zh-Hant", "language.zhHant"], ["ko-KR", "language.ko"],
@@ -1037,10 +1034,6 @@ function GeneralPage({ settings, setSettings, deviceStatus, launchAtLogin, onLau
         <ScreenCaptureRow status={deviceStatus.screenCapturePermission} onOpenSettings={() => onRequestPermission("screencapture")} />
       </Card>
     </>}
-    <p className="settings-group-label">{t("general.errorLog")}</p>
-    <SettingRow label={t("general.errorLog")} detail={t("general.errorLogDetail")}><Button variant="outline" size="xs" className="secondary-button" onClick={() => setLogOpen(true)}>{t("general.showLog")}</Button></SettingRow>
-    <SettingRow label={t("general.rerunSetup")} detail={t("general.rerunSetupDetail")}><Button variant="outline" size="xs" className="secondary-button" onClick={onRerunSetup}>{t("general.rerunSetupAction")}</Button></SettingRow>
-    {logOpen && <LogDialog onClose={() => setLogOpen(false)} />}
   </div>;
 }
 
@@ -1492,6 +1485,7 @@ function ShortcutRecorder({ value, active, disabled = false, onStart, onChange }
 function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void }) {
   const { t } = useI18n();
   const [version, setVersion] = useState("");
+  const [logOpen, setLogOpen] = useState(false);
   useEffect(() => { void getVersion().then(setVersion).catch(() => undefined); }, []);
   return <Card className="glass-card about gap-0 py-0">
     <img className="about-character" src={voicelatteCow} alt="" />
@@ -1499,7 +1493,11 @@ function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateStat
     <p>{t("about.tagline")}</p>
     <small>{version ? t("about.version", { version }) : ""}</small>
     <UpdateRow state={update} onCheck={() => void runUpdateCheck(setUpdate, true)} onInstall={() => void installUpdate(update, setUpdate)} />
-    <Button variant="outline" size="sm" className="about-setup" onClick={onOpenOnboarding}><Settings2 />{t("about.openOnboarding")}</Button>
+    <div className="about-actions">
+      <Button variant="outline" size="sm" className="about-setup" onClick={onOpenOnboarding}><Settings2 />{t("about.openOnboarding")}</Button>
+      <Button variant="outline" size="sm" className="about-setup" onClick={() => setLogOpen(true)}>{t("general.errorLog")}</Button>
+    </div>
+    {logOpen && <LogDialog onClose={() => setLogOpen(false)} />}
   </Card>;
 }
 
