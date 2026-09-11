@@ -14,7 +14,6 @@ import { isScreenCaptureAllowed } from "../privacy/screen-capture";
 
 type ApiKeyHints = { groq: string | null; gemini: string | null };
 type CloudProvider = "groq" | "gemini";
-type RecordingAction = "toggle" | "refine-stop" | "cancel" | "hold-start" | "hold-stop" | "shared-start" | "shared-stop";
 
 type Options = {
   bridge: SpeechBridgeClient;
