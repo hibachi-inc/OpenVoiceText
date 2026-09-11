@@ -1976,13 +1976,13 @@ function HistoryDialog({ entry, debugMode, onClose }: { entry: HistoryEntry; deb
   return <Dialog open onOpenChange={(open) => !open && onClose()}>
     <DialogContent className="modal history-modal sm:max-w-[520px]">
       <DialogHeader><DialogTitle>{t("historyDialog.title")}</DialogTitle><DialogDescription>{new Date(entry.createdAt).toLocaleString(language)}</DialogDescription></DialogHeader>
-      <div className="history-meta-bar">
+      {debugMode && <div className="history-meta-bar">
         <Button variant="ghost" size="xs" aria-expanded={showInfo} onClick={() => setShowInfo((v) => !v)}><Info />{t("historyDialog.details")}{showInfo ? <ChevronUp /> : <ChevronDown />}</Button>
-      </div>
-      {showInfo && <dl className="history-details">
+      </div>}
+      {debugMode && showInfo && <dl className="history-details">
         {details.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}
       </dl>}
-      {showInfo && entry.screenText && <div className="history-full original history-context-body">{entry.screenText}</div>}
+      {debugMode && showInfo && entry.screenText && <div className="history-full original history-context-body">{entry.screenText}</div>}
       {debugMode && entry.image && <div className="history-screenshot-wrap">
         <small>{t("historyDialog.image")}</small>
         <img className="history-screenshot" src={`data:image/jpeg;base64,${entry.image}`} alt="" />
