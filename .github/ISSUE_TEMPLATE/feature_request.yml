@@ -1,0 +1,34 @@
+name: Feature request
+description: 機能要望 / Suggest a feature
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 困っていること / Problem
+      description: 現状のどこが痛いか。具体例つきで。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: こうなってほしい / Proposal
+      description: UIの位置まで決まっていれば書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 代替案 / Alternatives
+      description: 設定で済む・既存機能で近いものはないか。
+  - type: textarea
+    id: who
+    attributes:
+      label: 誰が嬉しいか / Who benefits
+      description: 自分だけか、多くの利用者か。
+  - type: checkboxes
+    id: agent
+    attributes:
+      label: 作成方法 / How this was written
+      options:
+        - label: Claude Code / Codex 等のAIエージェントと作成（推奨。`$voicelatte-contributor` と呼び出す）

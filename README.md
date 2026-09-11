@@ -69,6 +69,16 @@ src-tauri/      Tauri本体・配布設定・サイドカー配線
 native/macos/   Apple Speech / SpeechAnalyzerブリッジ（Swift）
 ```
 
+## 🤝 貢献する
+
+バグ報告・機能要望・コードの持ち込みはすべてGitHubで受け付けています。お問い合わせフォームはありません。Claude CodeやCodexなどのAIエージェントに接続して出すのがおすすめです。
+
+```bash
+npx skills add hibachi-inc/OpenVoiceText --skill voicelatte-contributor -g
+```
+
+インストール後にエージェントで `$voicelatte-contributor` と呼び出すと、報告の型・証跡の集め方・開発手順を案内します。
+
 ## 📄 ライセンス
 
 MIT（[`LICENSE`](./LICENSE)参照）。第三者コードの帰属は[`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md)参照。

@@ -1,0 +1,52 @@
+name: Bug report
+description: バグ・エラー報告 / Report a bug
+labels: ["bug"]
+body:
+  - type: textarea
+    id: repro
+    attributes:
+      label: 再現手順 / Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待する動作 / Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の動作 / Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: バージョン / Version
+      description: アプリの「アプリについて」に表示されるバージョン
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: 処理方法 / Transcription provider
+      options:
+        - デバイス内 / On-device
+        - Groq
+        - Gemini
+  - type: textarea
+    id: logs
+    attributes:
+      label: ログ / Logs
+      description: 「アプリについて」→「エラーログ」から関連行を貼付。APIキー等の秘密はマスクしてください。
+      render: text
+  - type: checkboxes
+    id: agent
+    attributes:
+      label: 作成方法 / How this was written
+      options:
+        - label: Claude Code / Codex 等のAIエージェントと作成（推奨。`$voicelatte-contributor` と呼び出す）

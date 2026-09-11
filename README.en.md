@@ -69,6 +69,16 @@ src-tauri/      Tauri core, distribution config, sidecar wiring
 native/macos/   Apple Speech / SpeechAnalyzer bridge (Swift)
 ```
 
+## 🤝 Contribute
+
+Bug reports, feature requests, and code contributions all go through GitHub — there is no contact form. The easiest way is to file them with an AI coding agent like Claude Code or Codex.
+
+```bash
+npx skills add hibachi-inc/OpenVoiceText --skill voicelatte-contributor -g
+```
+
+After installing, invoke `$voicelatte-contributor` in your agent and it will walk you through report formats, evidence collection, and development steps.
+
 ## 📄 License
 
 MIT — see [`LICENSE`](./LICENSE). Third-party attributions in [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md).
