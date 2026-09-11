@@ -151,6 +151,10 @@ body {
 .about-setup { margin-top: 18px; }
 .about-actions { display: flex; gap: 8px; margin-top: 18px; }
 .about-actions .about-setup { margin-top: 0; }
+.about-sections { display: grid; gap: 14px; justify-items: center; margin-top: 18px; }
+.about-sections .about-actions { margin-top: 0; }
+.about-group { display: grid; gap: 6px; justify-items: center; }
+.about-label { color: #9a9ca0; font-size: 11px; }
 
 .modal.onboarding-modal { width: min(560px, calc(100% - 32px)); }
 .onboarding-sections { display: grid; gap: 10px; }

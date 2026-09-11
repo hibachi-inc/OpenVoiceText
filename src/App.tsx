@@ -9,8 +9,8 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import {
-  AlertCircle, ArrowDown, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
-  Download, Info, Keyboard, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
+  AlertCircle, ArrowDown, AtSign, Bug, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
+  Download, ExternalLink, Info, Keyboard, Lightbulb, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -1493,10 +1493,27 @@ function AboutPage({ update, setUpdate, onOpenOnboarding }: { update: UpdateStat
     <p>{t("about.tagline")}</p>
     <small>{version ? t("about.version", { version }) : ""}</small>
     <UpdateRow state={update} onCheck={() => void runUpdateCheck(setUpdate, true)} onInstall={() => void installUpdate(update, setUpdate)} />
-    <div className="about-actions">
-      <Button variant="outline" size="sm" className="about-setup" onClick={onOpenOnboarding}><Settings2 />{t("about.openOnboarding")}</Button>
-      <Button variant="outline" size="sm" className="about-setup" onClick={() => setLogOpen(true)}>{t("general.errorLog")}</Button>
-      <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText/issues/new" }).catch(() => undefined)}>{t("about.support")}</Button>
+    <div className="about-sections">
+      <div className="about-group">
+        <span className="about-label">{t("about.sectionAbout")}</span>
+        <div className="about-actions">
+          <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText" }).catch(() => undefined)}><ExternalLink />GitHub</Button>
+        </div>
+      </div>
+      <div className="about-actions">
+        <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=bug_report.yml" }).catch(() => undefined)}><Bug />{t("about.bugReport")}</Button>
+        <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=feature_request.yml" }).catch(() => undefined)}><Lightbulb />{t("about.featureRequest")}</Button>
+      </div>
+      <div className="about-group">
+        <span className="about-label">{t("about.maintainer")}</span>
+        <div className="about-actions">
+          <Button variant="outline" size="sm" className="about-setup" onClick={() => void invoke("open_url", { url: "https://x.com/tanakaisworking" }).catch(() => undefined)}><AtSign />tanakaisworking</Button>
+        </div>
+      </div>
+      <div className="about-actions">
+        <Button variant="outline" size="sm" className="about-setup" onClick={onOpenOnboarding}><Settings2 />{t("about.openOnboarding")}</Button>
+        <Button variant="outline" size="sm" className="about-setup" onClick={() => setLogOpen(true)}>{t("general.errorLog")}</Button>
+      </div>
     </div>
     {logOpen && <LogDialog onClose={() => setLogOpen(false)} />}
   </Card>;
