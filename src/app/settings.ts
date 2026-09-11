@@ -1,5 +1,6 @@
 import { defaultRefinementPrompt, legacyDefaultPrompts, resolveUiLanguage, type UiLanguagePreference } from "../i18n";
 import { DEFAULT_PROMPT_KEY, migrateLegacyCustomPrompts, type VocabularyEntry } from "../text-processing";
+import { settingsWithAppLanguage } from "./formatters";
 import type { RefinementProvider, Settings } from "./types";
 
 const systemUiLanguage = resolveUiLanguage("system");
