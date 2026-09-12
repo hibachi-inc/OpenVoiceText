@@ -2,6 +2,7 @@
 // warn/error は diagnostics.log にも追記する（レンダラが死んでも死因が追える）。
 // info は量が多いためメモリのみ。
 import { invoke } from "@tauri-apps/api/core";
+import { reportError } from "./telemetry";
 
 export type LogEntry = { at: string; level: "info" | "warn" | "error"; tag: string; message: string };
 
@@ -29,7 +30,7 @@ function persist(level: "warn" | "error", tag: string, message: string) {
 export const appLog = {
   info: (tag: string, message: string) => push("info", tag, message),
   warn: (tag: string, message: string) => { push("warn", tag, message); persist("warn", tag, message); },
-  error: (tag: string, message: string) => { push("error", tag, message); persist("error", tag, message); },
+  error: (tag: string, message: string) => { push("error", tag, message); persist("error", tag, message); reportError(tag, message); },
 };
 
 // レンダラの未捕捉例外をログに残す。Rootのマウント時に1度だけ呼ぶ。

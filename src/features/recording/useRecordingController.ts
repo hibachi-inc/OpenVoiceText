@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, LogicalPosition, monitorFromPoint, PhysicalPosition } from "@tauri-apps/api/window";
 import { appLog } from "../../applog";
+import { trackEvent } from "../../telemetry";
 import { localizeBridgeMessage, type Translator, type UiLanguage } from "../../i18n";
 import { type SpeechBridgeClient } from "../../speech-bridge";
 import { buildRefinementPrompt, postProcessTranscript, resolveCustomPrompt, shouldDiscardRefinement, vocabularyHints, type VocabularyEntry } from "../../text-processing";
@@ -321,7 +322,7 @@ export function useRecordingController({
             const result = await invoke<CloudResult>("cloud_refine", { provider: cloudRefinementProvider, text: source, prompt: refinementPrompt, screenContext, model: settings.refinementModel || null, image: shot?.data ?? null, imageMime: shot?.mime ?? null });
             refined = result.text;
             refiner = result.model || cloudRefinementProvider;
-            if (result.fallbackFrom) appLog.warn("refine", `fell back to ${refiner} (${result.fallbackFrom})`);
+            if (result.fallbackFrom) { appLog.warn("refine", `fell back to ${refiner} (${result.fallbackFrom})`); trackEvent("refine_fallback", { from: result.fallbackFrom, to: refiner }); }
             appLog.info("refine", `cloud ${cloudRefinementProvider} ok (${refiner})`);
             setRecordingState({ transcript: refined, engine: result.model });
           } catch (error) {

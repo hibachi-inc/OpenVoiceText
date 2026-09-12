@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   transcriptionModel: "",
   linkModels: true,
   debugMode: false,
+  telemetry: false,
   promptDefaultsVersion: 1,
 };
 
@@ -49,6 +50,7 @@ export function normalizeSettings(stored: unknown): Settings {
     ? legacy.linkModels
     : transcriptionModel === refinementModel;
   const debugMode = legacy.debugMode === true;
+  const telemetry = legacy.telemetry === true;
   const jaDefaults = legacyDefaultPrompts("ja");
   const enDefaults = legacyDefaultPrompts("en");
   const customPrompts = migrateLegacyCustomPrompts(legacy, {
@@ -61,7 +63,7 @@ export function normalizeSettings(stored: unknown): Settings {
     customPrompts[DEFAULT_PROMPT_KEY] = defaultRefinementPrompt(resolveUiLanguage(appLanguage));
   }
   const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, screenshotContext: _screenshotContext, ...current } = legacy;
-  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, linkModels, debugMode, promptDefaultsVersion: 1, customPrompts };
+  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, linkModels, debugMode, telemetry, promptDefaultsVersion: 1, customPrompts };
   if (legacy.appLanguage === undefined) {
     return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
   }

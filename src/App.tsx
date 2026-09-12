@@ -10,6 +10,7 @@ import "./App.css";
 import { localizeBridgeMessage, resolveSpeechLocale, type MessageKey } from "./i18n";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
 import { appLog, installRendererErrorHook } from "./applog";
+import { setTelemetryEnabled } from "./telemetry";
 import { normalizeVocabularyEntries, type VocabularyEntry } from "./text-processing";
 import { useI18n, I18nProvider } from "./app/i18n-context";
 import { isModifierOnlyShortcut } from "./app/formatters";
@@ -165,6 +166,9 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
   }, [bridge, localizedError, refreshApiKeys, speechLocale]);
 
   useEffect(() => { void runUpdateCheck(setUpdate, false); }, []);
+
+  // 保存済みの同意を起動時に反映する（既定オフ）。
+  useEffect(() => { void setTelemetryEnabled(settings.telemetry); }, [settings.telemetry]);
 
   // 保存済み履歴の古い撮影画像を破棄する（1日保持）。
   useEffect(() => {
@@ -396,7 +400,7 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         />}
         {section === "vocabulary" && <VocabularyPage entries={vocabulary} setEntries={setVocabulary} />}
         {section === "shortcuts" && <ShortcutPage settings={settings} setSettings={setSettings} error={shortcutError} onCaptureChange={setShortcutCapturing} />}
-        {section === "about" && <AboutPage update={update} setUpdate={setUpdate} debugMode={settings.debugMode} onToggleDebugMode={(debugMode) => setSettings((s) => ({ ...s, debugMode }))} onOpenOnboarding={() => {
+        {section === "about" && <AboutPage update={update} setUpdate={setUpdate} debugMode={settings.debugMode} onToggleDebugMode={(debugMode) => setSettings((s) => ({ ...s, debugMode }))} telemetry={settings.telemetry} onToggleTelemetry={(telemetry) => { setSettings((s) => ({ ...s, telemetry })); void setTelemetryEnabled(telemetry); }} onOpenOnboarding={() => {
           setOnboardingShortcutChosen(false);
           setOnboardingTestPassed(false);
           setShowOnboarding(true);

@@ -1,5 +1,6 @@
 import { Command, type Child } from "@tauri-apps/plugin-shell";
 import { appLog } from "./applog";
+import { trackEvent } from "./telemetry";
 
 export type SpeechStatus = {
   id: number;
@@ -309,6 +310,7 @@ export class SpeechBridgeClient {
         }
         const delay = Math.min(30000, 1000 * 2 ** (this.respawnFailures - 1));
         appLog.warn("bridge", `respawning child in ${delay}ms (attempt ${this.respawnFailures})`);
+        trackEvent("bridge_respawn", { attempt: this.respawnFailures });
         window.setTimeout(() => {
           if (this.child || this.starting) return;
           void this.ensureStarted().catch(() => undefined);

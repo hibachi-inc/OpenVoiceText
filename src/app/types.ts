@@ -29,6 +29,7 @@ export type Settings = {
   transcriptionModel: string;
   linkModels: boolean;
   debugMode: boolean;
+  telemetry: boolean;
   promptDefaultsVersion: number;
 };
 

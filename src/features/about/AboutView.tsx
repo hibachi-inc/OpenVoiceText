@@ -92,7 +92,7 @@ function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; ver
   </Dialog>;
 }
 
-export function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onToggleDebugMode }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void; debugMode: boolean; onToggleDebugMode: (debugMode: boolean) => void }) {
+export function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onToggleDebugMode, telemetry, onToggleTelemetry }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void; debugMode: boolean; onToggleDebugMode: (debugMode: boolean) => void; telemetry: boolean; onToggleTelemetry: (telemetry: boolean) => void }) {
   const { t } = useI18n();
   const [version, setVersion] = useState("");
   const [logOpen, setLogOpen] = useState(false);
@@ -137,6 +137,7 @@ export function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onTo
       </Button>
     </div>
     <div className="about-debug"><SettingRow label={t("about.debugMode")} detail={t("about.debugModeDetail")}><Switch checked={debugMode} onCheckedChange={onToggleDebugMode} /></SettingRow></div>
+    <div className="about-debug"><SettingRow label={t("about.telemetry")} detail={t("about.telemetryDetail")}><Switch checked={telemetry} onCheckedChange={onToggleTelemetry} /></SettingRow></div>
     {reportKind && <ReportDialog kind={reportKind} version={version} onClose={() => setReportKind(null)} />}
   </>;
 }

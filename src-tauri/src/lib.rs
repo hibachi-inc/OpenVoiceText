@@ -1,5 +1,6 @@
 mod cloud;
 
+use std::sync::Mutex;
 use tauri::Manager;
 use tauri::{LogicalPosition, LogicalSize};
 
@@ -52,6 +53,81 @@ fn append_log(app: tauri::AppHandle, level: String, tag: String, message: String
     Ok(())
 }
 
+/// 匿名エラー収集の同意状態。Sentryガードは同意オンの間だけ保持する。
+#[derive(Default)]
+struct TelemetryState {
+    sentry_guard: Mutex<Option<sentry::ClientInitGuard>>,
+}
+
+const SENTRY_DSN: &str = "https://8d9fe8f972b0b2aacf7720b1cd8c927b@o4511422658314240.ingest.us.sentry.io/4512074829529088";
+
+// HOME混入（ビルドパス等）をマスクする。キー類はRust側のログに出さない設計のため対象外。
+fn scrub_event(mut event: sentry::protocol::Event<'static>) -> Option<sentry::protocol::Event<'static>> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let scrub = |s: &mut String| {
+        if !home.is_empty() {
+            *s = s.replace(&home, "~");
+        }
+        if s.len() > 2000 {
+            s.truncate(2000);
+        }
+    };
+    if let Some(message) = event.message.as_mut() {
+        scrub(message);
+    }
+    for value in event.exception.values.iter_mut() {
+        if let Some(text) = value.value.as_mut() {
+            scrub(text);
+        }
+    }
+    for crumb in event.breadcrumbs.iter_mut() {
+        if let Some(message) = crumb.message.as_mut() {
+            scrub(message);
+        }
+        crumb.data.clear();
+    }
+    event.user.take();
+    Some(event)
+}
+
+fn install_panic_file_log(app: &tauri::AppHandle) {
+    // 既存フック（Sentry等）に繋いでファイル記録を残す。
+    let previous = std::panic::take_hook();
+    let handle = app.clone();
+    std::panic::set_hook(Box::new(move |info| {
+        cloud::diag_log(&handle, format!("PANIC: {info}"));
+        previous(info);
+    }));
+}
+
+/// 匿名エラー収集の同意切替。Sentryはオンの間だけ初期化する。
+#[tauri::command]
+fn set_telemetry_consent(app: tauri::AppHandle, state: tauri::State<TelemetryState>, enabled: bool) -> Result<(), String> {
+    let mut guard = state.sentry_guard.lock().map_err(|e| e.to_string())?;
+    if enabled && guard.is_none() {
+        let before_send: std::sync::Arc<
+            dyn Fn(sentry::protocol::Event<'static>) -> Option<sentry::protocol::Event<'static>> + Send + Sync,
+        > = std::sync::Arc::new(scrub_event);
+        let options = sentry::ClientOptions {
+            dsn: SENTRY_DSN.parse().ok(),
+            release: Some(env!("CARGO_PKG_VERSION").into()),
+            environment: if cfg!(debug_assertions) {
+                Some("development".into())
+            } else {
+                Some("production".into())
+            },
+            before_send: Some(before_send),
+            ..Default::default()
+        };
+        *guard = Some(sentry::init(options));
+        // Sentryがフックを置き換えるため、ファイル記録を繋ぎ直す。
+        install_panic_file_log(&app);
+    } else if !enabled {
+        *guard = None;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -63,10 +139,12 @@ pub fn run() {
             }
         }))
         .manage(cloud::CloudState::default())
+        .manage(TelemetryState::default())
         .invoke_handler(tauri::generate_handler![
             hud_resize,
             open_url,
             append_log,
+            set_telemetry_consent,
             cloud::prepare_capture,
             cloud::discard_capture,
             cloud::set_api_key,
@@ -79,10 +157,7 @@ pub fn run() {
         ])
         .setup(|app| {
             // panicしても死因が残るようにファイルへ記録する（GUIではstderrが捨てられるため）。
-            let handle = app.handle().clone();
-            std::panic::set_hook(Box::new(move |info| {
-                cloud::diag_log(&handle, format!("PANIC: {info}"));
-            }));
+            install_panic_file_log(app.handle());
             cloud::clear_stale_captures(app.handle())?;
             Ok(())
         })
