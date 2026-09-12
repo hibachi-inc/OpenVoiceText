@@ -40,7 +40,7 @@
 - API keys live in the macOS Keychain — never in config files.
 - Screen thumbnails are downscaled and purged after 24 hours, together with history cleanup.
 - Password managers, auth apps, and crypto wallets are excluded from screen capture.
-- Error collection is off by default. When on, only anonymous error info is sent (no voice, screens, or keys).
+- Error collection is on by default and can be turned off. When on, only anonymous error info is sent (no voice, screens, or keys).
 
 ## Download
 

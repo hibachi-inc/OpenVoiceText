@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS: Settings = {
   transcriptionModel: "",
   linkModels: true,
   debugMode: false,
-  telemetry: false,
+  telemetry: true,
   promptDefaultsVersion: 1,
 };
 
@@ -50,7 +50,8 @@ export function normalizeSettings(stored: unknown): Settings {
     ? legacy.linkModels
     : transcriptionModel === refinementModel;
   const debugMode = legacy.debugMode === true;
-  const telemetry = legacy.telemetry === true;
+  // 未選択はオン（既定）。明示オフは維持する。
+  const telemetry = legacy.telemetry !== false;
   const jaDefaults = legacyDefaultPrompts("ja");
   const enDefaults = legacyDefaultPrompts("en");
   const customPrompts = migrateLegacyCustomPrompts(legacy, {
