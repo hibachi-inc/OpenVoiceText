@@ -37,6 +37,21 @@ fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// フロントの warn/error ログをファイルに残す。レンダラが死んでも死因が追える。
+/// 行長制限あり。保存失敗は呼び出し側で無視すること（再帰防止のためここではログしない）。
+#[tauri::command]
+fn append_log(app: tauri::AppHandle, level: String, tag: String, message: String) -> Result<(), String> {
+    let level = match level.as_str() {
+        "warn" => "warn",
+        "error" => "error",
+        _ => "info",
+    };
+    let tag: String = tag.chars().take(64).collect();
+    let message: String = message.chars().take(1000).collect();
+    cloud::diag_log(&app, format!("[{level}] {tag}: {message}"));
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -51,6 +66,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             hud_resize,
             open_url,
+            append_log,
             cloud::prepare_capture,
             cloud::discard_capture,
             cloud::set_api_key,
@@ -62,6 +78,11 @@ pub fn run() {
             cloud::cloud_refine,
         ])
         .setup(|app| {
+            // panicしても死因が残るようにファイルへ記録する（GUIではstderrが捨てられるため）。
+            let handle = app.handle().clone();
+            std::panic::set_hook(Box::new(move |info| {
+                cloud::diag_log(&handle, format!("PANIC: {info}"));
+            }));
             cloud::clear_stale_captures(app.handle())?;
             Ok(())
         })

@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import "./App.css";
 import { localizeBridgeMessage, resolveSpeechLocale, type MessageKey } from "./i18n";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
-import { appLog } from "./applog";
+import { appLog, installRendererErrorHook } from "./applog";
 import { normalizeVocabularyEntries, type VocabularyEntry } from "./text-processing";
 import { useI18n, I18nProvider } from "./app/i18n-context";
 import { isModifierOnlyShortcut } from "./app/formatters";
@@ -39,6 +39,7 @@ function Root() {
   const isHud = new URLSearchParams(location.search).has("hud");
   document.documentElement.classList.toggle("hud-page", isHud);
   document.body.classList.toggle("hud-body", isHud);
+  useEffect(() => { installRendererErrorHook(); }, []);
   if (isHud) return <Hud />;
   return <MainApp />;
 }

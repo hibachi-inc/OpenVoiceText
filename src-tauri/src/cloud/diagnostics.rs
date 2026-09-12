@@ -1,7 +1,7 @@
 /// 試行診断をファイルに残す（open起動ではstderrが捨てられるため）。
 /// ~/Library/Application Support/com.hibachi.voicelatte/diagnostics.log。
 /// 1MB超で切り詰める。失敗しても無視する。
-fn diag_log(app: &AppHandle, line: String) {
+pub(crate) fn diag_log(app: &AppHandle, line: String) {
     use std::io::Write;
     let Ok(dir) = app.path().app_data_dir() else {
         return;

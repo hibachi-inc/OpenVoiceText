@@ -59,6 +59,9 @@ export class SpeechBridgeClient {
   private modifierShortcuts: string[] = [];
   // 子プロセスの世代。旧プロセスの close 通知が新プロセスの状態を壊さないための識別子。
   private generation = 0;
+  // 予期せぬ終了の連続回数と最終起動時刻。短期間の連続死はbackoff＋打ち切りで対応する。
+  private respawnFailures = 0;
+  private spawnAt = 0;
   private pending = new Map<number, {
     accept: (event: BridgeEvent) => boolean;
     resolve: (event: BridgeEvent) => void;
@@ -297,6 +300,19 @@ export class SpeechBridgeClient {
         });
         this.pending.clear();
         this.callbacks?.onError(error.message);
+        // 予期せぬ終了は自動で起こし直す。60秒以上生きていれば連続失敗をリセットする。
+        // 5回連続で短命に死ぬ場合はクラッシュループとみなして打ち切る。
+        this.respawnFailures = Date.now() - this.spawnAt > 60000 ? 0 : this.respawnFailures + 1;
+        if (this.respawnFailures > 5) {
+          appLog.error("bridge", "child keeps dying, giving up auto-respawn");
+          return;
+        }
+        const delay = Math.min(30000, 1000 * 2 ** (this.respawnFailures - 1));
+        appLog.warn("bridge", `respawning child in ${delay}ms (attempt ${this.respawnFailures})`);
+        window.setTimeout(() => {
+          if (this.child || this.starting) return;
+          void this.ensureStarted().catch(() => undefined);
+        }, delay);
       });
       const spawned = await command.spawn();
       // その間にリセットされていたら古いプロセスは捨てる
@@ -305,6 +321,7 @@ export class SpeechBridgeClient {
         return;
       }
       this.child = spawned;
+      this.spawnAt = Date.now();
       // 再起動後に修飾キーショートカットを復元する
       if (this.modifierShortcuts.length > 0) {
         await this.request({ command: "configure_shortcut", shortcuts: this.modifierShortcuts }, ["ready"], 5000);
