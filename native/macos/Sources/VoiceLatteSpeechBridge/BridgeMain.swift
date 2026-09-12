@@ -401,7 +401,10 @@ private final class Bridge: @unchecked Sendable {
                 lock.withLock { previousPID = front.processIdentifier }
             }
             if let target = NSRunningApplication(processIdentifier: parent), !target.isTerminated {
-                _ = target.activate()
+                // 整形後の選択肢操作のために前面化する。録音停止から時間が経つと通常の
+                // activateは拒否されるため、無視オプションで確実に前面に出す。
+                // 直前の前面アプリは覚えてあり、restore_appで戻す。
+                _ = target.activate(options: .activateIgnoringOtherApps)
             }
         }
     }

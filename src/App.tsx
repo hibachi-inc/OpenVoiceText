@@ -2249,11 +2249,13 @@ async function focusHudForChoice(bridge: SpeechBridgeClient) {
   try {
     await hud.setFocusable(true);
     await bridge.focusApp();
-    await hud.setFocus().catch(async () => {
-      // アクティベーション直後は間に合わないことがあるため1回だけ再試行する
+    // アクティベーション完了まで最大6回確認する。取れなければマウス操作になる。
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await hud.setFocus().catch(() => undefined);
       await new Promise((resolve) => setTimeout(resolve, 150));
-      await hud.setFocus();
-    });
+      if (await hud.isFocused().catch(() => false)) return;
+    }
+    throw new Error("hud never focused");
   } catch (error) {
     appLog.warn("hud", `choice focus failed, mouse only: ${error instanceof Error ? error.message : String(error)}`);
   }
