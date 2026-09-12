@@ -1,11 +1,11 @@
 {
-  "version": "0.4.9",
-  "notes": "内部構成を整理しました（src/app・src/featuresへの分割）。挙動の変更は意図していませんが、見直し直後のため、何かおかしな点があればIssueで報告してください。",
-  "pub_date": "2026-09-12T11:24:04.000Z",
+  "version": "0.4.10",
+  "notes": "死因保存とブリッジ自動復活、匿名エラー収集（既定オン）を追加。挙動の変更は意図していませんが、見直し直後のため、何かおかしな点があればIssueで報告してください。",
+  "pub_date": "2026-09-12T20:29:29.000Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ckd5cTVjOEJZN2syL2VNUmNyVE0yL0NSQVVGKzVYTWJZSFczMXU0RjlKRTdreEZLUit0c0pKQjFoaVpEWWp2RVkyNzVJak9ud2R2LzB1T3JyTERJUXc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MjEyMTIyCWZpbGU6Vm9pY2VMYXR0ZS5hcHAudGFyLmd6CkxQa3hBbUtGT2lxejJKY1MzbnBXbEVKU0JSSnQ2UHBORTQvRGdqcGRGSnQvS0lOOU9lVFpoYkhHZ1pTUnpCL1QvSGdybkQwUGRwUnhSeVFXNG9zRkN3PT0K",
-      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.9/VoiceLatte-049.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ckVGNjZ1ZTV0UC84Z3RkRDhnYjM1ajQwSzltTmwzdmxuMkUySVc0VUNGbHQzeGhkUjkvQ3hxdjJXNXllSEFscUVzSGh3Q3J1M1VBU1dtaTZUM0NJQVFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MjQ0ODQwCWZpbGU6Vm9pY2VMYXR0ZS5hcHAudGFyLmd6CjRwWnhVS0c0a05oUDB0ZDJZTHN0SVZKYmNrdFAvSkJ0WWNEdXhRSVBnSlZIR2xESVlIamJVT2kvd1BrVGdwTWVsZFN3RXVnck4ycFMxTmZ0clFtZEJBPT0K",
+      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.10/VoiceLatte-0410.tar.gz"
     }
   }
 }
