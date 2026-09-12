@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -9,8 +9,8 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
 import {
-  AlertCircle, ArrowDown, Bot, Bug, Check, ChevronDown, ChevronRight, ChevronUp, Clock3, Copy,
-  Download, Info, Keyboard, Lightbulb, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Star, Trash2, X,
+  Bug, Check, ChevronDown, ChevronRight, ChevronUp, Clock3,
+  Download, Info, Keyboard, Lightbulb, ListPlus, Mic, Plus, Settings2, SlidersHorizontal, Sparkles, Square, Trash2, X,
   type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -28,88 +28,62 @@ import { cn } from "@/lib/utils";
 import "./App.css";
 import {
   createTranslator,
-  defaultRefinementPrompt,
-  legacyDefaultPrompts,
   localizeBridgeMessage,
   resolveSpeechLocale,
-  resolveUiLanguage,
   type MessageKey,
-  type Translator,
-  type UiLanguage,
   type UiLanguagePreference,
 } from "./i18n";
 import { SpeechBridgeClient, type DeviceSettingsStatus, type SpeechStatus } from "./speech-bridge";
-import { appLog, getLogText, subscribeLog } from "./applog";
+import { appLog } from "./applog";
 import voicelatteCow from "./assets/voicelatte-cow.png";
 import {
   DEFAULT_PROMPT_KEY,
   appPromptKey,
   buildRefinementPrompt,
   categoryPromptKey,
-  migrateLegacyCustomPrompts,
   normalizeVocabularyEntries,
   parseVocabularyAliases,
   postProcessTranscript,
   resolveCustomPrompt,
   shouldDiscardRefinement,
   vocabularyHints,
-  type CustomPrompts,
   type VocabularyEntry,
 } from "./text-processing";
 
-type Phase = "idle" | "preparing" | "listening" | "processing" | "done" | "error";
-type Section = "history" | "general" | "ai" | "vocabulary" | "shortcuts" | "about";
-type TranscriptionProvider = "local" | "groq" | "gemini";
-type RefinementProvider = "groq" | "gemini" | "local";
-type CaptureMode = "live" | "deferred";
-type HistoryEntry = { id: string; text: string; raw: string; createdAt: number; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string; image?: string };
-type Settings = {
-  locale: string;
-  appLanguage: UiLanguagePreference;
-  autoPaste: boolean;
-  refinement: boolean;
-  customPrompts: CustomPrompts;
-  toggleShortcut: string;
-  holdShortcut: string;
-  microphoneUID: string;
-  muteOtherAudio: boolean;
-  transcriptionProvider: TranscriptionProvider;
-  refinementProvider: RefinementProvider;
-  refinementModel: string;
-  transcriptionModel: string;
-  linkModels: boolean;
-  debugMode: boolean;
-  promptDefaultsVersion: number;
-};
-type HudState = { phase: Phase; transcript: string; raw: string; level: number; engine: string; captureMode: CaptureMode; uiLanguage?: UiLanguage; message?: string; spaceHint?: boolean; refining?: boolean; elapsed?: number; choice?: { raw: string; refined: string } };
-type PendingChoice = { text: string; raw: string; category: string; engine: string; appName: string; promptKey?: string; refiner?: string; screenChars?: number; screenText?: string; image?: string };
-type PreparedCapture = { captureId: string; audioPath: string };
-type CloudResult = { text: string; model: string; fallbackFrom?: string; raw?: string };
-type CloudTranscript = { text: string; model: string };
-
-const systemUiLanguage = resolveUiLanguage("system");
-const DEFAULT_VOCABULARY: VocabularyEntry[] = [
-  { id: "default-ok", term: "OK", aliases: ["オーケー"] },
-  { id: "default-voicelatte", term: "VoiceLatte", aliases: ["ボイスラテ", "ボイスラッテ"] },
-];
-const DEFAULT_SETTINGS: Settings = {
-  locale: "system",
-  appLanguage: "system",
-  autoPaste: true,
-  refinement: true,
-  customPrompts: { [DEFAULT_PROMPT_KEY]: defaultRefinementPrompt(systemUiLanguage) },
-  toggleShortcut: "Control",
-  holdShortcut: "Control",
-  microphoneUID: "",
-  muteOtherAudio: true,
-  transcriptionProvider: "local",
-  refinementProvider: "gemini",
-  refinementModel: "",
-  transcriptionModel: "",
-  linkModels: true,
-  debugMode: false,
-  promptDefaultsVersion: 1,
-};
+import type {
+  CaptureMode,
+  CloudResult,
+  CloudTranscript,
+  HistoryEntry,
+  HudState,
+  PendingChoice,
+  Phase,
+  PreparedCapture,
+  RefinementProvider,
+  Section,
+  Settings,
+  TranscriptionProvider,
+} from "./types";
+import { DEFAULT_SETTINGS, DEFAULT_VOCABULARY, normalizeSettings, promptCategories, systemUiLanguage, withLinkedRefinementModel, withLinkedTranscriptionModel } from "./settings";
+import { makeHistoryThumbnail, purgeExpiredImages } from "./history-store";
+import { isScreenCaptureAllowed } from "./screen-policy";
+import { ApiKeyRow, PermissionRow, RefineModelCatalog, ScreenCaptureRow, SettingRow } from "./components/setting-rows";
+import { GithubMark, XMark } from "./components/brand-marks";
+import { HistoryDialog, LogDialog, ReportDialog, StarDialog } from "./components/dialogs";
+import { I18nProvider, useI18n, useStoredState } from "./app-hooks";
+import {
+  bridgeMessageCode,
+  categoryLabel,
+  engineLabel,
+  isModifierOnlyShortcut,
+  modelStatusMessage,
+  phaseLabel,
+  prettyShortcut,
+  promptKeyLabel,
+  relativeTime,
+  settingsWithAppLanguage,
+  shortcutFromEvent,
+} from "./format";
 
 const nav: { id: Section; label: MessageKey; icon: LucideIcon }[] = [
   { id: "history", label: "nav.history", icon: Clock3 },
@@ -119,45 +93,6 @@ const nav: { id: Section; label: MessageKey; icon: LucideIcon }[] = [
   { id: "shortcuts", label: "nav.shortcuts", icon: Keyboard },
   { id: "about", label: "nav.about", icon: Info },
 ];
-
-const promptCategories = ["chat", "email", "code", "terminal", "notes", "browser", "generic"];
-
-const I18nContext = createContext<{ language: UiLanguage; t: Translator }>({
-  language: systemUiLanguage,
-  t: createTranslator(systemUiLanguage),
-});
-
-function I18nProvider({ preference, children }: { preference: UiLanguagePreference; children: React.ReactNode }) {
-  const language = resolveUiLanguage(preference);
-  const value = useMemo(() => ({ language, t: createTranslator(language) }), [language]);
-  useEffect(() => { document.documentElement.lang = language; }, [language]);
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
-}
-
-function useI18n() {
-  return useContext(I18nContext);
-}
-
-function useStoredState<T>(key: string, initial: T, normalize?: (stored: unknown) => T) {
-  const [value, setValue] = useState<T>(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem(key) ?? "") as unknown;
-      return normalize ? normalize(stored) : stored as T;
-    } catch { return initial; }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // クォータ超過時は画像だけ捨てて再試行する（履歴サムネ用）。
-      // それでもだめなら永続化を諦める（メモリ上の値は維持）。
-      try {
-        localStorage.setItem(key, JSON.stringify(value, (k, v) => (k === "image" ? undefined : v)));
-      } catch { /* ignore */ }
-    }
-  }, [key, value]);
-  return [value, setValue] as const;
-}
 
 function Root() {
   const isHud = new URLSearchParams(location.search).has("hud");
@@ -1128,122 +1063,7 @@ function AiPage({ status, settings, setSettings, installing, deviceStatus, apiKe
   </div>;
 }
 
-function ApiKeyRow({ provider, label, keyHint, onSave, onClear }: {
-  provider: "groq" | "gemini";
-  label: string;
-  keyHint: string | null;
-  onSave: (provider: "groq" | "gemini", key: string) => Promise<void>;
-  onClear: (provider: "groq" | "gemini") => Promise<void>;
-}) {
-  const { language, t } = useI18n();
-  const configured = keyHint !== null;
-  const [key, setKey] = useState("");
-  const [error, setError] = useState("");
-  const run = async (action: () => Promise<void>) => {
-    setError("");
-    try { await action(); }
-    catch (reason) { setError(localizeBridgeMessage(reason instanceof Error ? reason.message : String(reason), language, t)); }
-  };
-  const keyUrl = provider === "gemini" ? "https://aistudio.google.com/apikey" : "https://console.groq.com/keys";
-  return <div className="setting-row api-key-row">
-    <div><b>{label}</b><span>{provider === "gemini" && `${t("apiKey.geminiDetail")} · `}{configured ? t("apiKey.configured") : t("apiKey.notConfigured")}</span><small>{t("apiKey.keychainNotice")} <Button variant="link" size="xs" className="api-key-link" onClick={() => void run(() => invoke("open_url", { url: keyUrl }))}>{t("apiKey.getKey")}</Button></small>{error && <small className="api-key-error">{error}</small>}</div>
-    <div className="api-key-actions">
-      <Input type="password" value={key} autoComplete="off" spellCheck={false} onChange={(event) => setKey(event.target.value)} placeholder={keyHint ?? t("apiKey.placeholder")} />
-      <Button variant="ghost" size="xs" disabled={!key.trim()} onClick={() => void run(async () => { await onSave(provider, key); setKey(""); })}>{configured ? t("apiKey.update") : t("apiKey.save")}</Button>
-      {configured && <Button variant="ghost" size="xs" onClick={() => void run(() => onClear(provider))}>{t("apiKey.remove")}</Button>}
-    </div>
-  </div>;
-}
-
 // モデル選択カタログ。表示可否はサーバ返却の eligibility に従う（ID判定を書かない）。
-function RefineModelCatalog({ provider, hasKey, value, onChange, task, linkActive }: {
-  provider: "groq" | "gemini";
-  hasKey: boolean;
-  value: string;
-  onChange: (model: string) => void;
-  task: "transcribe" | "refine";
-  // 連動中は転写対応モデルのみ表示する（整形側）。
-  linkActive?: boolean;
-}) {
-  const { language, t } = useI18n();
-  type CatalogModel = {
-    id: string;
-    vision?: boolean;
-    audio?: boolean;
-    transcriptionEligible?: boolean;
-    refinementEligible?: boolean;
-  };
-  const [models, setModels] = useState<CatalogModel[] | null>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      setModels(await invoke<CatalogModel[]>("list_provider_models", { provider }));
-    } catch (reason) {
-      setModels(null);
-      setError(localizeBridgeMessage(reason instanceof Error ? reason.message : String(reason), language, t));
-    } finally {
-      setLoading(false);
-    }
-  }, [language, provider, t]);
-  useEffect(() => {
-    if (!hasKey) {
-      setModels(null);
-      setError("");
-      return;
-    }
-    void load();
-  }, [hasKey, load]);
-  const visibleModels = (models ?? []).filter((m) => {
-    const eligible = task === "transcribe" ? m.transcriptionEligible === true : m.refinementEligible === true;
-    if (!eligible) return false;
-    if (linkActive === true && m.transcriptionEligible !== true) return false;
-    return true;
-  });
-  const ids = visibleModels.map((m) => m.id);
-  const stale = value !== "" && models !== null && !ids.includes(value);
-  const selectValue = value === "" ? "__auto__" : value;
-  // トリガーにはIDだけ出す（バッジは一覧内のみ）。バッジ付きだと崩れるため。
-  const triggerLabel = selectValue === "__auto__"
-    ? (loading ? t("ai.modelsLoading") : t("ai.modelAuto"))
-    : selectValue;
-  return <div className="setting-row api-key-row">
-    <div>
-      <b>{t("ai.modelSelect")}</b>
-      <span>{t("ai.modelSelectDetail")}</span>
-      {stale && <small className="api-key-error">{t("ai.modelStale")}</small>}
-      {!hasKey && <small>{t("apiKey.notConfigured")}</small>}
-      {provider === "gemini" && <Button variant="link" size="xs" className="api-key-link" onClick={() => void invoke("open_url", { url: "https://aistudio.google.com/rate-limit?timeRange=last-28-days" }).catch(() => undefined)}>{t("ai.rateLimit")}</Button>}
-      {linkActive === true && <small>{t("ai.linkHidesModels")}</small>}
-      {error && <small className="api-key-error">{error}</small>}
-    </div>
-    <div className="api-key-actions">
-      <Select value={selectValue} disabled={!hasKey || models === null} onValueChange={(v) => onChange(v === "__auto__" ? "" : v)} onOpenChange={(open) => appLog.info("catalog", `${provider}/${task} dropdown open=${open}`)}>
-        <SelectTrigger size="sm" className="settings-select"><span className="model-trigger-label">{triggerLabel}</span></SelectTrigger>
-        <SelectContent position="popper" sideOffset={4} align="start">
-          <SelectItem value="__auto__">{t("ai.modelAuto")}</SelectItem>
-          {visibleModels.map((m) => <SelectItem value={m.id} key={m.id}>
-            <span className="model-option"><span className="model-option-id">{m.id}</span>
-            {m.vision === true && <Badge variant="secondary" title={t("ai.modelVisionDetail")}>{t("ai.modelVision")}</Badge>}
-            {m.audio === true && <Badge variant="secondary" title={t("ai.modelAudioDetail")}>{t("ai.modelAudio")}</Badge>}
-            </span>
-          </SelectItem>)}
-        </SelectContent>
-      </Select>
-    </div>
-  </div>;
-}
-
-function bridgeMessageCode(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.split(":", 2)[0];
-}
-
-const IMAGE_RETENTION_MS = 24 * 3600 * 1000;
-
-// スター依頼の集計。完了した音声入力を数え、3回目に1度だけダイアログを出す。
 const STAR_COUNT_KEY = "voicelatte.inputCount";
 const STAR_SHOWN_KEY = "voicelatte.starPromptShown";
 function readStarCount(): number {
@@ -1261,55 +1081,7 @@ function bumpStarCount(): number {
   return next;
 }
 
-// 撮影対象外（Dayflow方式：パスワード・認証・暗号資産系）。
-// 除外リストは Dayflow (MIT, (c) 2025 Jerry Liu,
-// https://github.com/JerryZLiu/Dayflow) の選定を流用。
-// bundleID・アプリ名の部分一致（小文字化して比較）。
-const SCREEN_CAPTURE_BLOCKED_BUNDLE_HINTS = [
-  "1password",
-  "authy",
-  "bitwarden",
-  "dashlane",
-  "enpass",
-  "keeper",
-  "keepass",
-  "keychainaccess",
-  "lastpass",
-  "ledger",
-  "nordpass",
-  "passwords",
-  "protonpass",
-  "secrets",
-  "trezor",
-  "yubico",
-];
-const SCREEN_CAPTURE_BLOCKED_NAME_HINTS = [
-  "1password",
-  "authy",
-  "bitwarden",
-  "dashlane",
-  "enpass",
-  "keeper",
-  "keepassxc",
-  "keychain access",
-  "lastpass",
-  "ledger live",
-  "nordpass",
-  "passwords",
-  "proton pass",
-  "secrets",
-  "trezor suite",
-  "yubico authenticator",
-];
-
-// 撮影対象外の判定（ターミナルは除外しない。CLI入力が増えているため）。
-function isScreenCaptureAllowed(context: { bundleID?: string; appName?: string }): boolean {
-  const id = (context.bundleID ?? "").toLowerCase();
-  if (id && SCREEN_CAPTURE_BLOCKED_BUNDLE_HINTS.some((hint) => id.includes(hint))) return false;
-  const name = (context.appName ?? "").toLowerCase();
-  if (name && SCREEN_CAPTURE_BLOCKED_NAME_HINTS.some((hint) => name.includes(hint))) return false;
-  return true;
-}
+// 撮影対象外の判定は screen-policy.ts にある（Swift側と一致検査あり）。
 
 // 履歴保存用にスクショを縮小する（localStorage肥大防止）。失敗時はnull。
 // JPEG base64をWebP base64へ変換する。未対応環境ではnull。
@@ -1337,75 +1109,6 @@ async function jpegToWebp(base64: string, quality = 0.8): Promise<{ data: string
   } catch {
     return null;
   }
-}
-
-async function makeHistoryThumbnail(base64: string, mime = "image/jpeg", maxEdge = 768): Promise<string | null> {
-  try {
-    const blob = await (await fetch(`data:${mime};base64,${base64}`)).blob();
-    const bitmap = await createImageBitmap(blob);
-    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      bitmap.close();
-      return null;
-    }
-    ctx.drawImage(bitmap, 0, 0, w, h);
-    bitmap.close();
-    return canvas.toDataURL("image/jpeg", 0.6).split(",", 2)[1] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-// 24時間より古い撮影画像を取り除く（テキストは残す）。
-function purgeExpiredImages(items: HistoryEntry[]): HistoryEntry[] {
-  const cutoff = Date.now() - IMAGE_RETENTION_MS;
-  let changed = false;
-  const next = items.map((entry) => {
-    if (entry.image && entry.createdAt < cutoff) {
-      changed = true;
-      const pruned = { ...entry };
-      delete pruned.image;
-      return pruned;
-    }
-    return entry;
-  });
-  return changed ? next : items;
-}
-
-function ScreenCaptureRow({ status, onOpenSettings }: {
-  status: DeviceSettingsStatus["screenCapturePermission"];
-  onOpenSettings: () => Promise<void>;
-}) {
-  const { t } = useI18n();
-  const granted = status === "authorized" || status === "not-required";
-  return <div className="permission-row">
-    <span className={cn("permission-mark", granted && "granted")}>{granted ? <Check /> : <AlertCircle />}</span>
-    <div><b>{t("permission.screenCapture")}</b><small>{t("permission.screenCaptureDetail")}</small></div>
-    {granted
-      ? <span className="permission-state">{t("permission.granted")}</span>
-      : <Button variant="outline" size="xs" className="secondary-button" onClick={() => void onOpenSettings()}>{t("permission.openSettings")}</Button>}
-  </div>;
-}
-
-function PermissionRow({ label, detail, status, onAction }: {
-  label: string;
-  detail?: string;
-  status: DeviceSettingsStatus["microphonePermission"] | DeviceSettingsStatus["accessibilityPermission"];
-  onAction: () => Promise<void>;
-}) {
-  const { t } = useI18n();
-  const granted = status === "authorized" || status === "system-managed" || status === "not-required";
-  return <div className="permission-row">
-    <span className={cn("permission-mark", granted && "granted")}>{granted ? <Check /> : <AlertCircle />}</span>
-    <div><b>{label}</b>{detail && <small>{detail}</small>}</div>
-    {granted ? <span className="permission-state">{t("permission.granted")}</span> : <Button variant="outline" size="xs" className="secondary-button" onClick={() => void onAction()}>{status === "not-determined" ? t("permission.allow") : t("permission.openSettings")}</Button>}
-  </div>;
 }
 
 function VocabularyPage({ entries, setEntries }: { entries: VocabularyEntry[]; setEntries: React.Dispatch<React.SetStateAction<VocabularyEntry[]>> }) {
@@ -1507,84 +1210,6 @@ function ShortcutRecorder({ value, active, disabled = false, onStart, onChange }
     };
   }, [active, onChange]);
   return <Button variant="outline" size="sm" disabled={disabled} className={cn("shortcut-recorder", active && "recording")} onClick={() => { modifierOnly.current = ""; onStart(); }}>{active ? t("shortcuts.press") : prettyShortcut(value)}</Button>;
-}
-
-function GithubMark() {
-  return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>;
-}
-
-function XMark() {
-  return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" /></svg>;
-}
-
-function AnthropicMark() {
-  return <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.3041 3.541h-3.6718l6.696 16.918H24Zm-10.6082 0L0 20.459h3.7442l1.3693-3.5527h7.0052l1.3693 3.5528h3.7442L10.5363 3.5409Zm-.3712 10.2232 2.2914-5.9456 2.2914 5.9456Z" /></svg>;
-}
-
-function StarDialog({ onClose }: { onClose: () => void }) {
-  const { t } = useI18n();
-  return <Dialog open onOpenChange={(open) => !open && onClose()}>
-    <DialogContent className="modal sm:max-w-[420px]">
-      <DialogHeader>
-        <DialogTitle>{t("star.title")}</DialogTitle>
-        <DialogDescription>{t("star.body")}</DialogDescription>
-      </DialogHeader>
-      <DialogFooter className="dialog-actions">
-        <Button variant="outline" onClick={onClose}>{t("star.later")}</Button>
-        <Button onClick={() => { void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText" }).catch(() => undefined); onClose(); }}><Star />{t("star.action")}</Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>;
-}
-
-function ReportDialog({ kind, version, onClose }: { kind: "bug" | "request"; version: string; onClose: () => void }) {
-  const { t } = useI18n();
-  const [summary, setSummary] = useState("");
-  const [copied, setCopied] = useState(false);
-  const template = kind === "bug" ? "bug_report.yml" : "feature_request.yml";
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const prompt = t(kind === "bug" ? "about.reportPromptBug" : "about.reportPromptRequest", {
-    summary: summary.trim() || t("about.reportNoSummary"),
-    version: version || "?",
-  });
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(prompt); } catch { return; }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  };
-  // 指示文をコピーしてAIを開く。URLが長すぎて反映されない機種でも貼り付け一発で送れる。
-  const openAi = async (base: string) => {
-    try { await navigator.clipboard.writeText(prompt); } catch { /* 開くだけ続行 */ }
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-    void invoke("open_url", { url: `${base}${encodeURIComponent(prompt)}` }).catch(() => undefined);
-  };
-  return <Dialog open onOpenChange={(open) => !open && onClose()}>
-    <DialogContent className="modal sm:max-w-[480px]">
-      <DialogHeader>
-        <DialogTitle>{t(kind === "bug" ? "about.reportBugTitle" : "about.reportRequestTitle")}</DialogTitle>
-        <DialogDescription>{t("about.reportHint")}</DialogDescription>
-      </DialogHeader>
-      <Textarea value={summary} placeholder={t("about.reportSummaryPlaceholder")} onChange={(e) => setSummary(e.target.value)} rows={3} />
-      <Collapsible open={previewOpen} onOpenChange={setPreviewOpen}>
-        <CollapsibleTrigger asChild>
-          <Button variant="ghost" size="xs" className="report-preview-trigger"><span>{t("about.reportPreview")}</span>{previewOpen ? <ChevronUp /> : <ChevronDown />}</Button>
-        </CollapsibleTrigger>
-        <CollapsibleContent><div className="report-preview">{prompt}</div></CollapsibleContent>
-      </Collapsible>
-      <DialogFooter className="dialog-actions">
-        <Button variant="outline" onClick={() => void invoke("open_url", { url: `https://github.com/hibachi-inc/OpenVoiceText/issues/new?template=${template}` }).catch(() => undefined)}>{t("about.reportManual")}</Button>
-        <Button onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("about.reportCopied") : t("about.reportCopy")}</Button>
-      </DialogFooter>
-      <div className="report-ai">
-        <span className="report-ai-label">{t("about.reportAiRow")}</span>
-        <div className="report-ai-buttons">
-          <Button variant="outline" size="sm" onClick={() => void openAi("https://chatgpt.com/?q=")}><Bot />ChatGPT</Button>
-          <Button variant="outline" size="sm" onClick={() => void openAi("https://claude.ai/new?q=")}><AnthropicMark />Claude</Button>
-        </div>
-      </div>
-    </DialogContent>
-  </Dialog>;
 }
 
 function AboutPage({ update, setUpdate, onOpenOnboarding, debugMode, onToggleDebugMode }: { update: UpdateState; setUpdate: (state: UpdateState) => void; onOpenOnboarding: () => void; debugMode: boolean; onToggleDebugMode: (debugMode: boolean) => void }) {
@@ -1952,123 +1577,6 @@ function PromptField({ label, value, defaultOpen, onChange, onRemove }: {
   </Collapsible>;
 }
 
-function LogDialog({ onClose }: { onClose: () => void }) {
-  const { t } = useI18n();
-  const [text, setText] = useState(() => getLogText());
-  const [copied, setCopied] = useState(false);
-  const copyTimer = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    setText(getLogText());
-    const unsubscribe = subscribeLog(() => setText(getLogText()));
-    return () => {
-      unsubscribe();
-      window.clearTimeout(copyTimer.current);
-    };
-  }, []);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      return;
-    }
-    setCopied(true);
-    window.clearTimeout(copyTimer.current);
-    copyTimer.current = window.setTimeout(() => setCopied(false), 1600);
-  };
-  return <Dialog open onOpenChange={(open) => !open && onClose()}>
-    <DialogContent className="modal sm:max-w-[560px]">
-      <DialogHeader><DialogTitle>{t("general.errorLog")}</DialogTitle><DialogDescription>{t("general.errorLogDetail")}</DialogDescription></DialogHeader>
-      <div className="log-body">{text || t("general.errorLogEmpty")}</div>
-      <DialogFooter className="dialog-actions">
-        <Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy()}>{copied ? <Check /> : <Copy />}{copied ? t("action.copied") : t("action.copy")}</Button>
-        <Button onClick={onClose}>{t("action.done")}</Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>;
-}
-
-function HistoryDialog({ entry, debugMode, onClose }: { entry: HistoryEntry; debugMode: boolean; onClose: () => void }) {
-  const { language, t } = useI18n();
-  const [copied, setCopied] = useState<"original" | "refined" | null>(null);
-  const [showInfo, setShowInfo] = useState(false);
-  const copyTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(copyTimer.current), []);
-  const copy = async (text: string, version: "original" | "refined") => {
-    try { await navigator.clipboard.writeText(text); } catch { return; }
-    setCopied(version);
-    window.clearTimeout(copyTimer.current);
-    copyTimer.current = window.setTimeout(() => setCopied(null), 1600);
-  };
-  const details: [string, string][] = [
-    [t("historyDialog.date"), new Date(entry.createdAt).toLocaleString(language)],
-    [t("historyDialog.app"), entry.appName || "VoiceLatte"],
-    [t("historyDialog.category"), categoryLabel(entry.category, t)],
-    [t("historyDialog.transcription"), entry.engine || "—"],
-    [t("historyDialog.refineEngine"), entry.refiner || "—"],
-    [t("historyDialog.promptKey"), entry.promptKey || "—"],
-    [t("historyDialog.context"), entry.screenChars === undefined ? "—" : t("historyDialog.contextValue", { count: entry.screenChars })],
-    [t("historyDialog.chars"), `${entry.raw.length} → ${entry.text.length}`],
-  ];
-  return <Dialog open onOpenChange={(open) => !open && onClose()}>
-    <DialogContent className="modal history-modal sm:max-w-[520px]">
-      <DialogHeader><DialogTitle>{t("historyDialog.title")}</DialogTitle><DialogDescription>{new Date(entry.createdAt).toLocaleString(language)}</DialogDescription></DialogHeader>
-      {debugMode && <div className="history-meta-bar">
-        <Button variant="ghost" size="xs" aria-expanded={showInfo} onClick={() => setShowInfo((v) => !v)}><Info />{t("historyDialog.details")}{showInfo ? <ChevronUp /> : <ChevronDown />}</Button>
-      </div>}
-      {debugMode && showInfo && <dl className="history-details">
-        {details.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}
-      </dl>}
-      {debugMode && showInfo && entry.screenText && <div className="history-full original history-context-body">{entry.screenText}</div>}
-      {debugMode && entry.image && <div className="history-screenshot-wrap">
-        <small>{t("historyDialog.image")}</small>
-        <img className="history-screenshot" src={`data:image/jpeg;base64,${entry.image}`} alt="" />
-      </div>}
-      <div className="history-versions">
-        {entry.refiner !== undefined && entry.raw !== entry.text ? <>
-          <section className="history-version">
-            <div className="history-version-header"><b>{t("historyDialog.original")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.raw, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
-            <div className="history-full original">{entry.raw}</div>
-          </section>
-          <div className="history-flow-arrow" aria-hidden="true"><ArrowDown /></div>
-          <section className="history-version">
-            <div className="history-version-header"><b>{t("historyDialog.refined")}</b>{entry.refiner && <small>{t("historyDialog.refiner", { model: entry.refiner })}</small>}<Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.text, "refined")}>{copied === "refined" ? <Check /> : <Copy />}{copied === "refined" ? t("action.copied") : t("action.copy")}</Button></div>
-            <div className="history-full">{entry.text}</div>
-          </section>
-        </> : <section className="history-version">
-          <div className="history-version-header"><b>{t("historyDialog.transcription")}</b><Button variant="ghost" size="xs" aria-live="polite" onClick={() => void copy(entry.text, "original")}>{copied === "original" ? <Check /> : <Copy />}{copied === "original" ? t("action.copied") : t("action.copy")}</Button></div>
-          <div className="history-full">{entry.text}</div>
-        </section>}
-      </div>
-    </DialogContent>
-  </Dialog>;
-}
-
-// 両方がGeminiのときは転写・整形で同じモデルを使うよう連動させる。
-// 連動OFFやGemma選択時は独立に動かせる（分岐は値の一致で決める）。
-function withLinkedTranscriptionModel(current: Settings, transcriptionModel: string): Settings {
-  return {
-    ...current,
-    transcriptionModel,
-    ...(current.linkModels && current.refinementProvider === "gemini" ? { refinementModel: transcriptionModel } : {}),
-  };
-}
-
-function withLinkedRefinementModel(current: Settings, refinementModel: string): Settings {
-  // Gemmaは音声非対応のため転写側には連動させない（結合ルートの成立条件を保つ）。
-  const linkable = current.linkModels
-    && current.transcriptionProvider === "gemini"
-    && !refinementModel.toLowerCase().includes("gemma");
-  return {
-    ...current,
-    refinementModel,
-    ...(linkable ? { transcriptionModel: refinementModel } : {}),
-  };
-}
-
-function SettingRow({ label, detail, children }: { label: string; detail: string; children: React.ReactNode }) {
-  return <div className="setting-row"><div><b>{label}</b><span>{detail}</span></div>{children}</div>;
-}
-
 function Hud() {
   const [state, setState] = useState<HudState>({ phase: "preparing", transcript: "", raw: "", level: 0, engine: "", captureMode: "live", uiLanguage: systemUiLanguage });
   const t = useMemo(() => createTranslator(state.uiLanguage ?? systemUiLanguage), [state.uiLanguage]);
@@ -2269,111 +1777,6 @@ async function releaseHudFocus() {
 
 function confirmChoice(index: number) {
   void emitTo("main", "hud-choose", { which: index === 0 ? "raw" : "refined" }).catch(() => undefined);
-}
-
-function shortcutFromEvent(event: Pick<KeyboardEvent, "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey">) {
-  const modifierKey = ["Control", "Alt", "Meta", "Shift"].includes(event.key);
-  if (modifierKey) return event.key === "Alt" ? "Option" : event.key === "Meta" ? "Command" : event.key;
-  const parts = [event.metaKey && "CommandOrControl", event.ctrlKey && "Control", event.altKey && "Alt", event.shiftKey && "Shift"].filter(Boolean);
-  const key = event.code === "Space" ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.key;
-  return [...parts, key].join("+");
-}
-
-function isModifierOnlyShortcut(shortcut: string) {
-  return ["Control", "Option", "Command", "Shift"].includes(shortcut);
-}
-
-function prettyShortcut(shortcut: string) {
-  return shortcut.replace("CommandOrControl", "⌘/Ctrl").replace("Control", "⌃").replace("Option", "⌥").replace("Command", "⌘").split("+").join(" ");
-}
-
-function phaseLabel(phase: Phase, t: Translator, deferred = false, refining = false) {
-  if (phase === "preparing") return t("state.preparing");
-  if (phase === "listening") return t(deferred ? "state.recording" : "state.listening");
-  if (phase === "processing") return t(deferred || !refining ? "state.transcribing" : "state.processing");
-  if (phase === "done") return t("state.done");
-  if (phase === "error") return t("state.error");
-  return t("state.idle");
-}
-
-function relativeTime(time: number, language: UiLanguage, t: Translator) {
-  const minutes = Math.floor((Date.now() - time) / 60000);
-  if (minutes < 1) return t("relative.justNow");
-  if (minutes < 60) return t("relative.minutes", { count: minutes });
-  if (minutes < 1440) return t("relative.hours", { count: Math.floor(minutes / 60) });
-  return new Date(time).toLocaleDateString(language);
-}
-
-function engineLabel(backend: string, t: Translator) {
-  if (backend === "apple-speech-analyzer") return t("engine.appleEnhanced");
-  if (backend === "apple-speech-classic") return t("engine.appleClassic");
-  if (backend === "windows-speech-classic") return t("engine.windowsClassic");
-  return t("engine.windowsAI");
-}
-
-function modelStatusMessage(status: SpeechStatus | null, t: Translator) {
-  if (!status || status.modelState === "unknown") return t("general.modelChecking");
-  if (status.modelState === "download-required") return t("general.modelDownload");
-  if (status.modelState === "unsupported") return t("general.modelUnsupported");
-  if (status.backend === "apple-speech-classic") return t("general.modelReadyAppleClassic");
-  return status.platform === "windows" ? t("general.modelReadyWindows") : t("general.modelReadyApple");
-}
-
-function categoryLabel(category: string, t: Translator) {
-  const key = `category.${category}` as MessageKey;
-  return ["chat", "email", "code", "terminal", "notes", "browser", "generic"].includes(category) ? t(key) : category;
-}
-
-function promptKeyLabel(key: string, t: Translator) {
-  if (key === DEFAULT_PROMPT_KEY) return t("prompt.default");
-  if (key.startsWith("category:")) {
-    return t("prompt.categoryTarget", { name: categoryLabel(key.slice("category:".length), t) });
-  }
-  if (key.startsWith("app:")) return t("prompt.appTarget", { name: key.slice("app:".length) });
-  return key;
-}
-
-function settingsWithAppLanguage(settings: Settings, appLanguage: UiLanguagePreference): Settings {
-  return { ...settings, appLanguage };
-}
-
-function normalizeSettings(stored: unknown): Settings {
-  if (!stored || typeof stored !== "object") return DEFAULT_SETTINGS;
-  const legacy = stored as Partial<Settings> & { defaultPrompt?: string; chatPrompt?: string; codePrompt?: string; screenContextEnabled?: boolean; screenshotContext?: boolean };
-  const appLanguage: UiLanguagePreference = ["system", "ja", "en"].includes(legacy.appLanguage ?? "")
-    ? legacy.appLanguage as UiLanguagePreference
-    : "system";
-  const refinementProvider: RefinementProvider = ["groq", "gemini", "local"].includes(legacy.refinementProvider ?? "")
-    ? legacy.refinementProvider as RefinementProvider
-    : DEFAULT_SETTINGS.refinementProvider;
-  const refinementModel = typeof legacy.refinementModel === "string"
-    ? legacy.refinementModel.slice(0, 120)
-    : DEFAULT_SETTINGS.refinementModel;
-  const transcriptionModel = typeof legacy.transcriptionModel === "string"
-    ? legacy.transcriptionModel.slice(0, 120)
-    : DEFAULT_SETTINGS.transcriptionModel;
-  // 連動フラグの移行：値が一致している既存設定だけオンにする。
-  const linkModels = typeof legacy.linkModels === "boolean"
-    ? legacy.linkModels
-    : transcriptionModel === refinementModel;
-  const debugMode = legacy.debugMode === true;
-  const jaDefaults = legacyDefaultPrompts("ja");
-  const enDefaults = legacyDefaultPrompts("en");
-  const customPrompts = migrateLegacyCustomPrompts(legacy, {
-    defaultPrompt: [jaDefaults.defaultPrompt, enDefaults.defaultPrompt],
-    chatPrompt: [jaDefaults.chatPrompt, enDefaults.chatPrompt],
-    codePrompt: [jaDefaults.codePrompt, enDefaults.codePrompt],
-  });
-  const promptDefaultsVersion = Number.isFinite(legacy.promptDefaultsVersion) ? legacy.promptDefaultsVersion! : 0;
-  if (promptDefaultsVersion < 1 && !(DEFAULT_PROMPT_KEY in customPrompts)) {
-    customPrompts[DEFAULT_PROMPT_KEY] = defaultRefinementPrompt(resolveUiLanguage(appLanguage));
-  }
-  const { defaultPrompt: _defaultPrompt, chatPrompt: _chatPrompt, codePrompt: _codePrompt, screenContextEnabled: _screenContextEnabled, screenshotContext: _screenshotContext, ...current } = legacy;
-  const settings = { ...DEFAULT_SETTINGS, ...current, appLanguage, refinementProvider, refinementModel, transcriptionModel, linkModels, debugMode, promptDefaultsVersion: 1, customPrompts };
-  if (legacy.appLanguage === undefined) {
-    return settingsWithAppLanguage({ ...settings, locale: legacy.locale === "ja-JP" ? "system" : settings.locale }, "system");
-  }
-  return settings;
 }
 
 export default Root;
