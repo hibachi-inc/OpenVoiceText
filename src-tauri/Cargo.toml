@@ -1,6 +1,6 @@
 [package]
 name = "voicelatte"
-version = "0.4.8"
+version = "0.4.9"
 description = "Cross-platform on-device voice input for macOS and Windows"
 authors = ["HIBACHI inc."]
 edition = "2021"
