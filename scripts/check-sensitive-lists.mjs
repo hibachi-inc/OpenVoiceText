@@ -8,7 +8,7 @@ function stringsBetween(src, start, end) {
   return [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 }
 
-const ts = readFileSync(new URL("../src/screen-policy.ts", import.meta.url), "utf8");
+const ts = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
 const swift = readFileSync(new URL("../native/macos/Sources/VoiceLatteSpeechBridge/AppContext.swift", import.meta.url), "utf8");
 
 const pairs = [
