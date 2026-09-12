@@ -612,6 +612,9 @@ private final class ModifierHotkey {
 @main
 private enum VoiceLatteSpeechBridge {
     static func main() {
+        // Dockに出さない。ホスト.app配下の実行ファイルとして扱われると独立タイルになるため、
+        // 自分をバックグラウンド専用に固定する（AX・録音・撮影・ホットキーに影響なし）。
+        NSApplication.shared.setActivationPolicy(.prohibited)
         let bridge = Bridge()
         DispatchQueue.global(qos: .userInitiated).async {
             while let line = readLine() {
