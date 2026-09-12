@@ -14,6 +14,21 @@
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://hibachi-inc.github.io/OpenVoiceText/ogp.png" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "VoiceLatte",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "macOS",
+    "inLanguage": "ja",
+    "softwareVersion": "0.4.9",
+    "license": "https://github.com/hibachi-inc/OpenVoiceText/blob/main/LICENSE",
+    "downloadUrl": "https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "JPY" },
+    "description": "話すだけで、きちんとした文章になるMacの音声入力。文字起こしは端末内で完結し、AIが場面に合った文体に整える。無料・オープンソース（MIT）。"
+  }
+  </script>
   <link rel="icon" href="https://raw.githubusercontent.com/hibachi-inc/OpenVoiceText/main/assets/logo.png" />
   <title>VoiceLatte / OpenVoiceText</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -395,13 +410,139 @@
 
   <main class="page-shell">
     <article class="readme-card" id="content" aria-live="polite">
-      <div class="loading">
-        <div class="loading-inner"><span class="spinner" aria-hidden="true"></span>READMEを読み込んでいます</div>
-      </div>
+<!-- snapshot: 2026-09-12 manual render of README.md (may be stale; canonical: GitHub README) -->
+<div align="center"><img src="https://raw.githubusercontent.com/hibachi-inc/OpenVoiceText/main/assets/logo.png" width="120" alt="VoiceLatte ロゴ"><h1 id="voicelatte">VoiceLatte</h1>
+<h2 id="無料で有料級の音声入力体験を">無料で、有料級の音声入力体験を。</h2>
+<h3 id="話すだけできちんとした文章になるmacの音声入力">話すだけで、きちんとした文章になるMacの音声入力。</h3>
+<p><strong>OpenVoiceText は、VoiceLatteをみんなで育てるオープンソースプロジェクトです。</strong><br>AIで一人でもかなり大きなものを作れるようになった今、次は<strong>AIを使って、みんなでもっと大きなものを作る</strong>ことに挑戦したいと思っています。</p>
+<p><a href="https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg">Mac版をダウンロード</a> ·
+<a href="#%E4%B8%80%E7%B7%92%E3%81%AB%E4%BD%9C%E3%82%8A%E3%81%BE%E3%81%9B%E3%82%93%E3%81%8B">開発に参加する</a> ·
+<a href="#%E6%A9%9F%E8%83%BD">機能</a> ·
+<a href="https://github.com/hibachi-inc/OpenVoiceText/blob/main/README.en.md">English</a></p>
+<p align="center">
+  <a href="https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg">
+    <img src="https://img.shields.io/badge/Mac版をダウンロード-Apple_Silicon-black?style=for-the-badge&logo=apple" alt="Mac版をダウンロード">
+  </a>
+</p><br><p><img src="https://img.shields.io/github/license/hibachi-inc/OpenVoiceText?style=flat-square" alt="License">
+<img src="https://img.shields.io/badge/macOS-Tahoe_%26_later-black?style=flat-square&amp;logo=apple" alt="macOS">
+<img src="https://img.shields.io/github/v/release/hibachi-inc/OpenVoiceText?style=flat-square" alt="Release">
+<img src="https://img.shields.io/badge/%E5%88%9D%E3%82%81%E3%81%A6%E3%81%AEOSS%E5%8F%82%E5%8A%A0-%E6%AD%93%E8%BF%8E-brightgreen?style=flat-square" alt="Contributions welcome"></p>
+</div><hr>
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/aa8930ee-a219-4eea-9b18-37c88dd65abd" width="860" controls></video>
+</p><h2 id="無料で有料級の音声入力体験を-1">無料で、有料級の音声入力体験を</h2>
+<p>VoiceLatteは、<strong>高品質なAI音声入力を、できるだけ無料で使えるようにする</strong>ことを目指しています。</p>
+<p>きっかけは、Typelessの音声入力・文章変換精度に感動したことでした。</p>
+<p><strong>「この体験を、Google AI Studioなどで提供されている無料枠のAPIやローカル処理を組み合わせて再現できないか？」</strong></p>
+<p>そんな発想からVoiceLatteを作っています。</p>
+<p>もちろん、有料のAPIキーや高性能なモデルを使うこともできます。<br>ただ、それだけで高精度を実現するのではなく、<strong>誰でも使える無料枠やローカル処理を活用しながら、どこまで有料サービス級の体験に近づけられるか</strong>に挑戦したいと考えています。</p>
+<p>高性能なAIを一部の人だけのものにせず、誰でも日常的に使える道具にする。<br>その実験も含めて、OpenVoiceTextとしてオープンソースで開発しています。</p>
+<h2 id="一緒に作りませんか">一緒に作りませんか？</h2>
+<p>AIのおかげで、個人でもかなり大きなものを作れる時代になりました。</p>
+<p>でも、せっかく作れる範囲が広がったなら、次は<strong>一人で作れるものの限界を超えてみたい。</strong><br>OpenVoiceTextでは、そんな人を大歓迎しています。</p>
+<p>OSS経験は問いません。コードをすべて自分で書けなくても大丈夫です。<br>ChatGPT、Codex、Claude CodeなどのAIを使いながら、実際に使われるプロダクトを一緒に育ててみませんか。</p>
+<p><strong>一人のAI開発から、みんなで作るAI開発へ。</strong><br>VoiceLatteをその実験の場所にしたいと思っています。</p>
+<ul>
+<li><strong>OSSへの参加が初めてでも歓迎</strong>です。</li>
+<li><strong>Issue・PR・レビューは日本語でOK</strong>です。</li>
+<li><strong>ChatGPT / Codex / Claude Codeなど、AIを使った開発も大歓迎</strong>です。</li>
+<li>コードを書かなくても、**「ここが使いづらい」「こんな機能がほしい」**という提案だけで立派なContributionです。</li>
+</ul>
+<h3 id="-何をすればいいかわからない人へ">🚀 何をすればいいかわからない人へ</h3>
+<p>まずは、このリポジトリを普段使っているAIに投げてみてください。</p>
+<pre><code class="language-text">https://github.com/hibachi-inc/OpenVoiceText
+
+このOSSに参加してみたいです。
+私が参加するなら、まず何をしてみるのがいいと思う？
+リポジトリを読んで、今の課題の中から取り組みやすく、実際にプロジェクトの役に立ちそうなものを提案してください。
+</code></pre>
+<p>最初からIssueやコードを理解している必要はありません。<br><strong>「自分なら何ができそう？」とAIに相談するところから、Contributionを始めてみてください。</strong></p>
+<p>気になるものが見つかったら、そのままAIに「じゃあこれを進めたい。次に何をすればいい？」と聞けばOKです。</p>
+<p>👉 <a href="https://github.com/hibachi-inc/OpenVoiceText/issues">Issuesを見る</a></p>
+<h3 id="-windows-linux対応を一緒に作りたいです">🪟 Windows / Linux対応を一緒に作りたいです</h3>
+<p>現在のVoiceLatteは<strong>macOS限定</strong>です。参加できる人をもっと増やすためにも、できるだけ早くWindows / Linuxにも対応したいと考えています。</p>
+<p>アプリ本体はTauri製なので、WindowsやLinuxでもアプリの土台自体は動かせます。ただし、音声認識・グローバルショートカット・アクセシビリティなど、<strong>OSとつながる部分はまだmacOS向けの実装が中心</strong>です。そのため、現状ではWindows / Linux上で起動できても、VoiceLatteとして必要な機能はまだ正常に動かないはずです。</p>
+<p>特に<strong>Windowsユーザー・Windows開発に詳しい皆さんのお力をお借りしたいです。</strong><br>「Windowsで一度動かしてみる」「動かない箇所をIssueにする」「代替APIを調べる」といったところからでも大歓迎です。</p>
+<p>Windows / Linux対応そのものを、みんなで進めるOSS開発の題材にできたらと思っています。</p>
+<h3 id="-aiエージェントから開発に参加する">🤖 AIエージェントから開発に参加する</h3>
+<p>GitHubと連携したAIやローカルのコーディングエージェントに、このリポジトリを渡して話しかけるだけでも参加できます。</p>
+<p>たとえば：</p>
+<pre><code class="language-text">このリポジトリを読んで、初心者でも取り組みやすい改善案を3つ考えて。
+</code></pre>
+<pre><code class="language-text">このアプリに〇〇機能を追加したい。実装方法を調べて、必要ならIssueを作って。
+</code></pre>
+<pre><code class="language-text">このIssueを調査して、修正案を作って。テストまで確認してPRにできる状態にして。
+</code></pre>
+<h4>Contributor Skill</h4>
+<p>Claude CodeやCodexなどのローカルエージェントでは、Contributor Skillを入れると、報告の型・証跡の集め方・開発手順まで案内できます。</p>
+<pre><code class="language-bash">npx skills add hibachi-inc/OpenVoiceText --skill voicelatte-contributor -g
+</code></pre>
+<p>インストール後、エージェントで <code>$voicelatte-contributor</code> と呼び出してください。</p>
+<hr>
+<h2 id="voicelatteとは">VoiceLatteとは</h2>
+<p>VoiceLatteは、<strong>話した内容をそのまま入力するのではなく、AIで読みやすい文章に整えて入力する</strong>Mac向け音声入力アプリです。</p>
+<p>会話のように自然に話しても、チャットならチャットらしく、メールならメールらしい文章に整えて入力できます。</p>
+<p>OpenVoiceTextはこのVoiceLatteを開発・公開するOSSプロジェクトです。</p>
+<h2 id="機能">機能</h2>
+<ul>
+<li><strong>話すだけで文字になる</strong> — <code>Control</code>を押して話すだけ。手はキーボードから離さない。<code>Space</code>で確定、<code>Esc</code>で取り消し。</li>
+<li><strong>言い間違いはAIが整える</strong> — 「えーっと」「あのー」を取り除き、場面に合った文体に直す。</li>
+<li><strong>相手に合わせて書き分ける</strong> — チャットはくだけた文に、メールは丁寧文に。今開いている相手を見て自動で切り替わる。</li>
+<li><strong>専門用語もそのまま残る</strong> — 登録した用語や金額表記を正しく保つ。</li>
+<li><strong>いつでも見返せる</strong> — 整形前と整形後をセットで履歴に保存。</li>
+<li><strong>音声はMacの外に出ない</strong> — 文字起こしは端末内で完結する。</li>
+</ul>
+<h2 id="ダウンロード">ダウンロード</h2>
+<p align="center">
+  <a href="https://github.com/hibachi-inc/OpenVoiceText/releases/latest/download/VoiceLatte.dmg">
+    <img src="https://img.shields.io/badge/Mac版をダウンロード-Apple_Silicon-black?style=for-the-badge&logo=apple" alt="Mac版をダウンロード">
+  </a>
+</p><p>macOS Tahoe以降・Apple Silicon専用。Intel Macには対応していません。過去版と更新履歴は<a href="https://github.com/hibachi-inc/OpenVoiceText/releases">Releases</a>にあります。</p>
+<h2 id="こんなcontributionを歓迎しています">こんなContributionを歓迎しています</h2>
+<p>大きな機能開発だけがContributionではありません。</p>
+<ul>
+<li>バグを見つけてIssueを書く</li>
+<li>「こうしたら使いやすそう」というアイデアを出す</li>
+<li>UIや文章を改善する</li>
+<li>ドキュメントを直す</li>
+<li>テストを追加する</li>
+<li>新しい機能を実装する</li>
+<li>既存Issueの原因をAIと一緒に調査する</li>
+<li>他の人のPRを試してフィードバックする</li>
+</ul>
+<p><strong>最初のContributionは小さいほど歓迎です。</strong><br>このリポジトリをきっかけに、一緒にものを作ったことがある人が増えていくことを大切にしています。</p>
+<h2 id="ソースから動かす">ソースから動かす</h2>
+<details>
+<summary>macOSでのセットアップ（Xcode + Rustが必要）</summary><pre><code class="language-bash">npm install
+npm run test:text
+npm run test:native
+npm run tauri dev
+</code></pre>
+<p>初回起動時のオンボーディングでマイク・アクセシビリティ・画面収録の権限を案内します。</p>
+</details><h2 id="技術構成">技術構成</h2>
+<p>Tauri 2（Rust）· React · TypeScript · Swift製サイドカーブリッジ（JSON Lines / stdio）</p>
+<pre><code class="language-text">src/            共通UI（HUD・履歴・設定）
+src-tauri/      Tauri本体・配布設定・サイドカー配線
+native/macos/   Apple Speech / SpeechAnalyzerブリッジ（Swift）
+</code></pre>
+<h2 id="プライバシー">プライバシー</h2>
+<ul>
+<li>文字起こしは既定で端末内完結。</li>
+<li>APIキーはmacOSキーチェーン保管。設定ファイルに書かない。</li>
+<li>画面の縮小版は24時間で消去。履歴消去と連動。</li>
+<li>パスワード管理・認証・暗号資産系アプリは撮影対象外。</li>
+</ul>
+<h2 id="バグ報告機能要望">バグ報告・機能要望</h2>
+<p>バグ報告・機能要望・コードの持ち込みはすべてGitHubで受け付けています。</p>
+<p>アプリからは <strong>「アプリについて」→「バグ報告／機能要望」→ AIボタン</strong> で進めます。GitHub連携があれば、調査からIssue作成までWeb上で進められます。</p>
+<p>もちろん、<a href="https://github.com/hibachi-inc/OpenVoiceText/issues">GitHub Issues</a>へ直接投稿してもOKです。</p>
+<h2 id="ライセンス">ライセンス</h2>
+<p>MIT（<a href="https://github.com/hibachi-inc/OpenVoiceText/blob/main/LICENSE"><code>LICENSE</code></a>参照）。第三者コードの帰属は<a href="https://github.com/hibachi-inc/OpenVoiceText/blob/main/THIRD-PARTY-NOTICES.md"><code>THIRD-PARTY-NOTICES.md</code></a>参照。</p>
+
     </article>
 
     <footer class="site-footer">
-      <span>README.md を正本として自動表示しています</span>
+      <span>README.md を正本として自動表示しています（検索用のスナップショット 2026-09-12 を内蔵）</span>
       <a href="https://github.com/hibachi-inc/OpenVoiceText/blob/main/README.md" target="_blank" rel="noopener noreferrer">READMEの原文を見る ↗</a>
     </footer>
   </main>
@@ -474,12 +615,13 @@
           });
         }
       } catch (error) {
-        content.innerHTML = `
+        // 取得失敗時はスナップショットを残し、注意書きだけ先頭に足す。
+        content.insertAdjacentHTML("afterbegin", `
           <div class="error">
-            <strong>READMEを読み込めませんでした。</strong><br>
+            <strong>最新のREADMEを読み込めませんでした。スナップショットを表示しています。</strong><br>
             <span>${String(error.message || error)}</span><br><br>
             <a href="${REPO}" target="_blank" rel="noopener noreferrer">GitHubでREADMEを見る ↗</a>
-          </div>`;
+          </div>`);
       }
     }
 
