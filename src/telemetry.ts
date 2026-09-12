@@ -1,11 +1,13 @@
 // 匿名エラー収集（既定オフ）。PostHog＝失敗系イベント、Sentry＝例外。
 // 音声・画面・キー本文は送らない。自動キャプチャ・リプレイは使わない。
-// SDKは同意オンのときだけ動的 import する（通常バンドルを太らせない）。
+// PostHogはSDKを使わず直接POSTする（Tauri webviewでのSDK不具合を避けるため）。
+// Sentry SDKは同意オンのときだけ動的 import する（通常バンドルを太らせない）。
 import { invoke } from "@tauri-apps/api/core";
 
 const POSTHOG_KEY = "phc_mo975FUwpLfM2p3f8cSG9DEcLCG99eLTR5Fc8idJ3hYc";
 const POSTHOG_HOST = "https://app.posthog.com";
 const SENTRY_DSN = "https://8d9fe8f972b0b2aacf7720b1cd8c927b@o4511422658314240.ingest.us.sentry.io/4512074829529088";
+const DISTINCT_KEY = "voicelatte.telemetryId";
 
 const KEY_LIKE = /(sk-|ghp_|github_pat_|gho_|AIzaSy|sk-ant-|xai-|gsk_|AKIA[0-9A-Z]{16}|xox[baprs]-|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)[A-Za-z0-9_./+=:-]*/g;
 
@@ -14,24 +16,38 @@ export function scrubText(value: string): string {
 }
 
 let enabled = false;
-let posthogReady = false;
 let sentryReady = false;
 
-async function posthogClient() {
-  const { default: posthog } = await import("posthog-js");
-  if (!posthogReady) {
-    posthog.init(POSTHOG_KEY, {
-      api_host: POSTHOG_HOST,
-      autocapture: false,
-      capture_pageview: false,
-      capture_pageleave: false,
-      disable_session_recording: true,
-      opt_out_capturing_by_default: true,
-      persistence: "localStorage",
-    });
-    posthogReady = true;
+function distinctId(): string {
+  try {
+    let id = localStorage.getItem(DISTINCT_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DISTINCT_KEY, id);
+    }
+    return id;
+  } catch {
+    return "unknown";
   }
-  return posthog;
+}
+
+async function posthogCapture(event: string, props: Record<string, string | number | boolean>): Promise<void> {
+  const scrubbed: Record<string, string | number | boolean> = {};
+  for (const [k, v] of Object.entries(props)) scrubbed[k] = typeof v === "string" ? scrubText(v) : v;
+  const body = JSON.stringify({
+    api_key: POSTHOG_KEY,
+    event,
+    distinct_id: distinctId(),
+    properties: scrubbed,
+    timestamp: new Date().toISOString(),
+  });
+  const response = await fetch(`${POSTHOG_HOST}/capture/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+    keepalive: true,
+  });
+  if (!response.ok) throw new Error(`posthog ${response.status}`);
 }
 
 async function sentryClient() {
@@ -62,20 +78,19 @@ async function sentryClient() {
 
 export async function setTelemetryEnabled(on: boolean): Promise<void> {
   enabled = on;
-  if (!on && !posthogReady && !sentryReady) {
-    // 一度も有効化されていない通常起動ではSDKを読まない。Rust側だけ同期する。
+  if (on) {
     try {
-      await invoke("set_telemetry_consent", { enabled: false }).catch(() => undefined);
+      const Sentry = await sentryClient();
+      const client = Sentry.getClient();
+      if (client) client.getOptions().enabled = true;
+    } catch { /* SDK取得失敗は無視 */ }
+  } else if (sentryReady) {
+    try {
+      const Sentry = await sentryClient();
+      const client = Sentry.getClient();
+      if (client) client.getOptions().enabled = false;
     } catch { /* ignore */ }
-    return;
   }
-  try {
-    const [posthog, Sentry] = await Promise.all([posthogClient(), sentryClient()]);
-    if (on) posthog.opt_in_capturing();
-    else posthog.opt_out_capturing();
-    const client = Sentry.getClient();
-    if (client) client.getOptions().enabled = on;
-  } catch { /* SDK取得失敗は無視 */ }
   try {
     await invoke("set_telemetry_consent", { enabled: on }).catch(() => undefined);
   } catch { /* ignore */ }
@@ -87,22 +102,15 @@ export function reportError(tag: string, message: string): void {
   const scrubbed = scrubText(message);
   void (async () => {
     try {
-      const [posthog, Sentry] = await Promise.all([posthogClient(), sentryClient()]);
-      posthog.capture("$exception", { $exception_message: scrubbed, tag });
+      const Sentry = await sentryClient();
       Sentry.captureMessage(`[${tag}] ${scrubbed}`, "error");
     } catch { /* 収集失敗は無視 */ }
   })();
+  void posthogCapture("$exception", { $exception_message: scrubbed, tag }).catch(() => undefined);
 }
 
 // 失敗系イベント（縮退・復活など）。同意オフなら何もしない。
 export function trackEvent(name: string, props: Record<string, string | number | boolean> = {}): void {
   if (!enabled) return;
-  void (async () => {
-    try {
-      const posthog = await posthogClient();
-      const scrubbed: Record<string, string | number | boolean> = {};
-      for (const [k, v] of Object.entries(props)) scrubbed[k] = typeof v === "string" ? scrubText(v) : v;
-      posthog.capture(name, scrubbed);
-    } catch { /* 収集失敗は無視 */ }
-  })();
+  void posthogCapture(name, props).catch(() => undefined);
 }

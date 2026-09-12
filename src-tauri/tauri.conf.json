@@ -42,7 +42,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' customprotocol: asset:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost tauri: ws://localhost:* http://localhost:*;"
+      "csp": "default-src 'self' customprotocol: asset:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost tauri: ws://localhost:* http://localhost:* https://app.posthog.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io;"
     }
   },
   "bundle": {

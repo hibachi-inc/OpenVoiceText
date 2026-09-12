@@ -1,3 +1,3 @@
 CLAUDE.md:generic-api-key:123
 # PostHog project API key (phc_*) is a public client key meant to ship in the app bundle.
-src/telemetry.ts:generic-api-key:6
+src/telemetry.ts:generic-api-key:7
