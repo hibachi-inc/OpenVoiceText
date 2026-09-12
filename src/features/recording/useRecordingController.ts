@@ -205,13 +205,7 @@ export function useRecordingController({
     const gen = stopGenRef.current;
     const stale = () => gen !== stopGenRef.current;
     try {
-      // 停止と並行で文脈を取り直す。録音中にAXツリーが温まるため開始時より取れる。
-      // 別アプリに移っていたら開始時のものを優先する。遅延を増やさないよう並列実行。
       const startedCtx = contextRef.current;
-      // 画面キャプチャも並列で取る。撮れれば画像を添付し（対応モデルのみ）、
-      // 撮れない・非対応のときはAXツリー文言で大体する（画像添付時はRust側でAX文言を省く）。
-      // 履歴確認用に撮影画像の縮小版は方式問わず残す。
-      // Gemini向けはWebPに変換して帯域を節約する（失敗時はJPEGのまま）。
       const wantWebp = settings.refinementProvider === "gemini" && apiKeyHints.gemini !== null;
       const shotPromise: Promise<{ data: string; mime: string } | null> = (async () => {
         if (!withAiRefinement || !settings.refinement) return null;
@@ -236,11 +230,8 @@ export function useRecordingController({
       const sameApp = freshCtx !== null
         && (freshCtx.bundleID ? freshCtx.bundleID === startedCtx.bundleID : freshCtx.appName === startedCtx.appName);
       const refreshed = sameApp && freshTree.length > startedTree.length;
-      if (refreshed) {
-        contextRef.current = { ...startedCtx, screenContext: freshTree };
-      }
+      if (refreshed) contextRef.current = { ...startedCtx, screenContext: freshTree };
       const raw = stopResult.text;
-      // final応答に載った確定エンジンを優先する。onEngine由来は別セッションの古い値が残ることがある。
       if (stopResult.engine) engineRef.current = stopResult.engine;
       if (onboardingTestRef.current) {
         const provider = recordingProviderRef.current;
@@ -268,25 +259,17 @@ export function useRecordingController({
       const { category, appName, promptKey } = contextRef.current;
       const shouldRefine = withAiRefinement && settings.refinement;
       const screenContext = shouldRefine ? contextRef.current.screenContext ?? "" : "";
-      // 内容は保存・記録せず文字数のみ。0なら取得失敗、0超なら送信済みで用途側の問題に切り分けられる。
       const screenChars = screenContext.length;
       if (shouldRefine) appLog.info("refine", `screen context ${screenChars} chars from ${appName} (${refreshed ? "stop" : "start"})${shot ? ` + shot ${Math.round(shot.data.length / 1024)}KB ${shot.mime}` : ""}`);
-      // 詳細表示用に先頭だけ残す。デバッグモードのときだけ保存する。画面内容なのでlocalStorageの履歴消去と一緒に消える。
       const screenText = settings.debugMode && shouldRefine && screenChars > 0 ? screenContext.slice(0, 2000) : undefined;
       const customPrompt = resolveCustomPrompt(settings.customPrompts, contextRef.current);
-      const refinementPrompt = shouldRefine
-        ? buildRefinementPrompt(customPrompt, vocabulary, speechLocale)
-        : "";
+      const refinementPrompt = shouldRefine ? buildRefinementPrompt(customPrompt, vocabulary, speechLocale) : "";
       const provider = recordingProviderRef.current;
       const captureId = captureRef.current;
       if (provider !== "local" && !captureId) throw new Error("cloud.capture_missing");
       const cloudRefinementProvider = shouldRefine && settings.refinementProvider !== "local" && Boolean(apiKeyHints[settings.refinementProvider])
         ? settings.refinementProvider
         : undefined;
-      // Geminiで文字起こしも整形も行う場合は専用ルートで一本化する
-      // （音声・画像・プロンプトを同時投入）。それ以外は従来の2段構成。
-      // 結合ルートは両方が同じGeminiモデルのときだけ使う。
-      // 値が一致すれば音声対応が保証される（転写側は対応モデルのみ保持）。
       const useGeminiCombined = provider === "gemini"
         && cloudRefinementProvider === "gemini"
         && settings.refinementModel === settings.transcriptionModel;
@@ -321,7 +304,6 @@ export function useRecordingController({
       captureRef.current = undefined;
       if (stale()) return;
       const source = cloud?.text ?? raw;
-      // 結合ルートは整形前の文字起こしも返す。なければ整形済みで代用する。
       const cloudRaw = cloud?.raw && cloud.raw.trim() ? cloud.raw : undefined;
       let refiner = "local";
       if (!source.trim()) {
@@ -330,7 +312,6 @@ export function useRecordingController({
         return;
       }
       if (cloud) setRecordingState({ transcript: source, engine: cloud.model });
-      // 整形がengineRefを上書きする前に文字起こし側を確定させる
       const transcriptionEngine = cloud?.model ?? engineRef.current;
       if (cloud && useGeminiCombined && shouldRefine) refiner = cloud.model;
       let refined = source;
@@ -357,16 +338,12 @@ export function useRecordingController({
           if (stale()) return;
         }
       }
-      // 整形結果がプロンプトや文脈のコピーになっていたら生テキストに戻す
       const text = postProcessTranscript(shouldDiscardRefinement(refined, source, screenContext) ? source : refined, vocabulary);
-      // 履歴確認用に撮影画像の縮小版を残す（1日保持）。デバッグモードのときだけ。失敗時はなしで続行。
       const image = settings.debugMode && shot ? (await makeHistoryThumbnail(shot.data, shot.mime)) ?? undefined : undefined;
-      // Space確定のときは自動ペーストせず、前後見比べの選択肢としてHUDに残す
       if (shouldRefine) {
         choiceRef.current = { text, raw: cloudRaw ?? source, category, engine: transcriptionEngine, appName, promptKey: promptKey ?? appName, refiner, screenChars, screenText, image };
         recordingProviderRef.current = "local";
         setRecordingState({ phase: "done", transcript: text, message: t("record.choose") });
-        // 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にする。
         if (contextRef.current.platform !== "windows") await focusHudForChoice(bridge).catch(() => undefined);
         return;
       }
@@ -405,8 +382,6 @@ export function useRecordingController({
     onboardingTestRef.current = false;
   }, [bridge, setRecordingState]);
 
-  // 処理中（文字起こし・AI整形待ち）のEscキャンセル。進行中の非同期は世代で無効化し、
-  // ネイティブ側はstop応答済みのため追加操作なしで破棄する。ペーストも履歴保存もしない。
   const cancelProcessing = useCallback(() => {
     stopGenRef.current++;
     const captureId = captureRef.current;
@@ -418,7 +393,6 @@ export function useRecordingController({
     setRecordingState({ phase: "idle", transcript: "", level: 0 });
   }, [setRecordingState]);
 
-  // 見比べ選択の確定。which が raw なら整形前、refined なら整形後をペーストする。
   const finalizeChoice = useCallback(async (which: "raw" | "refined") => {
     const choice = choiceRef.current;
     if (!choice) return;
@@ -428,13 +402,11 @@ export function useRecordingController({
     setHistory((items) => purgeExpiredImages([entry, ...items]).slice(0, 500));
     if (!starPromptShown() && bumpStarCount() >= 3) { markStarPromptShown(); setStarOpen(true); }
     await bridge.insert(text, settings.autoPaste);
-    // 選択肢表示で前面に出した分は必ず戻す（insertが切替済みでも同アプリへの再送で無害）
     await bridge.restoreApp().catch(() => undefined);
     void releaseHudFocus().catch(() => undefined);
     setRecordingState({ phase: "idle", transcript: "", level: 0 });
   }, [bridge, setHistory, setRecordingState, setStarOpen, settings.autoPaste]);
 
-  // 見比べ選択の破棄。ペーストも履歴保存もしない。退かせた前面アプリに戻す。
   const discardChoice = useCallback(() => {
     if (!choiceRef.current) return;
     choiceRef.current = null;
@@ -464,7 +436,6 @@ export function useRecordingController({
         holdActive.current = false;
         if (toggleOnTap && !wasHold) void (phaseRef.current === "idle" ? startRecording(showOnboarding) : stopRecording());
       };
-      // 見比べ選択中はトグルで整形版確定、キャンセルで破棄する
       if (phaseRef.current === "done" && choiceRef.current) {
         if (action === "toggle" || action === "refine-stop") void finalizeChoice("refined");
         else if (action === "cancel") discardChoice();
@@ -526,19 +497,18 @@ async function positionHud(platform?: "macos" | "windows", displayX?: number, di
   ));
 }
 
-// 選択肢はHUD同一ウィンドウ内に表示する。キー操作のため一時的にフォーカス可能にし、
-// アプリ自体を前面に出す（非アクティブなアプリのウィンドウにはキーが届かないため）。
 async function focusHudForChoice(bridge: SpeechBridgeClient) {
   const hud = await WebviewWindow.getByLabel("hud").catch(() => null);
   if (!hud) return;
   try {
     await hud.setFocusable(true);
     await bridge.focusApp();
-    await hud.setFocus().catch(async () => {
-      // アクティベーション直後は間に合わないことがあるため1回だけ再試行する
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await hud.setFocus().catch(() => undefined);
       await new Promise((resolve) => setTimeout(resolve, 150));
-      await hud.setFocus();
-    });
+      if (await hud.isFocused().catch(() => false)) return;
+    }
+    throw new Error("hud never focused");
   } catch (error) {
     appLog.warn("hud", `choice focus failed, mouse only: ${error instanceof Error ? error.message : String(error)}`);
   }
