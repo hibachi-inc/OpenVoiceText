@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
@@ -339,12 +338,6 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     let unlisten: (() => void) | undefined;
     void listen("hud-stop", () => actionRef.current("toggle")).then((fn) => { unlisten = fn; });
     return () => unlisten?.();
-  }, []);
-
-  // 常駐化: 起動時はウィンドウ非表示。未設定(オンボーディング未完了)のときだけ開く。
-  const showOnboardingInitialRef = useRef(showOnboarding);
-  useEffect(() => {
-    if (showOnboardingInitialRef.current) void getCurrentWindow().show().catch(() => undefined);
   }, []);
 
   // トレイメニューからの録音開始/停止を受け付ける。
