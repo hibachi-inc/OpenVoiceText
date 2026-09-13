@@ -36,6 +36,10 @@ assert.equal(
   postProcessTranscript("型番ＡＢＣを入力", [{ id: "1", term: "型番ABC", aliases: ["型番ＡＢＣ"] }]),
   "型番ABCを入力",
 );
+assert.equal(
+  postProcessTranscript("これでいい ?", []),
+  "これでいい?",
+);
 assert.deepEqual(
   normalizeVocabularyEntries([{ id: "old", phrase: "Voice Latte", replacement: "VoiceLatte" }]),
   [{ id: "old", term: "VoiceLatte", aliases: ["Voice Latte"] }],

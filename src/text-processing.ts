@@ -148,6 +148,7 @@ export function postProcessTranscript(text: string, entries: VocabularyEntry[]) 
       return value >= 10_000 && value % 10_000 === 0 ? `${value / 10_000}万円` : match;
     })
     .replace(/(?:^|(?<=[\s、。，．！？!?\n]))(?:えーっと|えーと|えっと|あのー)(?=$|[\s、。，．！？!?\n])/g, "")
+    .replace(/ \?/g, "?")
     .replace(/ {2,}/g, " ")
     .trim();
 }
