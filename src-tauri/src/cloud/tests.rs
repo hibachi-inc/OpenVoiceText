@@ -4,15 +4,14 @@ mod tests {
 
     #[test]
     fn gemini_fallback_chain_is_stable() {
-        // 安い順：2.5 Lite → 2.5 → 3.5 Lite → 3.5。
+        // 速い順：3.5 Lite → 3.6 → 3.5 → 2.5。
         assert_eq!(
             GEMINI_MODELS,
             [
-                "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
+                "gemini-3.6-flash",
                 "gemini-3.5-flash",
-                "gemma-4-26b-a4b-it",
-                "gemma-4-31b-it",
+                "gemini-2.5-flash",
             ]
         );
     }
@@ -22,22 +21,20 @@ mod tests {
         assert_eq!(
             gemini_chain(None),
             [
-                "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
+                "gemini-3.6-flash",
                 "gemini-3.5-flash",
-                "gemma-4-26b-a4b-it",
-                "gemma-4-31b-it",
+                "gemini-2.5-flash",
             ]
         );
         assert_eq!(
             gemini_chain(Some("custom-model".into())),
             [
                 "custom-model",
-                "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
+                "gemini-3.6-flash",
                 "gemini-3.5-flash",
-                "gemma-4-26b-a4b-it",
-                "gemma-4-31b-it",
+                "gemini-2.5-flash",
             ]
         );
         assert_eq!(
@@ -45,9 +42,8 @@ mod tests {
             [
                 "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
+                "gemini-3.6-flash",
                 "gemini-3.5-flash",
-                "gemma-4-26b-a4b-it",
-                "gemma-4-31b-it",
             ]
         );
     }

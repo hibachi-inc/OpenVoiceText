@@ -1,9 +1,8 @@
-const GEMINI_MODELS: [&str; 5] = [
-    "gemini-2.5-flash",
+const GEMINI_MODELS: [&str; 4] = [
     "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
-    "gemma-4-26b-a4b-it",
-    "gemma-4-31b-it",
+    "gemini-2.5-flash",
 ];
 
 /// Qwen同士の連鎖用。混雑時の安定のため明示Qwenの次にもう片方を試す。
