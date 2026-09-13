@@ -288,7 +288,7 @@ body {
 @keyframes breathe { to { transform: scale(1.18); opacity: .68; } }
 /* HUD出現/退場・選択肢展開のトランジション */
 .hud-enter { animation: hudIn 240ms cubic-bezier(.2, .9, .25, 1) both; }
-.hud-leaving { animation: hudOut 200ms ease-in both; }
+.hud-leaving { animation: hudOut 200ms ease-in both; pointer-events: none; }
 @keyframes hudIn {
   from { opacity: 0; transform: translateY(10px) scale(.985); }
   to { opacity: 1; transform: none; }

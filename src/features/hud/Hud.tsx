@@ -136,6 +136,8 @@ export function Hud() {
   const visibleChoice = state.choice ?? (choiceLeaving ? lastChoiceRef.current : undefined);
   const showChoice = hasChoice || (choiceLeaving && visibleChoice != null);
   // 出現(idle→active)/退場(active→idle)でトランジション用クラスを一時付与する
+  // leavingはタイマーで外さない。外すと非表示直前に再表示されて点滅するため、
+  // 次のidle→activeまで維持する(窓自体はhideされるので見た目は変わらない)。
   useEffect(() => {
     const prev = prevPhaseRef.current;
     const cur = state.phase;
@@ -149,8 +151,12 @@ export function Hud() {
     if (prev !== "idle" && cur === "idle") {
       setEntering(false);
       setLeaving(true);
-      const timer = window.setTimeout(() => setLeaving(false), 240);
-      return () => window.clearTimeout(timer);
+      // 本体側のhideが隠し窓タイマー遅延で遅れても透明なままにする保険。
+      // 見えない窓がクリックを奪うのを防ぐ。phase変化で破棄される。
+      const backup = window.setTimeout(() => {
+        void getCurrentWindow().hide().catch(() => undefined);
+      }, 400);
+      return () => window.clearTimeout(backup);
     }
   }, [state.phase]);
   // 選択肢表示中だけキー操作を受け付ける
