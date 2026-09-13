@@ -1,11 +1,15 @@
 {
-  "version": "0.4.11",
-  "notes": "HUDの出現・退場・AI整形後の選択肢表示にアニメーションを追加。メニューバー常駐化（Dock非表示、録音状態は牛アイコンの色で表示）。終了はトレイメニューから。",
-  "pub_date": "2026-09-13T15:44:29.000Z",
+  "version": "0.4.12",
+  "notes": "HUDアニメ・メニューバー常駐化まわりの修正。Windows版の配布を開始しますが、Windows版は未検証のベータ版です。不具合があればGitHubのIssueで報告してください。",
+  "pub_date": "2026-09-13T20:21:00.000Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ckZrZ2lHbHJpNE9TNGt3RXZKY3ljNzA0OUZxQzc0V2toMzNQaU5tZ0EvaTlrWVdwaHRLVGMxZXZKeVRvc0VpNXNXOU5GK2dzWCs5Y3lVU1IvajJyZHdzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MzEzNTc4CWZpbGU6Vm9pY2VMYXR0ZS5hcHAudGFyLmd6CmJ5UmdvMitVVkE2UnczVzdpN2NzT3NxVmp2b1hOVkRtZGVWL2cwS1ZjSllmU25KZ3hoU0xQK3ZzOTlrR1M5OWZCNklkMW02VVNnZENSQ3JHeXVzZUJBPT0K",
-      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.11/VoiceLatte-0411.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ckpSbkJrQ2x1VDVJM3Vod3FvZ3VadGZhc0xTZ2xnUGdLSGRYMXdsanRXditid3JaMDc4QWp5QnFxcEl5VklpVWFvN2hZUGZPSEk1REkyeTNrZlV5OGdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MzI5ODQyCWZpbGU6Vm9pY2VMYXR0ZS5hcHAudGFyLmd6ClRLNHQvL0VoUVNlcHZTNDVnMCtCQnhGNzRzUnJQTHEvMC9NM3NSVzUrZmhocUhYcVVoeWg1Nm1xbWxXeGJHTGJOSVF5UklDbnFGanRBeXpoQ3J2TUN3PT0K",
+      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.12/VoiceLatte-0412.tar.gz"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0clBRQWZhK1JSK1FuTmIzT1VlUk9KY3A0RDdNdk44VE9ieDA4b2Z0RHYzS01yYjBLdE9yWGZla3lZRkhPRkpRcXJFalRpNVh5MFNYMmFjVTJYaWxvYWdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MzMwMzYxCWZpbGU6Vm9pY2VMYXR0ZV8wLjQuMTJfeDY0LXNldHVwLmV4ZQpuNmNjdWZhKzRDcGNybVg1MlIyVVY0VkVIdldBOG1sYWFaWFBvalY5bFgvUVFnc1FmNm4xOFZRWVVKTWptMHJ5elJFODBBZXQzZjhLeGFDblJCM1VCUT09Cg==",
+      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.12/VoiceLatte_0.4.12_x64-setup.exe"
     }
   }
 }
