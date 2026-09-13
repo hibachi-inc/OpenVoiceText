@@ -8,7 +8,7 @@ const ja = {
   "nav.vocabulary": "辞書登録",
   "nav.shortcuts": "ショートカット",
   "nav.about": "アプリについて",
-  "sidebar.feedback": "バグ要望はこちら",
+  "sidebar.feedback": "バグ報告や要望",
   "aria.settingsCategories": "設定カテゴリ",
   "state.preparing": "準備中",
   "state.listening": "聞き取り中",
