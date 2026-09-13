@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { emitTo } from "@tauri-apps/api/event";
+import { emitTo, emit } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, LogicalPosition, monitorFromPoint, PhysicalPosition } from "@tauri-apps/api/window";
@@ -71,6 +71,7 @@ export function useRecordingController({
   const elapsedRef = useRef(0);
   const processingStartRef = useRef(0);
   const hudVisibleRef = useRef(false);
+  const hudHideGenRef = useRef(0);
   const onboardingTestRef = useRef(false);
   const holdTimer = useRef<number | undefined>(undefined);
   const holdActive = useRef(false);
@@ -87,12 +88,18 @@ export function useRecordingController({
     const shouldShow = next.phase !== "idle";
     const visibilityChanged = hudVisibleRef.current !== shouldShow;
     hudVisibleRef.current = shouldShow;
+    const gen = ++hudHideGenRef.current;
     await emitTo("hud", "recording-state", next);
     if (!visibilityChanged) return;
     const hud = await WebviewWindow.getByLabel("hud");
     if (!hud) return;
-    if (!shouldShow) await hud.hide();
-    else await hud.show();
+    if (shouldShow) await hud.show();
+    else {
+      // 退場アニメ(フェード+縮小)を数フレーム見せてから隠す。直後の再表示ではhideを取り消す。
+      await new Promise((resolve) => setTimeout(resolve, 230));
+      if (hudHideGenRef.current !== gen) return;
+      await hud.hide();
+    }
   }, []);
 
   const setRecordingState = useCallback((next: Partial<HudState> & { phase?: Phase }) => {
@@ -128,6 +135,11 @@ export function useRecordingController({
         elapsed: elapsedRef.current,
         choice: pending ? { raw: pending.raw, refined: pending.text } : undefined,
       });
+      // トレイ表示用: idle/error=待機、done+選択肢あり=確定待ち、それ以外=録音中。
+      let trayStatus: "idle" | "active" | "choice" = "active";
+      if (nextPhase === "idle" || nextPhase === "error") trayStatus = "idle";
+      else if (nextPhase === "done" && pending) trayStatus = "choice";
+      void emit("tray-phase", { status: trayStatus }).catch(() => undefined);
     }
   }, [language, updateHud]);
 

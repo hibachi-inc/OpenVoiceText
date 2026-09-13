@@ -284,6 +284,25 @@ body {
 .hud.done .hud-mic { color: #318c5a; }
 .hud.error .hud-mic { color: #b64c4c; }
 @keyframes breathe { to { transform: scale(1.18); opacity: .68; } }
+/* HUD出現/退場・選択肢展開のトランジション */
+.hud-enter { animation: hudIn 240ms cubic-bezier(.2, .9, .25, 1) both; }
+.hud-leaving { animation: hudOut 200ms ease-in both; }
+@keyframes hudIn {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes hudOut {
+  to { opacity: 0; transform: translateY(8px) scale(.985); }
+}
+/* AI変換完了で選択肢が増える瞬間をフェード+スライドでつなぐ */
+.hud-choice { animation: choiceIn 260ms cubic-bezier(.2, .9, .25, 1) both; transform-origin: top center; }
+@keyframes choiceIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hud-enter, .hud-leaving, .hud-choice { animation: none; }
+}
 
 @media (max-width: 700px) {
   .app-shell { grid-template-columns: 164px 1fr; }

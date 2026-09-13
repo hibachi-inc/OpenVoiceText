@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
@@ -339,6 +340,31 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
     void listen("hud-stop", () => actionRef.current("toggle")).then((fn) => { unlisten = fn; });
     return () => unlisten?.();
   }, []);
+
+  // 常駐化: 起動時はウィンドウ非表示。未設定(オンボーディング未完了)のときだけ開く。
+  const showOnboardingInitialRef = useRef(showOnboarding);
+  useEffect(() => {
+    if (showOnboardingInitialRef.current) void getCurrentWindow().show().catch(() => undefined);
+  }, []);
+
+  // トレイメニューからの録音開始/停止を受け付ける。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen("tray-toggle", () => actionRef.current("toggle")).then((fn) => { unlisten = fn; });
+    return () => unlisten?.();
+  }, []);
+
+  // トレイメニューの文言をフロントの表示言語に合わせる。
+  // 録音状態の通知は useRecordingController が選択肢の有無込みで送る。
+  useEffect(() => {
+    void emit("tray-labels", {
+      toggle_start: t("tray.start"),
+      toggle_stop: t("tray.stop"),
+      toggle_confirm: t("tray.confirm"),
+      settings: t("tray.settings"),
+      quit: t("tray.quit"),
+    }).catch(() => undefined);
+  }, [t]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;

@@ -17,6 +17,11 @@ export function Hud() {
   const copyRef = useRef<HTMLDivElement>(null);
   const choiceBoxRef = useRef<HTMLDivElement>(null);
   const hudHeightRef = useRef(64);
+  const heightAnimRef = useRef(0);
+  // 出現/退場トランジション用の transient クラス
+  const [entering, setEntering] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const prevPhaseRef = useRef<HudState["phase"]>("idle");
   const hasChoice = state.phase === "done" && state.choice != null;
   // 0: 元のまま、1: AI整形版。初期フォーカスは整形版。
   const [selected, setSelected] = useState(1);
@@ -24,6 +29,32 @@ export function Hud() {
   selectedRef.current = selected;
   // 録音開始時に一度だけ記録するHUDの下辺(論理座標)。以後はこの下辺を固定して上へ伸びる。
   const hudBottomRef = useRef<number | null>(null);
+  // 目標高さへ約240msでイージングしながらリサイズし、下辺固定のまま滑らかに伸縮させる
+  const smoothResizeTo = (target: number, bottom: number | null) => {
+    if (bottom === null) return;
+    if (target === hudHeightRef.current) return;
+    cancelAnimationFrame(heightAnimRef.current);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      hudHeightRef.current = target;
+      void invoke("hud_resize", { height: target, bottom }).catch(() => undefined);
+      return;
+    }
+    const from = hudHeightRef.current;
+    const delta = target - from;
+    const duration = 240;
+    const start = performance.now();
+    const step = (now: number) => {
+      const k = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - k, 3);
+      const height = from + delta * eased;
+      hudHeightRef.current = height;
+      void invoke("hud_resize", { height, bottom }).catch(() => undefined);
+      if (k < 1) heightAnimRef.current = requestAnimationFrame(step);
+      else hudHeightRef.current = target;
+    };
+    heightAnimRef.current = requestAnimationFrame(step);
+  };
+  useEffect(() => () => cancelAnimationFrame(heightAnimRef.current), []);
   useEffect(() => {
     const hudWindow = getCurrentWindow();
     void (async () => {
@@ -53,9 +84,8 @@ export function Hud() {
   useEffect(() => {
     if (state.phase === "idle") {
       hudBottomRef.current = null;
-      // 前回拡大したままのときだけ実ウィンドウを 64 に戻す
+      // 前回拡大したままのときだけ実ウィンドウを 64 に戻す(退場フェードと同時に滑らかに縮小)
       if (hudHeightRef.current !== 64) {
-        hudHeightRef.current = 64;
         void (async () => {
           const hudWindow = getCurrentWindow();
           const scale = await hudWindow.scaleFactor().catch(() => 1);
@@ -63,7 +93,7 @@ export function Hud() {
           const size = await hudWindow.outerSize().catch(() => undefined);
           if (position && size) {
             const bottom = position.y / scale + size.height / scale;
-            await invoke("hud_resize", { height: 64, bottom }).catch(() => undefined);
+            smoothResizeTo(64, bottom);
           }
         })();
       }
@@ -84,6 +114,24 @@ export function Hud() {
   useEffect(() => {
     setSelected(1);
   }, [state.choice?.raw, state.choice?.refined]);
+  // 出現(idle→active)/退場(active→idle)でトランジション用クラスを一時付与する
+  useEffect(() => {
+    const prev = prevPhaseRef.current;
+    const cur = state.phase;
+    prevPhaseRef.current = cur;
+    if (prev === "idle" && cur !== "idle") {
+      setLeaving(false);
+      setEntering(true);
+      const timer = window.setTimeout(() => setEntering(false), 280);
+      return () => window.clearTimeout(timer);
+    }
+    if (prev !== "idle" && cur === "idle") {
+      setEntering(false);
+      setLeaving(true);
+      const timer = window.setTimeout(() => setLeaving(false), 240);
+      return () => window.clearTimeout(timer);
+    }
+  }, [state.phase]);
   // 選択肢表示中だけキー操作を受け付ける
   useEffect(() => {
     if (!hasChoice) return;
@@ -131,17 +179,13 @@ export function Hud() {
       logicalHeight = Math.min(barHeight + Math.min(box.scrollHeight + 10, 480), 560);
     }
     if (logicalHeight === hudHeightRef.current) return;
-    void (async () => {
-      const bottom = hudBottomRef.current;
-      if (bottom === null) return;
-      await invoke("hud_resize", { height: logicalHeight, bottom }).catch(() => undefined);
-      hudHeightRef.current = logicalHeight;
-    })();
+    // AI変換完了で選択肢が増える瞬間も含め、高さ変化は下辺固定のまま滑らかに伸縮させる
+    smoothResizeTo(logicalHeight, hudBottomRef.current);
   }, [state.transcript, state.phase, state.spaceHint, state.choice]);
   const deferred = state.captureMode === "deferred";
   const placeholder = !state.transcript && state.phase === "listening";
   const displayText = state.transcript || (placeholder ? t(deferred ? "hud.deferredPrompt" : "hud.prompt") : state.message) || t("hud.prompt");
-  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}${hasChoice ? " tall" : ""}${state.phase === "processing" && state.refining ? " ai" : ""}`}>
+  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}${hasChoice ? " tall" : ""}${state.phase === "processing" && state.refining ? " ai" : ""}${entering ? " hud-enter" : ""}${leaving ? " hud-leaving" : ""}`}>
     <div className="hud-drag-layer" data-tauri-drag-region />
     {hasChoice && state.choice && <div className="hud-choice" ref={choiceBoxRef}>
       <div className="hud-choice-title">{t("record.choose")}</div>
