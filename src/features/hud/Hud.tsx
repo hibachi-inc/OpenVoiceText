@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { emitTo, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, currentMonitor } from "@tauri-apps/api/window";
 import { Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createTranslator, resolveUiLanguage } from "../../i18n";
@@ -55,6 +55,14 @@ export function Hud() {
     heightAnimRef.current = requestAnimationFrame(step);
   };
   useEffect(() => () => cancelAnimationFrame(heightAnimRef.current), []);
+  // HUDが画面からはみ出さない高さ上限(論理px)。取れなければ十分大きな値。
+  const availableHudHeight = async () => {
+    const monitor = await currentMonitor().catch(() => null);
+    if (monitor && monitor.scaleFactor > 0) {
+      return Math.max(320, monitor.workArea.size.height / monitor.scaleFactor - 48);
+    }
+    return 900;
+  };
   useEffect(() => {
     const hudWindow = getCurrentWindow();
     void (async () => {
@@ -199,15 +207,26 @@ export function Hud() {
     // 上限到達後はテキスト領域だけを末尾へ自動スクロールさせる
     if (capped) view.scrollTop = view.scrollHeight;
     const barHeight = Math.max(64, Math.min(view.scrollHeight + chrome + SLACK, 320));
-    // 選択肢表示中はその分だけ上へ伸ばす（同一ウィンドウなので追従ズレなし）
-    let logicalHeight = barHeight;
+    // 選択肢表示中はその分だけ上へ伸ばす（同一ウィンドウなので追従ズレなし）。
+    // 選択肢は内容に合わせて伸ばし、上限は画面からはみ出さない範囲だけにする。
     const box = choiceBoxRef.current;
-    if (hasChoice && box) {
-      logicalHeight = Math.min(barHeight + Math.min(box.scrollHeight + 10, 480), 560);
+    const choiceList = box?.querySelector<HTMLElement>(".choice-options") ?? null;
+    if (choiceList) choiceList.style.removeProperty("max-height");
+    if (!hasChoice || !box) {
+      if (barHeight === hudHeightRef.current) return;
+      smoothResizeTo(barHeight, hudBottomRef.current);
+      return;
     }
-    if (logicalHeight === hudHeightRef.current) return;
-    // AI変換完了で選択肢が増える瞬間も含め、高さ変化は下辺固定のまま滑らかに伸縮させる
-    smoothResizeTo(logicalHeight, hudBottomRef.current);
+    void (async () => {
+      const needed = barHeight + box.scrollHeight + 10;
+      const maxWindow = await availableHudHeight();
+      const logicalHeight = Math.min(needed, maxWindow);
+      // 上限に当たった分だけ選択肢リスト内でスクロールさせる
+      if (needed > maxWindow && choiceList) {
+        choiceList.style.maxHeight = `${Math.max(maxWindow - barHeight - 10, 120)}px`;
+      }
+      smoothResizeTo(logicalHeight, hudBottomRef.current);
+    })();
   }, [state.transcript, state.phase, state.spaceHint, state.choice]);
   const deferred = state.captureMode === "deferred";
   const placeholder = !state.transcript && state.phase === "listening";

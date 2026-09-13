@@ -253,14 +253,15 @@ body {
 .hud-copy b.capped { overflow-y: auto; }
 .hud-copy b::-webkit-scrollbar { display: none; }
 .hud-copy b.placeholder { color: #9a9ca1; font-weight: 500; }
-.choice-option { display: grid; gap: 2px; max-height: 84px; padding: 7px 10px; border: 1px solid rgba(48,52,58,.14); border-radius: 8px; background: rgba(255,255,255,.65); text-align: left; cursor: pointer; }
+.choice-option { display: grid; gap: 2px; padding: 7px 10px; border: 1px solid rgba(48,52,58,.14); border-radius: 8px; background: rgba(255,255,255,.65); text-align: left; cursor: pointer; }
 .choice-option > span:first-child { color: #686b70; font-size: 9px; font-weight: 650; }
 .choice-option > span:last-child { overflow-y: auto; color: #25272a; font-size: 12px; line-height: 1.45; scrollbar-width: none; }
 .choice-option > span:last-child::-webkit-scrollbar { display: none; }
 .choice-option.primary { border-color: rgba(28,74,122,.4); background: rgba(235,242,250,.9); }
 .choice-option:hover { background: rgba(255,255,255,.95); }
 .choice-option.focused { outline: 2px solid rgba(28,74,122,.55); outline-offset: 0; }
-.choice-options { display: grid; gap: 6px; align-content: start; }
+.choice-options { display: grid; gap: 6px; align-content: start; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.choice-options::-webkit-scrollbar { display: none; }
 .hud-meter { display: flex; align-items: center; justify-content: center; gap: 2px; height: 24px; }
 .hud-meter i { width: 2px; height: 4px; border-radius: 2px; background: rgba(48,52,58,.18); transition: height 70ms linear, background 70ms linear; }
 .hud-meter i:nth-child(3n) { height: 7px; }
