@@ -93,8 +93,16 @@ export function useRecordingController({
     if (!visibilityChanged) return;
     const hud = await WebviewWindow.getByLabel("hud");
     if (!hud) return;
-    if (shouldShow) await hud.show();
-    else {
+    if (shouldShow) {
+      // 新状態の描画を待ってから表示する。古い内容のまま先に表示すると、
+      // 描画更新＋enterアニメで透明から再生されて点滅に見えるため。
+      // 待ち中に後続の状態が来ても visibility が変わらなければ続行する
+      // (preparing→listening等では後続が早期returnするため、ここでgenを見ると二度と表示されなくなる)。
+      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      if (hudVisibleRef.current !== shouldShow) return;
+      await hud.show();
+    } else {
       // 退場アニメ(フェード+縮小)を数フレーム見せてから隠す。直後の再表示ではhideを取り消す。
       await new Promise((resolve) => setTimeout(resolve, 230));
       if (hudHideGenRef.current !== gen) return;
