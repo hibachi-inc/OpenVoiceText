@@ -397,6 +397,9 @@ function MainAppContent({ settings, setSettings }: { settings: Settings; setSett
         {update.status === "downloading" && <Button size="sm" className="sidebar-update" disabled>
           <Download />{t("update.downloading")}
         </Button>}
+        <div className="sidebar-footer">
+          <Button variant="link" className="sidebar-feedback h-auto" onClick={() => void invoke("open_url", { url: "https://github.com/hibachi-inc/OpenVoiceText/issues" }).catch(() => undefined)}>{t("sidebar.feedback")}</Button>
+        </div>
       </aside>
 
       <section className="content">

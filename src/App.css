@@ -25,7 +25,7 @@ body {
   backdrop-filter: blur(34px) saturate(130%);
 }
 .window-drag-region { position: absolute; z-index: 20; inset: 0 0 auto; height: 36px; }
-.sidebar { padding: 48px 12px 16px; background: rgba(224,227,231,.82); border-right: 1px solid rgba(45,48,54,.07); }
+.sidebar { display: flex; flex-direction: column; padding: 48px 12px 16px; background: rgba(224,227,231,.82); border-right: 1px solid rgba(45,48,54,.07); }
 .sidebar-brand { margin: 0 11px 16px; color: #292b2f; font-size: 15px; font-weight: 680; letter-spacing: -.02em; }
 .sidebar nav { display: grid; gap: 4px; }
 .nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 11px; border: 0; border-radius: 10px; background: transparent; color: #55575b; text-align: left; font-size: 13px; font-weight: 580; cursor: pointer; }
@@ -34,6 +34,8 @@ body {
 .nav-item.selected { color: #1d1e20; background: rgba(255,255,255,.95); box-shadow: 0 2px 10px rgba(31,35,41,.08), inset 0 0 0 1px rgba(255,255,255,.9); }
 .sidebar-update { display: flex; gap: 7px; width: 100%; margin-top: 12px; justify-content: flex-start; background: #232426; color: #fff; }
 .sidebar-update:disabled { opacity: .7; }
+.sidebar-footer { margin-top: auto; padding: 10px 11px 0; }
+.sidebar-feedback { height: auto; padding: 0; color: #74767b; font-size: 10px; font-weight: 500; }
 .sidebar-update-check { display: flex; gap: 7px; width: 100%; margin-top: 12px; justify-content: flex-start; color: #55575b; }
 .content { min-width: 0; padding: 44px 18px 22px; overflow: auto; }
 
