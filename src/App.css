@@ -298,12 +298,16 @@ body {
 }
 /* AI変換完了で選択肢が増える瞬間をフェード+スライドでつなぐ */
 .hud-choice { animation: choiceIn 260ms cubic-bezier(.2, .9, .25, 1) both; transform-origin: top center; }
+.hud-choice-leaving { animation: choiceOut 200ms ease-in both; }
 @keyframes choiceIn {
   from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: none; }
 }
+@keyframes choiceOut {
+  to { opacity: 0; transform: translateY(-6px); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .hud-enter, .hud-leaving, .hud-choice { animation: none; }
+  .hud-enter, .hud-leaving, .hud-choice, .hud-choice-leaving { animation: none; }
 }
 
 @media (max-width: 700px) {

@@ -114,6 +114,27 @@ export function Hud() {
   useEffect(() => {
     setSelected(1);
   }, [state.choice?.raw, state.choice?.refined]);
+  // 退場時に選択肢が即消えすると点滅に見えるため、直前の内容を少し残してフェードさせる
+  const lastChoiceRef = useRef(state.choice);
+  const [choiceLeaving, setChoiceLeaving] = useState(false);
+  useEffect(() => {
+    if (state.choice) lastChoiceRef.current = state.choice;
+  }, [state.choice]);
+  useEffect(() => {
+    if (hasChoice) {
+      setChoiceLeaving(false);
+      return;
+    }
+    if (!lastChoiceRef.current) return;
+    setChoiceLeaving(true);
+    const timer = window.setTimeout(() => {
+      setChoiceLeaving(false);
+      lastChoiceRef.current = undefined;
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [hasChoice]);
+  const visibleChoice = state.choice ?? (choiceLeaving ? lastChoiceRef.current : undefined);
+  const showChoice = hasChoice || (choiceLeaving && visibleChoice != null);
   // 出現(idle→active)/退場(active→idle)でトランジション用クラスを一時付与する
   useEffect(() => {
     const prev = prevPhaseRef.current;
@@ -185,13 +206,13 @@ export function Hud() {
   const deferred = state.captureMode === "deferred";
   const placeholder = !state.transcript && state.phase === "listening";
   const displayText = state.transcript || (placeholder ? t(deferred ? "hud.deferredPrompt" : "hud.prompt") : state.message) || t("hud.prompt");
-  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}${hasChoice ? " tall" : ""}${state.phase === "processing" && state.refining ? " ai" : ""}${entering ? " hud-enter" : ""}${leaving ? " hud-leaving" : ""}`}>
+  return <main className={`hud ${state.phase}${deferred ? " deferred" : ""}${showChoice ? " tall" : ""}${state.phase === "processing" && state.refining ? " ai" : ""}${entering ? " hud-enter" : ""}${leaving ? " hud-leaving" : ""}`}>
     <div className="hud-drag-layer" data-tauri-drag-region />
-    {hasChoice && state.choice && <div className="hud-choice" ref={choiceBoxRef}>
+    {showChoice && visibleChoice && <div className={"hud-choice" + (!hasChoice ? " hud-choice-leaving" : "")} ref={choiceBoxRef}>
       <div className="hud-choice-title">{t("record.choose")}</div>
       <div className="choice-options">
-        <button type="button" className={"choice-option" + (selected === 0 ? " focused" : "")} onClick={() => confirmChoice(0)} onMouseEnter={() => setSelected(0)}><span>{t("hud.useRaw")}</span><span>{state.choice.raw}</span></button>
-        <button type="button" className={"choice-option primary" + (selected === 1 ? " focused" : "")} onClick={() => confirmChoice(1)} onMouseEnter={() => setSelected(1)}><span>{t("hud.useRefined")}</span><span>{state.choice.refined}</span></button>
+        <button type="button" className={"choice-option" + (selected === 0 ? " focused" : "")} onClick={() => confirmChoice(0)} onMouseEnter={() => setSelected(0)}><span>{t("hud.useRaw")}</span><span>{visibleChoice.raw}</span></button>
+        <button type="button" className={"choice-option primary" + (selected === 1 ? " focused" : "")} onClick={() => confirmChoice(1)} onMouseEnter={() => setSelected(1)}><span>{t("hud.useRefined")}</span><span>{visibleChoice.refined}</span></button>
       </div>
     </div>}
     <div className="hud-orb"><span className="hud-pulse" /><span className="hud-mic">●</span></div>
