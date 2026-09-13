@@ -96,10 +96,11 @@ export function useRecordingController({
     if (shouldShow) {
       // 新状態の描画を待ってから表示する。古い内容のまま先に表示すると、
       // 描画更新＋enterアニメで透明から再生されて点滅に見えるため。
+      // 非表示窓ではrAFが止まって待ちが明けなくなるためsetTimeoutを使う
+      // (既存のidle戻しタイマーが隠し窓でも発火する実績あり)。
       // 待ち中に後続の状態が来ても visibility が変わらなければ続行する
       // (preparing→listening等では後続が早期returnするため、ここでgenを見ると二度と表示されなくなる)。
-      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
-      await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+      await new Promise((resolve) => setTimeout(resolve, 60));
       if (hudVisibleRef.current !== shouldShow) return;
       await hud.show();
     } else {
