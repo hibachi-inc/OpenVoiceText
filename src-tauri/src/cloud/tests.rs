@@ -4,14 +4,13 @@ mod tests {
 
     #[test]
     fn gemini_fallback_chain_is_stable() {
-        // 速い順：3.5 Lite → 3.6 → 3.5 → 2.5。
+        // 速い順：3.5 Lite → 3.6 → 3.5。2.5-flash は引退（RETIRED_GEMINI_MODELS）。
         assert_eq!(
             GEMINI_MODELS,
             [
                 "gemini-3.5-flash-lite",
                 "gemini-3.6-flash",
                 "gemini-3.5-flash",
-                "gemini-2.5-flash",
             ]
         );
     }
@@ -24,7 +23,6 @@ mod tests {
                 "gemini-3.5-flash-lite",
                 "gemini-3.6-flash",
                 "gemini-3.5-flash",
-                "gemini-2.5-flash",
             ]
         );
         assert_eq!(
@@ -34,16 +32,23 @@ mod tests {
                 "gemini-3.5-flash-lite",
                 "gemini-3.6-flash",
                 "gemini-3.5-flash",
-                "gemini-2.5-flash",
             ]
         );
+        // 引退モデルは選択済み設定でも先頭に残さない（新規キーでは404で無駄になる）。
         assert_eq!(
             gemini_chain(Some("gemini-2.5-flash".into())),
             [
-                "gemini-2.5-flash",
                 "gemini-3.5-flash-lite",
                 "gemini-3.6-flash",
                 "gemini-3.5-flash",
+            ]
+        );
+        assert_eq!(
+            gemini_chain(Some("gemini-3.5-flash".into())),
+            [
+                "gemini-3.5-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.6-flash",
             ]
         );
     }
@@ -55,8 +60,9 @@ mod tests {
             "gemini-flash-lite-latest",
             &tried
         ));
-        assert!(is_dynamic_fallback_candidate("gemini-2.5-flash", &tried));
-        // Tried, non-flash, and image models are excluded.
+        assert!(is_dynamic_fallback_candidate("gemini-3.5-flash", &tried));
+        // Tried, retired, non-flash, and image models are excluded.
+        assert!(!is_dynamic_fallback_candidate("gemini-2.5-flash", &tried));
         assert!(!is_dynamic_fallback_candidate(
             "gemini-flash-latest",
             &tried
@@ -121,7 +127,8 @@ mod tests {
 
     #[test]
     fn gemini_flash_text_model_rule() {
-        assert!(is_gemini_flash_text_model("gemini-2.5-flash"));
+        // 引退モデルはフラッシュ系でもフォールバック候補にしない。
+        assert!(!is_gemini_flash_text_model("gemini-2.5-flash"));
         assert!(is_gemini_flash_text_model("gemini-3.5-flash-lite"));
         assert!(!is_gemini_flash_text_model("gemini-2.5-pro"));
         assert!(!is_gemini_flash_text_model(
@@ -184,10 +191,13 @@ mod tests {
 
     #[test]
     fn model_eligibility_matches_task() {
-        assert!(model_transcription_eligible("gemini", "gemini-2.5-flash"));
+        assert!(model_transcription_eligible("gemini", "gemini-3.5-flash"));
+        // 引退モデルはカタログに出さない（選択そのものを防ぐ）。
+        assert!(!model_transcription_eligible("gemini", "gemini-2.5-flash"));
         assert!(!model_transcription_eligible("gemini", "gemma-4-31b-it"));
         assert!(model_refinement_eligible("gemini", "gemma-4-31b-it"));
-        assert!(model_refinement_eligible("gemini", "gemini-2.5-flash"));
+        assert!(model_refinement_eligible("gemini", "gemini-3.5-flash"));
+        assert!(!model_refinement_eligible("gemini", "gemini-2.5-flash"));
         assert!(!model_refinement_eligible(
             "gemini",
             "gemini-3.1-flash-image-preview"

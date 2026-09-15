@@ -13,8 +13,9 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 // 注：gemini-2.5-flash-lite は提供終了のため除外した（404 "no longer available"）。
+// gemini-2.5-flash は新規キーで404になるため引退扱い（RETIRED_GEMINI_MODELS）。
+// 一覧APIには出続けるので、選択済み設定はchain側で除いてから試す。
 // Gemma 26B/31B は音声非対応のため転写には使わない（model_supports_audio）。
-// 将来2.5-flashも同様になったらここから外す。フォールバックが拾う。
 // 画像添付時に付ける指示。画面の説明はさせず、誤認識の解決だけに使わせる。
 const IMAGE_NOTE: &str = "\n\n[A screenshot of the user's screen is attached. Use text visible in it (names, terms, messages) only to resolve misrecognized words. Never describe or mention the screenshot.]";
 const GROQ_DEFAULT_MODEL: &str = "openai/gpt-oss-120b";

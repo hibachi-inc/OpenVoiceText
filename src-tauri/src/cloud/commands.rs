@@ -88,19 +88,8 @@ pub async fn cloud_transcribe_refine(
         "Transcribe the attached audio in {locale}, then apply the refinement instruction below to the transcript. Return ONLY a JSON object like {{\"transcript\": \"...\", \"refined\": \"...\"}} holding the raw transcript and the refined text. Do not add explanations.\n\n{prompt}"
     );
     let screen_context = tail_chars(screen_context.trim(), 10_000);
-    let explicit: Option<String> = model
-        .map(|m| m.trim().to_string())
-        .filter(|m| !m.is_empty());
-    let mut models = Vec::new();
-    if let Some(m) = explicit {
-        models.push(m);
-    }
-    for m in GEMINI_MODELS {
-        if models.iter().all(|x| x != m) {
-            models.push(m.to_string());
-        }
-    }
     // 音声非対応モデルは結合ルートで試さない（フロントでも弾くが保険）。
+    let mut models = gemini_chain(model);
     models.retain(|m| model_supports_audio("gemini", m));
     let mut last_error = "cloud.gemini_failed".to_string();
     let mut fell_back_from: Option<String> = None;

@@ -1,9 +1,18 @@
-const GEMINI_MODELS: [&str; 4] = [
+const GEMINI_MODELS: [&str; 3] = [
     "gemini-3.5-flash-lite",
     "gemini-3.6-flash",
     "gemini-3.5-flash",
-    "gemini-2.5-flash",
 ];
+
+/// 引退モデル。新規キーでは404（"not available to new users"）が返り、試すだけ無駄になる。
+/// 一覧APIには出続けるため、選択済み設定・動的フォールバック・カタログ表示可否の
+/// すべてからここで除く（is_refine_candidate 経由で一覧側も揃う）。
+const RETIRED_GEMINI_MODELS: [&str; 1] = ["gemini-2.5-flash"];
+
+fn is_retired_gemini_model(id: &str) -> bool {
+    let lower = id.to_lowercase();
+    RETIRED_GEMINI_MODELS.iter().any(|m| lower == *m)
+}
 
 /// Qwen同士の連鎖用。混雑時の安定のため明示Qwenの次にもう片方を試す。
 const GROQ_QWEN_MODELS: [&str; 2] = ["qwen/qwen3.6-27b", "qwen/qwen3.8-27b"];
@@ -112,6 +121,9 @@ pub async fn list_provider_models(
 
 /// 整形に使えない音声・画像・管理系モデルを除く。
 fn is_refine_candidate(id: &str) -> bool {
+    if is_retired_gemini_model(id) {
+        return false;
+    }
     let id = id.to_lowercase();
     for blocked in [
         "whisper",
@@ -220,12 +232,13 @@ async fn list_gemini_models(client: &reqwest::Client, key: &str) -> Result<Vec<S
     Ok(gemini_model_ids(&body))
 }
 
-/// 明示モデルを先頭にしたGeminiチェーン。重複は除く。
+/// 明示モデルを先頭にしたGeminiチェーン。重複と引退モデルは除く。
 fn gemini_chain(explicit: Option<String>) -> Vec<String> {
     let mut models = Vec::new();
     if let Some(m) = explicit
         .map(|m| m.trim().to_string())
         .filter(|m| !m.is_empty())
+        .filter(|m| !is_retired_gemini_model(m))
     {
         models.push(m);
     }
