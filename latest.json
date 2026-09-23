@@ -1,15 +1,15 @@
 {
-  "version": "0.4.13",
-  "notes": "AI整形の改善（音の近い固有名詞・技術用語に寄せて復元し、意味不明な内容語を削除しない）、Geminiモデルの切り替え順の変更、起動時の設定画面表示など。Windows版は未検証のベータ版です。不具合があればGitHubのIssueで報告してください。",
-  "pub_date": "2026-09-14T02:26:52.000Z",
+  "version": "0.4.14",
+  "notes": "音声認識ブリッジの致命的エラー時にアプリを自動再起動するようにしました（「音声認識ブリッジから応答がありません」等の際に回復します）。Windows版は未検証のベータ版です。不具合があればGitHubのIssueで報告してください。",
+  "pub_date": "2026-09-23T15:19:49.000Z",
   "platforms": {
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ckhwUGJOa2JXWVBTYmdnZE9ISlFhY05HK0pJNjU4R0U5MEhtRk1qS3MvSCtiS2JGSUQ3ZlBHQ0k3S1ZSMnB0T3Jaa0JQSVZTTzNqMnVVWU5OZUNPYUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MzUwODk0CWZpbGU6Vm9pY2VMYXR0ZS5hcHAudGFyLmd6CjRWVnRqeWlxOFZ6ZTBiWFNncG9DRlc0RkRiYVFsMjdFOHBuSjcxRXgwWnRrQ1hiRC9XNDUvejlRdm9JZVExQlFrVkF1S1pIZ0lVSjMxdGN5Y3VMT0NnPT0K",
-      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.13/VoiceLatte-0413.tar.gz"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ckFVY1BSMXhPRkxGd0FiOTBKRHBOUDkrRE1HbTdjR093Qzl5bHJmQVUyN0R2a3pkVW1zUHJEL3Q1Tks2TVhCUjQrYTR0S2MxOEtwNTZJV0p0VERLNmdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMTc0MDE3CWZpbGU6Vm9pY2VMYXR0ZS5hcHAudGFyLmd6CnZ4MS9xNCsxZ0JUOG4rRkJDYnZsa21VUEwvT0p6c3NKdnhjcDZ3Q0kwM01qSVBVTXhGa1JnT3kzT3h3cTl3a01FNmFOYWZJVnZSSUlOMld5VHV1ZkF3PT0K",
+      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.14/VoiceLatte-0414.tar.gz"
     },
     "windows-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ckg4SzM3NEc1RGxwc2MxQk9QWDhKdnlXK0pJVGZGcnAyYjBFZ1ZxNE5QaXl1NTdaQzIwL1MrOWg1NFZQSkNtQ214end2VzFtSmVTYVAyTXdEWUcvbWdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5MzUxNzgyCWZpbGU6Vm9pY2VMYXR0ZV8wLjQuMTNfeDY0LXNldHVwLmV4ZQpaV2lsT0dscnVkSDNuZkcrVG9zelFVaGtoRi9MVjU5cVc2T3NXTXZEaG5YY3pKeUN6NWFCVjI4aVEzVWdUMzc3cGZhaGJHS1h2YVoxSnFicUNBRG5DUT09Cg==",
-      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.13/VoiceLatte_0.4.13_x64-setup.exe"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUS2gvY25NejV0ck5GK3BqcHZnNG53eUFvb3NQZ1F6ZEt3eHkwRmlHeGlPUWw4UUQxcEZ6K3BzYlZjNzFkQXNCdm1aWmVPQmFnNzdnOHgzaG9QcWVKY1hhellmRW5WY1FNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkwMTc0NjA3CWZpbGU6Vm9pY2VMYXR0ZV8wLjQuMTRfeDY0LXNldHVwLmV4ZQpMNm1NL2VNRlNzaGVnTjcwREt2VkEvbUFQZy8wUEtTYkQrUCtwbkNya0JYSmZzU2lwTVhsckxHTGRMMCsrY0IyV1dtVjBieE04NVdDWU5BaTZtSHNCQT09Cg==",
+      "url": "https://github.com/hibachi-inc/OpenVoiceText/releases/download/v0.4.14/VoiceLatte_0.4.14_x64-setup.exe"
     }
   }
 }
