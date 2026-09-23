@@ -6,6 +6,7 @@ import { currentMonitor, LogicalPosition, monitorFromPoint, PhysicalPosition } f
 import { appLog } from "../../applog";
 import { trackEvent } from "../../telemetry";
 import { localizeBridgeMessage, type Translator, type UiLanguage } from "../../i18n";
+import { isBridgeFatalError, requestAppRestart } from "../../app/restart";
 import { type SpeechBridgeClient } from "../../speech-bridge";
 import { buildRefinementPrompt, postProcessTranscript, resolveCustomPrompt, shouldDiscardRefinement, vocabularyHints, type VocabularyEntry } from "../../text-processing";
 import type { CaptureMode, CloudResult, HistoryEntry, HudState, PendingChoice, Phase, PreparedCapture, Settings, TranscriptionProvider } from "../../app/types";
@@ -190,9 +191,14 @@ export function useRecordingController({
             const captureId = captureRef.current;
             captureRef.current = undefined;
             recordingProviderRef.current = "local";
-            void bridge.cancel().catch(() => undefined).finally(() => {
-              if (captureId) void invoke("discard_capture", { captureId });
-            });
+            if (captureId) void invoke("discard_capture", { captureId });
+            // ブリッジの致命的エラーは子プロセスの復旧では直らないため、アプリ自体を再起動する
+            if (isBridgeFatalError(error)) {
+              setRecordingState({ phase: "error", message: t("error.restarting") });
+              requestAppRestart("bridge-onError");
+              return;
+            }
+            void bridge.cancel().catch(() => undefined);
             setRecordingState({ phase: "error", message: localizeBridgeMessage(error, language, t) });
             window.setTimeout(() => {
               setRecordingState({ phase: "idle" });
@@ -210,6 +216,11 @@ export function useRecordingController({
         captureRef.current = undefined;
       }
       recordingProviderRef.current = "local";
+      if (isBridgeFatalError(error)) {
+        setRecordingState({ phase: "error", message: t("error.restarting") });
+        requestAppRestart("start-failed");
+        return;
+      }
       setRecordingState({ phase: "error", message: localizedError(error) });
       window.setTimeout(() => {
         setRecordingState({ phase: "idle" });
@@ -384,6 +395,11 @@ export function useRecordingController({
         captureRef.current = undefined;
       }
       recordingProviderRef.current = "local";
+      if (isBridgeFatalError(error)) {
+        setRecordingState({ phase: "error", message: t("error.restarting") });
+        requestAppRestart("stop-failed");
+        return;
+      }
       setRecordingState({ phase: "error", message: localizedError(error) });
       window.setTimeout(() => {
         setRecordingState({ phase: "idle" });
